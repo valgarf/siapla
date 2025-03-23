@@ -1,0 +1,235 @@
+use sea_orm_migration::{prelude::*, schema::*};
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Replace the sample below with your own migration scripts
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Task::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Task::Id))
+                    .col(integer_null(Task::ParentId))
+                    .col(string(Task::Title))
+                    .col(string(Task::Description))
+                    .col(date_time_null(Task::EarliestStart))
+                    .col(date_time_null(Task::ScheduleTarget))
+                    .col(float_null(Task::Effort))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Task_Task")
+                            .from(Task::Table, Task::ParentId)
+                            .to(Task::Table, Task::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Resource::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Resource::Id))
+                    .col(string(Resource::Name))
+                    .col(string(Resource::Availability))
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(ResourceConstraint::Table)
+                    .if_not_exists()
+                    .col(pk_auto(ResourceConstraint::Id))
+                    .col(integer(ResourceConstraint::TaskId))
+                    .col(string(ResourceConstraint::Type))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_ResourceConstraint_Resource")
+                            .from(ResourceConstraint::Table, ResourceConstraint::TaskId)
+                            .to(Resource::Table, Resource::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(ResourceConstraintEntry::Table)
+                    .if_not_exists()
+                    .col(pk_auto(ResourceConstraintEntry::Id))
+                    .col(integer(ResourceConstraintEntry::ResourceConstraintId))
+                    .col(string(ResourceConstraintEntry::ResourceId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_ResourceConstraintEntry_ResourceConstraint")
+                            .from(
+                                ResourceConstraintEntry::Table,
+                                ResourceConstraintEntry::ResourceConstraintId,
+                            )
+                            .to(ResourceConstraint::Table, ResourceConstraint::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_ResourceConstraintEntry_Resource")
+                            .from(
+                                ResourceConstraintEntry::Table,
+                                ResourceConstraintEntry::ResourceId,
+                            )
+                            .to(Resource::Table, Resource::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Restrict),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Allocation::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Allocation::Id))
+                    .col(integer(Allocation::TaskId))
+                    .col(date_time(Allocation::Start))
+                    .col(date_time(Allocation::End))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Allocation_Task")
+                            .from(Allocation::Table, Allocation::TaskId)
+                            .to(Task::Table, Task::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(AllocatedResource::Table)
+                    .if_not_exists()
+                    .col(pk_auto(AllocatedResource::Id))
+                    .col(integer(AllocatedResource::AllocationId))
+                    .col(integer(AllocatedResource::ResourceId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_AllocatedResource_Allocation")
+                            .from(AllocatedResource::Table, AllocatedResource::AllocationId)
+                            .to(Allocation::Table, Allocation::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_AllocatedResource_Allocation")
+                            .from(AllocatedResource::Table, AllocatedResource::ResourceId)
+                            .to(Resource::Table, Resource::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(Task::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_table(Table::drop().table(Resource::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_table(Table::drop().table(ResourceConstraint::Table).to_owned())
+            .await?;
+
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(ResourceConstraintEntry::Table)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .drop_table(Table::drop().table(Allocation::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(AllocatedResource::Table).to_owned())
+            .await?;
+
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum Task {
+    Table,
+    Id,
+    ParentId,
+    Title,
+    Description,
+    EarliestStart,
+    ScheduleTarget,
+    Effort,
+}
+
+#[derive(DeriveIden)]
+enum Resource {
+    Table,
+    Id,
+    Name,
+    Availability,
+}
+
+#[derive(DeriveIden)]
+enum ResourceConstraint {
+    Table,
+    Id,
+    TaskId,
+    Type,
+}
+
+#[derive(DeriveIden)]
+enum ResourceConstraintEntry {
+    Table,
+    Id,
+    ResourceConstraintId,
+    ResourceId,
+}
+
+#[derive(DeriveIden)]
+enum Allocation {
+    Table,
+    Id,
+    TaskId,
+    Start,
+    End,
+}
+
+#[derive(DeriveIden)]
+enum AllocatedResource {
+    Table,
+    Id,
+    AllocationId,
+    ResourceId,
+}

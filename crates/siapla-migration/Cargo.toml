@@ -1,0 +1,28 @@
+[package]
+name = "siapla-migration"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+
+publish = false
+
+[lib]
+name = "siapla_migration"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0.97"
+async-std = { version = "1", features = ["attributes", "tokio1"] }
+sqlx = { version = "0.8.3", features = ["sqlite"] }
+
+[dependencies.sea-orm-migration]
+version = "1.1.0"
+features = [
+  # Enable at least one `ASYNC_RUNTIME` and `DATABASE_DRIVER` feature if you want to run migration via CLI.
+  # View the list of supported features at https://www.sea-ql.org/SeaORM/docs/install-and-config/database-and-async-runtime.
+  "runtime-tokio-rustls",  
+  "sqlx-postgres",         
+  "sqlx-sqlite",         
+]

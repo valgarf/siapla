@@ -1,0 +1,59 @@
+use axum::{
+    Extension, Router,
+    routing::{MethodFilter, get, on},
+};
+use juniper::DefaultScalarValue;
+use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
+use juniper_graphql_ws::Schema as _;
+use siapla::gql::{Schema, context::Context};
+use std::{net::SocketAddr, ops::Deref, sync::Arc};
+use tokio::net::TcpListener;
+use tracing::info;
+use tracing_subscriber::EnvFilter;
+// use juniper_graphql_ws::ConnectionConfig;
+// use tokio_stream::wrappers::IntervalStream;
+
+#[axum::debug_handler]
+pub async fn graphql(
+    Extension(schema): Extension<Arc<Schema>>,
+    JuniperRequest(req): JuniperRequest<DefaultScalarValue>,
+) -> JuniperResponse<DefaultScalarValue> {
+    JuniperResponse(req.execute(schema.deref(), &Context::default()).await)
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_span_events(
+            tracing_subscriber::fmt::format::FmtSpan::CLOSE
+                | tracing_subscriber::fmt::format::FmtSpan::NEW,
+        )
+        .compact()
+        .with_env_filter(EnvFilter::try_new("debug").unwrap())
+        .init();
+
+    let app = Router::new()
+        .route(
+            "/graphql",
+            on(MethodFilter::GET.or(MethodFilter::POST), graphql),
+        )
+        // .route(
+        //     "/subscriptions",
+        //     get(ws::<Arc<Schema>>(ConnectionConfig::new(()))),
+        // )
+        .route("/graphiql", get(graphiql("/graphql", "/subscriptions")))
+        .route("/playground", get(playground("/graphql", "/subscriptions")))
+        // .route("/", get(homepage))
+        .layer(Extension(Arc::new(siapla::gql::schema())));
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8880));
+    let listener = TcpListener::bind(addr)
+        .await
+        .unwrap_or_else(|e| panic!("failed to listen on {addr}: {e}"));
+    info!("listening on {addr}");
+    axum::serve(listener, app)
+        .await
+        .unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
+
+    Ok(())
+}
