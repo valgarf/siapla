@@ -1,7 +1,9 @@
 pub mod context;
+pub mod dataloader;
 pub mod mutation;
 pub mod query;
 pub mod subscription;
+pub mod task;
 
 use juniper::*;
 

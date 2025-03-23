@@ -4,9 +4,8 @@ use axum::{
 };
 use juniper::DefaultScalarValue;
 use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
-use juniper_graphql_ws::Schema as _;
 use siapla::gql::{Schema, context::Context};
-use std::{net::SocketAddr, ops::Deref, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -16,9 +15,10 @@ use tracing_subscriber::EnvFilter;
 #[axum::debug_handler]
 pub async fn graphql(
     Extension(schema): Extension<Arc<Schema>>,
+    Extension(context): Extension<Arc<Context>>,
     JuniperRequest(req): JuniperRequest<DefaultScalarValue>,
 ) -> JuniperResponse<DefaultScalarValue> {
-    JuniperResponse(req.execute(schema.deref(), &Context::default()).await)
+    JuniperResponse(req.execute(&schema, &context).await)
 }
 
 #[tokio::main]
@@ -44,7 +44,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/graphiql", get(graphiql("/graphql", "/subscriptions")))
         .route("/playground", get(playground("/graphql", "/subscriptions")))
         // .route("/", get(homepage))
-        .layer(Extension(Arc::new(siapla::gql::schema())));
+        .layer(Extension(Arc::new(siapla::gql::schema())))
+        .layer(Extension(Context::new()));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8880));
     let listener = TcpListener::bind(addr)

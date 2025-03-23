@@ -3,32 +3,80 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "task")]
+#[derive(Copy, Clone, Default, Debug, DeriveEntity)]
+pub struct Entity;
+
+impl EntityName for Entity {
+    fn table_name(&self) -> &str {
+        "task"
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Serialize, Deserialize)]
 pub struct Model {
-    #[sea_orm(primary_key)]
     pub id: i32,
     pub parent_id: Option<i32>,
     pub title: String,
     pub description: String,
     pub earliest_start: Option<DateTime>,
     pub schedule_target: Option<DateTime>,
-    #[sea_orm(column_type = "Float", nullable)]
     pub effort: Option<f32>,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+#[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+pub enum Column {
+    Id,
+    ParentId,
+    Title,
+    Description,
+    EarliestStart,
+    ScheduleTarget,
+    Effort,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
+pub enum PrimaryKey {
+    Id,
+}
+
+impl PrimaryKeyTrait for PrimaryKey {
+    type ValueType = i32;
+    fn auto_increment() -> bool {
+        true
+    }
+}
+
+#[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::allocation::Entity")]
     Allocation,
-    #[sea_orm(
-        belongs_to = "Entity",
-        from = "Column::ParentId",
-        to = "Column::Id",
-        on_update = "Cascade",
-        on_delete = "SetNull"
-    )]
     SelfRef,
+}
+
+impl ColumnTrait for Column {
+    type EntityName = Entity;
+    fn def(&self) -> ColumnDef {
+        match self {
+            Self::Id => ColumnType::Integer.def(),
+            Self::ParentId => ColumnType::Integer.def().null(),
+            Self::Title => ColumnType::String(StringLen::None).def(),
+            Self::Description => ColumnType::String(StringLen::None).def(),
+            Self::EarliestStart => ColumnType::DateTime.def().null(),
+            Self::ScheduleTarget => ColumnType::DateTime.def().null(),
+            Self::Effort => ColumnType::Float.def().null(),
+        }
+    }
+}
+
+impl RelationTrait for Relation {
+    fn def(&self) -> RelationDef {
+        match self {
+            Self::Allocation => Entity::has_many(super::allocation::Entity).into(),
+            Self::SelfRef => Entity::belongs_to(Entity)
+                .from(Column::ParentId)
+                .to(Column::Id)
+                .into(),
+        }
+    }
 }
 
 impl Related<super::allocation::Entity> for Entity {

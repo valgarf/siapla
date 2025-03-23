@@ -3,23 +3,69 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "resource")]
+#[derive(Copy, Clone, Default, Debug, DeriveEntity)]
+pub struct Entity;
+
+impl EntityName for Entity {
+    fn table_name(&self) -> &str {
+        "resource"
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
-    #[sea_orm(primary_key)]
     pub id: i32,
     pub name: String,
     pub availability: String,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+#[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+pub enum Column {
+    Id,
+    Name,
+    Availability,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
+pub enum PrimaryKey {
+    Id,
+}
+
+impl PrimaryKeyTrait for PrimaryKey {
+    type ValueType = i32;
+    fn auto_increment() -> bool {
+        true
+    }
+}
+
+#[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::allocated_resource::Entity")]
     AllocatedResource,
-    #[sea_orm(has_many = "super::resource_constraint::Entity")]
     ResourceConstraint,
-    #[sea_orm(has_many = "super::resource_constraint_entry::Entity")]
     ResourceConstraintEntry,
+}
+
+impl ColumnTrait for Column {
+    type EntityName = Entity;
+    fn def(&self) -> ColumnDef {
+        match self {
+            Self::Id => ColumnType::Integer.def(),
+            Self::Name => ColumnType::String(StringLen::None).def(),
+            Self::Availability => ColumnType::String(StringLen::None).def(),
+        }
+    }
+}
+
+impl RelationTrait for Relation {
+    fn def(&self) -> RelationDef {
+        match self {
+            Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
+            Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
+            Self::ResourceConstraintEntry => {
+                Entity::has_many(super::resource_constraint_entry::Entity).into()
+            }
+        }
+    }
 }
 
 impl Related<super::allocated_resource::Entity> for Entity {

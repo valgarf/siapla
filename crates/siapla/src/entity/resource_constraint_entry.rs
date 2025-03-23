@@ -3,33 +3,71 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
-#[sea_orm(table_name = "resource_constraint_entry")]
+#[derive(Copy, Clone, Default, Debug, DeriveEntity)]
+pub struct Entity;
+
+impl EntityName for Entity {
+    fn table_name(&self) -> &str {
+        "resource_constraint_entry"
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
-    #[sea_orm(primary_key)]
     pub id: i32,
     pub resource_constraint_id: i32,
     pub resource_id: String,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+#[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
+pub enum Column {
+    Id,
+    ResourceConstraintId,
+    ResourceId,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
+pub enum PrimaryKey {
+    Id,
+}
+
+impl PrimaryKeyTrait for PrimaryKey {
+    type ValueType = i32;
+    fn auto_increment() -> bool {
+        true
+    }
+}
+
+#[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::resource::Entity",
-        from = "Column::ResourceId",
-        to = "super::resource::Column::Id",
-        on_update = "Restrict",
-        on_delete = "Restrict"
-    )]
     Resource,
-    #[sea_orm(
-        belongs_to = "super::resource_constraint::Entity",
-        from = "Column::ResourceConstraintId",
-        to = "super::resource_constraint::Column::Id",
-        on_update = "Cascade",
-        on_delete = "Cascade"
-    )]
     ResourceConstraint,
+}
+
+impl ColumnTrait for Column {
+    type EntityName = Entity;
+    fn def(&self) -> ColumnDef {
+        match self {
+            Self::Id => ColumnType::Integer.def(),
+            Self::ResourceConstraintId => ColumnType::Integer.def(),
+            Self::ResourceId => ColumnType::String(StringLen::None).def(),
+        }
+    }
+}
+
+impl RelationTrait for Relation {
+    fn def(&self) -> RelationDef {
+        match self {
+            Self::Resource => Entity::belongs_to(super::resource::Entity)
+                .from(Column::ResourceId)
+                .to(super::resource::Column::Id)
+                .into(),
+            Self::ResourceConstraint => Entity::belongs_to(super::resource_constraint::Entity)
+                .from(Column::ResourceConstraintId)
+                .to(super::resource_constraint::Column::Id)
+                .into(),
+        }
+    }
 }
 
 impl Related<super::resource::Entity> for Entity {
