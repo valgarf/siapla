@@ -14,8 +14,15 @@ generate-entity: (migrate "up")
         -o ./crates/siapla/src/entity
 
 [working-directory("./run-data")]
-serve:
+serve-backend:
     DATABASE_URL="sqlite:./test.sqlite" watchexec -d 1s -o restart -w ../crates cargo run -p siapla --bin siapla-serve
+
+[working-directory("./frontend")]
+serve-frontend:
+    GRAPHQL_URI="http://localhost:8880/graphql" quasar dev
+
+# serve:
+#     just serve-backend
 
 [working-directory("./run-data")]
 export-schema:

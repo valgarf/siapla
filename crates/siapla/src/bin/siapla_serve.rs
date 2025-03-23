@@ -1,5 +1,6 @@
 use axum::{
     Extension, Router,
+    http::Method,
     routing::{MethodFilter, get, on},
 };
 use juniper::DefaultScalarValue;
@@ -7,6 +8,8 @@ use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::Juni
 use siapla::gql::{Schema, context::Context};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
+use tower::ServiceBuilder;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 // use juniper_graphql_ws::ConnectionConfig;
@@ -32,6 +35,11 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_new("debug").unwrap())
         .init();
 
+    let cors = CorsLayer::new()
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any)
+        .allow_origin(tower_http::cors::Any);
+
     let app = Router::new()
         .route(
             "/graphql",
@@ -43,9 +51,13 @@ async fn main() -> anyhow::Result<()> {
         // )
         .route("/graphiql", get(graphiql("/graphql", "/subscriptions")))
         .route("/playground", get(playground("/graphql", "/subscriptions")))
-        // .route("/", get(homepage))
-        .layer(Extension(Arc::new(siapla::gql::schema())))
-        .layer(Extension(Context::new()));
+        .layer(
+            ServiceBuilder::new()
+                .layer(cors)
+                .layer(Extension(Arc::new(siapla::gql::schema())))
+                .layer(Extension(Context::new())),
+        );
+    // .route("/", get(homepage))
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8880));
     let listener = TcpListener::bind(addr)
