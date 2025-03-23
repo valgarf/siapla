@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use thiserror::Error;
 
-pub mod db_type;
 pub mod entity;
 pub mod gql;
 

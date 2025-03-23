@@ -16,10 +16,12 @@ path = "src/bin/siapla_export_schema.rs"
 
 [dependencies]
 anyhow = "1.0.97"
+anymap = "0.12.1"
 axum = { version = "0.8.1", features = ["macros", "ws"] }
 chrono = "0.4.40"
 dataloader = { version = "0.18.0", default-features = false, features = ["runtime-tokio"] }
 futures = "0.3.31"
+itertools = "0.14.0"
 juniper = { version = "0.16.1", features = ["anyhow", "chrono", "schema-language"] }
 juniper_axum = { version = "0.2.0", features = ["subscriptions"] }
 juniper_graphql_ws = { version = "0.4.0", features = ["graphql-transport-ws"] }

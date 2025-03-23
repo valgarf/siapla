@@ -2,10 +2,11 @@ use chrono::NaiveDateTime;
 use juniper::graphql_object;
 
 use super::context::Context;
+use crate::entity::task;
 
 #[graphql_object]
 #[graphql(name = "Task")]
-impl crate::entity::task::Model {
+impl task::Model {
     fn db_id(&self) -> &i32 {
         &self.id
     }
@@ -28,14 +29,8 @@ impl crate::entity::task::Model {
         match self.parent_id {
             None => Ok(None),
             Some(parent_id) => {
-                let res = ctx
-                    .task_loader()
-                    .await
-                    .try_load(parent_id)
-                    .await
-                    .map_err(|_| anyhow::anyhow!("No task exists for ID `{}`", parent_id))?
-                    .map_err(|err| anyhow::anyhow!("{err}"))?;
-                Ok(Some(res))
+                const CIDX: usize = task::Column::Id as usize;
+                ctx.load_one_by_col::<task::Entity, CIDX>(parent_id).await
             }
         }
     }

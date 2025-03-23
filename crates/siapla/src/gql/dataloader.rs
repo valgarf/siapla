@@ -1,84 +1,74 @@
 use std::{collections::HashMap, sync::Arc, sync::Weak};
 
 use dataloader::cached::Loader;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
-use crate::{SiaplaError, entity::task};
+use itertools::Itertools as _;
+use sea_orm::{
+    ColumnTrait, EntityTrait, ModelTrait, QueryFilter, QueryOrder, strum::IntoEnumIterator,
+};
 
 use super::context::Context;
+use crate::SiaplaError;
 
-#[derive(Clone)]
-pub struct IdBatcher {
+pub struct ByColBatcher<ET: EntityTrait, const CIDX: usize>
+where
+    ET::Column: IntoEnumIterator,
+{
     pub ctx: Weak<Context>,
+    pub pd: std::marker::PhantomData<ET>,
 }
 
-impl dataloader::BatchFn<i32, Result<task::Model, Arc<anyhow::Error>>> for IdBatcher {
+async fn fallible_load<ET: EntityTrait, const CIDX: usize>(
+    ctx: &Weak<Context>,
+    values: &[sea_orm::Value],
+) -> Result<HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>, anyhow::Error>
+where
+    ET::Column: IntoEnumIterator,
+{
+    let col: ET::Column = ET::Column::iter()
+        .nth(CIDX)
+        .expect("Loader with invalid column index");
+    let ctx = ctx
+        .upgrade()
+        .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
+    let db = ctx.db().await?;
+    let tasks: Vec<ET::Model> = ET::find()
+        .filter(col.is_in(values.to_vec()))
+        .order_by_asc(col)
+        .all(db)
+        .await?;
+    Ok(tasks
+        .into_iter()
+        .chunk_by(|task| task.get(col))
+        .into_iter()
+        .map(|(key, tasks)| (key, Ok(tasks.collect())))
+        .collect())
+}
+
+impl<ET: EntityTrait, const CIDX: usize>
+    dataloader::BatchFn<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>
+    for ByColBatcher<ET, CIDX>
+where
+    ET::Column: IntoEnumIterator,
+{
     async fn load(
         &mut self,
-        task_ids: &[i32],
-    ) -> HashMap<i32, Result<task::Model, Arc<anyhow::Error>>> {
-        async fn inner_load(
-            ctx: &Weak<Context>,
-            task_ids: &[i32],
-        ) -> Result<HashMap<i32, Result<task::Model, Arc<anyhow::Error>>>, anyhow::Error> {
-            let ctx = ctx
-                .upgrade()
-                .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let db = ctx.db().await?;
-            let tasks = task::Entity::find()
-                .filter(task::Column::Id.is_in(task_ids.to_vec()))
-                .all(db)
-                .await?;
-            Ok(tasks.into_iter().map(|task| (task.id, Ok(task))).collect())
-        }
-        match inner_load(&self.ctx, task_ids).await {
+        values: &[sea_orm::Value],
+    ) -> HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>> {
+        match fallible_load::<ET, CIDX>(&self.ctx, values).await {
             Ok(data) => data,
             Err(err) => {
                 let clonable_err = Arc::new(err);
-                task_ids
+                values
                     .iter()
-                    .map(|k| (*k, Err(clonable_err.clone())))
+                    .map(|k| (k.clone(), Err(clonable_err.clone())))
                     .collect()
             }
         }
     }
 }
 
-// #[derive(Clone)]
-// pub struct Batcher {
-//     pub ctx: Weak<Context>,
-// }
-
-// impl dataloader::BatchFn<i32, Result<task::Model, Arc<anyhow::Error>>> for Batcher {
-//     async fn load(
-//         &mut self,
-//         task_ids: &[i32],
-//     ) -> HashMap<i32, Result<task::Model, Arc<anyhow::Error>>> {
-//         async fn inner_load(
-//             ctx: &Weak<Context>,
-//             task_ids: &[i32],
-//         ) -> Result<HashMap<i32, Result<task::Model, Arc<anyhow::Error>>>, anyhow::Error> {
-//             let ctx = ctx
-//                 .upgrade()
-//                 .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-//             let db = ctx.db().await?;
-//             let tasks = task::Entity::find()
-//                 .filter(task::Column::Id.is_in(task_ids.to_vec()))
-//                 .all(db)
-//                 .await?;
-//             Ok(tasks.into_iter().map(|task| (task.id, Ok(task))).collect())
-//         }
-//         match inner_load(&self.ctx, task_ids).await {
-//             Ok(data) => data,
-//             Err(err) => {
-//                 let clonable_err = Arc::new(err);
-//                 task_ids
-//                     .iter()
-//                     .map(|k| (*k, Err(clonable_err.clone())))
-//                     .collect()
-//             }
-//         }
-//     }
-// }
-
-pub type TaskLoader = Loader<i32, Result<task::Model, Arc<anyhow::Error>>, IdBatcher>;
+pub type ByColLoader<ET, const CIDX: usize> = Loader<
+    sea_orm::Value,
+    Result<Vec<<ET as EntityTrait>::Model>, Arc<anyhow::Error>>,
+    ByColBatcher<ET, CIDX>,
+>;
