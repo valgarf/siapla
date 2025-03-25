@@ -7,19 +7,56 @@ export interface Task {
   dbId: number;
   title: string;
   description: string;
+  parent: Task | null;
+  children: Task[];
 }
 
 export class TaskData {
-  tasks: Task[];
+  _tasks: Map<number, Task>;
+
   public constructor(query: TasksQuery) {
-    const tasks: Task[] = query.tasks.map((t) => {
-      return {
-        dbId: t.dbId,
-        title: t.title,
-        description: t.description,
-      };
-    });
-    this.tasks = tasks;
+    const tasks: Map<number, Task> = new Map(
+      query.tasks.map((t) => {
+        return [
+          t.dbId,
+          {
+            dbId: t.dbId,
+            title: t.title,
+            description: t.description,
+            parent: null,
+            children: [],
+          },
+        ];
+      }),
+    );
+
+    for (const t of query.tasks) {
+      if (t.parent != null) {
+        const task = tasks.get(t.dbId);
+        const parent = tasks.get(t.parent.dbId);
+        if (task != null && parent != null) {
+          task.parent = parent;
+          parent.children.push(task);
+        }
+      }
+    }
+    this._tasks = tasks;
+  }
+
+  public get tasks() {
+    return this._tasks.values();
+  }
+
+  public get top_level_tasks() {
+    return Array.from(this._tasks.values()).filter((value) => value.parent == null);
+  }
+
+  public get leaf_tasks() {
+    return Array.from(this._tasks.values()).filter((value) => value.children.length == 0);
+  }
+
+  public task(dbId: number): Task | undefined {
+    return this._tasks.get(dbId);
   }
 }
 
@@ -34,6 +71,9 @@ const TASK_QUERY = graphql(`
       dbId
       title
       description
+      parent {
+        dbId
+      }
     }
   }
 `);

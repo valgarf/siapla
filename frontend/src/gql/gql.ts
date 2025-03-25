@@ -14,12 +14,10 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    " \n  query tasks{\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n": typeof types.TasksDocument,
-    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n": typeof types.TasksDocument,
+    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n": typeof types.TasksDocument,
 };
 const documents: Documents = {
-    " \n  query tasks{\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n": types.TasksDocument,
-    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n": types.TasksDocument,
+    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n": types.TasksDocument,
 };
 
 /**
@@ -39,11 +37,7 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: " \n  query tasks{\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n"): (typeof documents)[" \n  query tasks{\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n"): (typeof documents)["\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n    }\n  }\n"];
+export function graphql(source: "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n"): (typeof documents)["\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

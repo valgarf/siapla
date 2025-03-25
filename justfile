@@ -17,6 +17,7 @@ generate-entity: (migrate "up")
 serve-backend:
     DATABASE_URL="sqlite:./test.sqlite" watchexec -d 1s -o restart -w ../crates cargo run -p siapla --bin siapla-serve
 
+
 [working-directory("./frontend")]
 serve-frontend:
     GRAPHQL_URI="http://localhost:8880/graphql" quasar dev
@@ -26,6 +27,10 @@ serve:
     just serve-backend &
     just serve-frontend &
     wait
+
+[working-directory("./frontend")]
+generate-frontend-gql:
+    npm run codegen
 
 [working-directory("./run-data")]
 export-schema:
