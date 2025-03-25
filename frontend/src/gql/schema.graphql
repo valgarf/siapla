@@ -1,0 +1,31 @@
+"""
+Combined date and time (without time zone) in `yyyy-MM-dd HH:mm:ss` format.
+
+See also [`chrono::NaiveDateTime`][1] for details.
+
+[1]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html
+"""
+scalar LocalDateTime
+
+type Mutation {
+  new: Mutation!
+}
+
+type Query {
+  helloWorld: String!
+  tasks: [Task!]!
+}
+
+type Subscription {
+  apiVersion: String!
+}
+
+type Task {
+  dbId: Int!
+  description: String!
+  earliestStart: LocalDateTime
+  effort: Float
+  parent: Task
+  scheduleTarget: LocalDateTime
+  title: String!
+}

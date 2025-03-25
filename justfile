@@ -21,8 +21,11 @@ serve-backend:
 serve-frontend:
     GRAPHQL_URI="http://localhost:8880/graphql" quasar dev
 
-# serve:
-#     just serve-backend
+serve:
+    #!/usr/bin/env bash
+    just serve-backend &
+    just serve-frontend &
+    wait
 
 [working-directory("./run-data")]
 export-schema:

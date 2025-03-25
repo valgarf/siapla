@@ -10,7 +10,7 @@
     <p v-else-if="error">Error: {{ error }}</p>
     <div v-else>
       <ul>
-        <li v-for="t in result.tasks" :key="t.dbId">
+        <li v-for="t in data?.tasks" :key="t.dbId">
           {{ t.title }} | {{ t.description }}
         </li>
       </ul>
@@ -24,22 +24,15 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue';
 import type { Todo, Meta } from './models';
-import { useQuery } from '@vue/apollo-composable'
-import { gql } from '@apollo/client/core'
+import { all_tasks } from 'src/model/tasks';
 
-// error is a possible return value...
-const { result, loading, error } = useQuery(gql` 
-  query{
-    tasks {
-      dbId
-      title
-      description
-    }
-  }
-`)
+
+const { data, query: { loading, error } } = all_tasks();
+
+// const { result, loading, error } = useQuery(TASK_QUERY)
 
 watchEffect(() => {
-  console.log(error, result);
+  console.log(error, data);
 })
 
 

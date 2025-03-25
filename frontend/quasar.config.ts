@@ -97,7 +97,21 @@ export default defineConfig((/* ctx */) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#devserver
     devServer: {
       // https: true,
-      open: true, // opens browser window automatically
+      open: false, // opens browser window automatically
+      // NOTE: currently takes target from env, which is more flexible
+      // proxy: {
+      //   // proxy all requests starting with /graphql
+      //   '/graphql': {
+      //     target: 'http://localhost:8124',
+      //     changeOrigin: true,
+      //     pathRewrite: {
+      //       '^/graphql': '/graphql'
+      //     }
+      //   }
+      // },
+      watch: {
+        ignored: ['**/node_modules/**'],
+      },
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework

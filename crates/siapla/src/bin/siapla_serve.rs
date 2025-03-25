@@ -1,6 +1,5 @@
 use axum::{
     Extension, Router,
-    http::Method,
     routing::{MethodFilter, get, on},
 };
 use juniper::DefaultScalarValue;
