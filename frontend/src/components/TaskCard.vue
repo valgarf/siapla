@@ -1,5 +1,5 @@
 <template>
-    <q-card v-ripple class="cursor-pointer q-hoverable">
+    <q-card v-ripple class="cursor-pointer q-hoverable" @click="showDetails()">
         <div tabindex="-1" class="q-focus-helper"></div>
         <q-card-section>
             <div class="text-subtitle1">{{ task.title }}</div>
@@ -12,23 +12,25 @@
 </template>
 
 <script setup lang="ts">
-import { watchEffect } from 'vue';
-import { all_tasks, type Task } from 'src/model/tasks';
-
-
-const { data, query: { error } } = all_tasks();
-
-// const { result, loading, error } = useQuery(TASK_QUERY)
-
-watchEffect(() => {
-    console.log(error, data);
-})
-
+import { Dialog } from 'quasar';
+import { type Task } from 'src/model/tasks';
+import TaskDialog from './TaskDialog.vue';
 
 interface Props {
     task: Task;
 };
 
-withDefaults(defineProps<Props>(), {});
+const props = withDefaults(defineProps<Props>(), {});
+
+// details dialog
+function showDetails() {
+    Dialog.create({
+        component: TaskDialog,
+
+        componentProps: {
+            task: props.task,
+        }
+    })
+}
 
 </script>

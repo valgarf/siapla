@@ -8,7 +8,7 @@
       place-items: stretch;
       width:90%;
     ">
-    <q-card v-ripple class="cursor-pointer q-hoverable" style="align-content: center;">
+    <q-card v-ripple class="cursor-pointer q-hoverable" style="align-content: center;" @click="showDetailsNew()">
       <div tabindex="-1" class="q-focus-helper"></div>
       <q-card-section style="text-align: center;">
         <q-icon name="add" size="lg" />
@@ -22,10 +22,11 @@
 import { computed } from 'vue';
 import { all_tasks } from 'src/model/tasks';
 import TaskCard from './TaskCard.vue';
+import TaskDialog from './TaskDialog.vue';
+import { Dialog } from 'quasar';
 
 
 const { data, query: { loading } } = all_tasks();
-
 const tasks = computed(() => {
   const tasks = data.value?.tasks;
   if (tasks == null) {
@@ -37,11 +38,21 @@ const tasks = computed(() => {
 })
 
 interface Props {
-  issuesOnly: boolean;
+  issuesOnly?: boolean;
 };
-
 withDefaults(defineProps<Props>(), {
   issuesOnly: true
 });
+
+// details dialog
+function showDetailsNew() {
+  Dialog.create({
+    component: TaskDialog,
+
+    componentProps: {
+      task: { title: "New Task" },
+    }
+  })
+}
 
 </script>
