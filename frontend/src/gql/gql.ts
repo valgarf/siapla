@@ -15,9 +15,13 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  */
 type Documents = {
     "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n": typeof types.TasksDocument,
+    "\n  mutation task_create($task: TaskCreateInput!) {\n    taskCreate(task: $task) {\n      dbId\n    }\n  }\n": typeof types.Task_CreateDocument,
+    "\n  mutation task_update($task: TaskUpdateInput!) {\n    taskUpdate(task: $task) {\n      dbId\n    }\n  }\n": typeof types.Task_UpdateDocument,
 };
 const documents: Documents = {
     "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n": types.TasksDocument,
+    "\n  mutation task_create($task: TaskCreateInput!) {\n    taskCreate(task: $task) {\n      dbId\n    }\n  }\n": types.Task_CreateDocument,
+    "\n  mutation task_update($task: TaskUpdateInput!) {\n    taskUpdate(task: $task) {\n      dbId\n    }\n  }\n": types.Task_UpdateDocument,
 };
 
 /**
@@ -38,6 +42,14 @@ export function graphql(source: string): unknown;
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n"): (typeof documents)["\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      parent {\n        dbId\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation task_create($task: TaskCreateInput!) {\n    taskCreate(task: $task) {\n      dbId\n    }\n  }\n"): (typeof documents)["\n  mutation task_create($task: TaskCreateInput!) {\n    taskCreate(task: $task) {\n      dbId\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation task_update($task: TaskUpdateInput!) {\n    taskUpdate(task: $task) {\n      dbId\n    }\n  }\n"): (typeof documents)["\n  mutation task_update($task: TaskUpdateInput!) {\n    taskUpdate(task: $task) {\n      dbId\n    }\n  }\n"];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

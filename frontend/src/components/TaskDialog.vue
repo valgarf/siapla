@@ -5,9 +5,10 @@
                 <div class="row items-center">
                     <q-input v-if="edit" outlined class="text-h5 col" v-model="local_task.title" />
                     <div v-else class="text-h5 col">{{ local_task.title }}</div>
-                    <q-btn :outline="edit" :flat="!edit" color="primary" icon="edit" class="q-ma-xs"
-                        @click="toggleEdit()"></q-btn>
+                    <q-btn flat color="primary" :icon="edit ? undefined : 'edit'" class="q-ma-xs"
+                        @click="toggleEdit()">{{ edit ? "Save" : null }}</q-btn>
                     <q-btn flat color="negative" icon="delete" class="q-ma-xs"></q-btn>
+                    <q-btn flat @click="onDialogHide" icon="close"></q-btn>
                 </div>
             </q-card-section>
 
@@ -15,10 +16,6 @@
                 <MarkdownEditor v-if="edit" v-model="local_task.description" />
                 <q-markdown v-else :src="local_task.description" />
             </q-card-section>
-            <q-card-actions>
-                <q-btn flat color="primary" @click="save">Save</q-btn>
-                <q-btn flat @click="onDialogHide">Close</q-btn>
-            </q-card-actions>
         </q-card>
     </q-dialog>
 </template>
@@ -31,7 +28,7 @@
 </style>
 
 <script setup lang="ts">
-import { type Task } from 'src/model/tasks';
+import { save_task, setup_save_mutations, type Task } from 'src/model/tasks';
 
 import { useDialogPluginComponent } from 'quasar'
 import MarkdownEditor from './MarkdownEditor.vue';
@@ -41,13 +38,14 @@ interface Props {
     task: Partial<Task>;
 };
 interface LocalTask extends Partial<Task> {
+    title: string;
     description: string;
 }
 
 
-const props = withDefaults(defineProps<Props>(), { task: () => { return { title: "<New Task>" } } });
+const props = withDefaults(defineProps<Props>(), { task: () => { return {} } });
 
-const local_task_default = { description: "" };
+const local_task_default = { title: "", description: "" };
 const local_task = ref<LocalTask>(local_task_default)
 
 watchEffect(() => {
@@ -68,13 +66,27 @@ const { dialogRef, onDialogHide } = useDialogPluginComponent()
 // onDialogCancel - Function to call to settle dialog with "cancel" outcome
 
 const edit = ref(local_task.value.dbId == null)
-function toggleEdit() {
+async function toggleEdit() {
+    if (edit.value) {
+        await save()
+    }
     edit.value = !edit.value
 }
 
 
-function save() {
-    console.log("SAVE")
+const mutations = setup_save_mutations();
+
+const saving = ref(false)
+async function save() {
+    console.log("SAVE", { ...local_task.value });
+    saving.value = true;
+    try {
+        await save_task(local_task, mutations);
+    }
+    finally {
+        saving.value = false
+    }
+
 }
 
 </script>

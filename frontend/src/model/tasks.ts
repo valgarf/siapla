@@ -1,7 +1,19 @@
-import { useQuery, type UseQueryReturn } from '@vue/apollo-composable';
-import { computed, type ComputedRef } from 'vue';
+import {
+  useMutation,
+  type UseMutationReturn,
+  useQuery,
+  type UseQueryReturn,
+} from '@vue/apollo-composable';
+import { computed, type Ref, type ComputedRef } from 'vue';
 import { graphql } from 'src/gql';
-import { type TasksQuery } from 'src/gql/graphql';
+import {
+  type Exact,
+  type Task_CreateMutation,
+  type Task_UpdateMutation,
+  type TaskCreateInput,
+  type TaskUpdateInput,
+  type TasksQuery,
+} from 'src/gql/graphql';
 
 export interface Task {
   dbId: number;
@@ -90,4 +102,58 @@ export function all_tasks(): TaskReturn {
   });
 
   return { query: query, data: data };
+}
+
+const TASK_CREATE_MUTATION = graphql(`
+  mutation task_create($task: TaskCreateInput!) {
+    taskCreate(task: $task) {
+      dbId
+    }
+  }
+`);
+
+const TASK_UPDATE_MUTATION = graphql(`
+  mutation task_update($task: TaskUpdateInput!) {
+    taskUpdate(task: $task) {
+      dbId
+    }
+  }
+`);
+interface CreateOrUpdateTaskInput extends Partial<Task> {
+  title: string;
+  description: string;
+}
+
+interface TaskMutations {
+  create: UseMutationReturn<Task_CreateMutation, Exact<{ task: TaskCreateInput }>>;
+  update: UseMutationReturn<Task_UpdateMutation, Exact<{ task: TaskUpdateInput }>>;
+}
+
+export function setup_save_mutations(): TaskMutations {
+  return {
+    create: useMutation(TASK_CREATE_MUTATION),
+    update: useMutation(TASK_UPDATE_MUTATION),
+  };
+}
+
+function task_to_obj(task: Ref<CreateOrUpdateTaskInput>): TaskCreateInput {
+  const result: TaskCreateInput & CreateOrUpdateTaskInput = { ...task.value };
+  if (result.parent != null) {
+    result.parentId = result.parent.dbId;
+  }
+  delete result.parent;
+  delete result.children;
+  return result;
+}
+
+export async function save_task(task: Ref<CreateOrUpdateTaskInput>, mutations: TaskMutations) {
+  if (task.value.dbId != null) {
+    await mutations.update.mutate({ task: { dbId: task.value.dbId, ...task_to_obj(task) } });
+  } else {
+    const resp = await mutations.create.mutate({ task: task_to_obj(task) });
+    const dbId = resp?.data?.taskCreate.dbId;
+    if (dbId != null) {
+      task.value.dbId = dbId;
+    }
+  }
 }
