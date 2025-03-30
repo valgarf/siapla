@@ -7,7 +7,7 @@
                     <div v-else class="text-h5 col">{{ local_task.title }}</div>
                     <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary"
                         :disable="taskStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "Save"
-                        : null }}
+                            : null }}
                     </q-btn>
                     <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                         :disable="taskStore.saving" class="q-ma-xs"></q-btn>
@@ -18,6 +18,17 @@
             <q-card-section class="q-pt-none">
                 <MarkdownEditor v-if="edit" v-model="local_task.description" />
                 <q-markdown v-else :src="local_task.description" />
+            </q-card-section>
+
+            <q-card-section>
+                <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="primary"
+                    text-color="primary" color="white" :options="[
+                        { label: 'Requirement', value: TaskDesignation.Requirement },
+                        { label: 'Task', value: TaskDesignation.Task },
+                        { label: 'Milestone', value: TaskDesignation.Milestone }
+                    ]" />
+                <q-chip v-else color="primary" text-color="white" class="q-pa-md">{{
+                    local_task.designation }}</q-chip>
             </q-card-section>
         </q-card>
     </q-dialog>
@@ -34,21 +45,18 @@
 import { Dialog, useDialogPluginComponent } from 'quasar'
 import MarkdownEditor from './MarkdownEditor.vue';
 import { ref, watchEffect } from 'vue';
-import { useTaskStore, type Task } from 'src/stores/task';
+import { type TaskInput, useTaskStore, type Task } from 'src/stores/task';
+import { TaskDesignation } from 'src/gql/graphql';
 
 interface Props {
     task: Partial<Task>;
 };
-interface LocalTask extends Partial<Task> {
-    title: string;
-    description: string;
-}
 
 
 const props = withDefaults(defineProps<Props>(), { task: () => { return {} } });
 
-const local_task_default = { title: "", description: "" };
-const local_task = ref<LocalTask>(local_task_default)
+const local_task_default = { title: "", description: "", designation: TaskDesignation.Task };
+const local_task = ref<TaskInput>(local_task_default)
 
 watchEffect(() => {
     local_task.value = { ...local_task_default, ...props.task }

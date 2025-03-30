@@ -1,7 +1,7 @@
 import { graphql } from 'src/gql';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
-import type { TaskSaveInput, TasksQuery } from 'src/gql/graphql';
+import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
 
 export interface Task {
@@ -12,9 +12,10 @@ export interface Task {
   children: Task[];
 }
 
-interface TaskInput extends Partial<Task> {
+export interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
+  designation: TaskDesignation;
 }
 
 const TASK_QUERY = graphql(`
@@ -23,6 +24,7 @@ const TASK_QUERY = graphql(`
       dbId
       title
       description
+      designation
       parent {
         dbId
       }
@@ -43,6 +45,7 @@ const TASK_DELETE_MUTATION = graphql(`
     taskDelete(taskId: $taskId)
   }
 `);
+
 function convert_query_result(query: TasksQuery) {
   const tasks: Map<number, Task> = new Map(
     query.tasks.map((t) => {
@@ -52,6 +55,7 @@ function convert_query_result(query: TasksQuery) {
           dbId: t.dbId,
           title: t.title,
           description: t.description,
+          designation: t.designation,
           parent: null,
           children: [],
         },

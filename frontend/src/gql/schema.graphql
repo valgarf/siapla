@@ -25,19 +25,31 @@ type Subscription {
 type Task {
   dbId: Int!
   description: String!
+  designation: TaskDesignation!
   earliestStart: LocalDateTime
   effort: Float
   parent: Task
+  predecessors: [Task!]!
   scheduleTarget: LocalDateTime
+  successors: [Task!]!
   title: String!
+}
+
+enum TaskDesignation {
+  MILESTONE
+  REQUIREMENT
+  TASK
 }
 
 input TaskSaveInput {
   dbId: Int
   description: String!
+  designation: TaskDesignation!
   earliesStart: LocalDateTime
   effort: Float
   parentId: Int
+  predecessors: [Int!]
   scheduleTarget: LocalDateTime
+  successors: [Int!]
   title: String!
 }
