@@ -9,8 +9,7 @@ scalar LocalDateTime
 
 type Mutation {
   new: Mutation!
-  taskCreate(task: TaskCreateInput!): Task!
-  taskUpdate(task: TaskUpdateInput!): Task!
+  taskSave(task: TaskSaveInput!): Task!
 }
 
 type Query {
@@ -32,21 +31,12 @@ type Task {
   title: String!
 }
 
-input TaskCreateInput {
+input TaskSaveInput {
+  dbId: Int
   description: String!
   earliesStart: LocalDateTime
   effort: Float
   parentId: Int
   scheduleTarget: LocalDateTime
   title: String!
-}
-
-input TaskUpdateInput {
-  dbId: Int!
-  description: String
-  earliesStart: LocalDateTime
-  effort: Float
-  parentId: Int
-  scheduleTarget: LocalDateTime
-  title: String
 }

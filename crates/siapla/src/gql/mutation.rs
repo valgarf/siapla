@@ -3,10 +3,7 @@ use sea_orm::ActiveModelTrait;
 
 use crate::entity::task;
 
-use super::{
-    context::Context,
-    task::{TaskCreateInput, TaskUpdateInput},
-};
+use super::{context::Context, task::TaskSaveInput};
 
 #[derive(Default)]
 pub struct Mutation {}
@@ -18,15 +15,13 @@ impl Mutation {
         Default::default()
     }
 
-    async fn task_create(ctx: &Context, task: TaskCreateInput) -> FieldResult<task::Model> {
-        Ok(task::ActiveModel::from(task)
-            .insert(ctx.db().await?)
-            .await?)
-    }
-
-    async fn task_update(ctx: &Context, task: TaskUpdateInput) -> FieldResult<task::Model> {
-        Ok(task::ActiveModel::from(task)
-            .update(ctx.db().await?)
-            .await?)
+    async fn task_save(ctx: &Context, task: TaskSaveInput) -> FieldResult<task::Model> {
+        let am = task::ActiveModel::from(task);
+        let db = ctx.db().await?;
+        if am.id.is_set() {
+            Ok(am.update(db).await?)
+        } else {
+            Ok(am.insert(db).await?)
+        }
     }
 }

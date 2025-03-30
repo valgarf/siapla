@@ -6,6 +6,7 @@ macro_rules! opt_to_av {
         }
     };
 }
+pub(crate) use opt_to_av;
 
 macro_rules! nullable_to_av {
     ($opt: expr) => {
@@ -18,4 +19,3 @@ macro_rules! nullable_to_av {
 }
 
 pub(crate) use nullable_to_av;
-pub(crate) use opt_to_av;

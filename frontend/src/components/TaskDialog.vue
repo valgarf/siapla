@@ -5,8 +5,9 @@
                 <div class="row items-center">
                     <q-input v-if="edit" outlined class="text-h5 col" v-model="local_task.title" />
                     <div v-else class="text-h5 col">{{ local_task.title }}</div>
-                    <q-btn flat color="primary" :icon="edit ? undefined : 'edit'" class="q-ma-xs"
-                        @click="toggleEdit()">{{ edit ? "Save" : null }}</q-btn>
+                    <q-btn flat :loading="saving" color="primary" :icon="edit ? undefined : 'edit'" class="q-ma-xs"
+                        @click="toggleEdit()">{{ edit ? "Save" : null }}
+                    </q-btn>
                     <q-btn flat color="negative" icon="delete" class="q-ma-xs"></q-btn>
                     <q-btn flat @click="onDialogHide" icon="close"></q-btn>
                 </div>
@@ -28,7 +29,7 @@
 </style>
 
 <script setup lang="ts">
-import { save_task, setup_save_mutations, type Task } from 'src/model/tasks';
+import { save_task as save_task, setup_save_mutations, type Task } from 'src/model/tasks';
 
 import { useDialogPluginComponent } from 'quasar'
 import MarkdownEditor from './MarkdownEditor.vue';
@@ -52,9 +53,10 @@ watchEffect(() => {
     local_task.value = { ...local_task_default, ...props.task }
 })
 
-defineEmits([
+const emit = defineEmits([
     // required by dialog plugin
-    ...useDialogPluginComponent.emits
+    ...useDialogPluginComponent.emits,
+    'taskStored'
 ])
 
 const { dialogRef, onDialogHide } = useDialogPluginComponent()
@@ -77,11 +79,13 @@ async function toggleEdit() {
 const mutations = setup_save_mutations();
 
 const saving = ref(false)
+
 async function save() {
     console.log("SAVE", { ...local_task.value });
     saving.value = true;
     try {
         await save_task(local_task, mutations);
+        emit('taskStored', local_task.value)
     }
     finally {
         saving.value = false

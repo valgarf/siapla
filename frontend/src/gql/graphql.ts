@@ -27,18 +27,12 @@ export type Scalars = {
 export type Mutation = {
   __typename?: 'Mutation';
   new: Mutation;
-  taskCreate: Task;
-  taskUpdate: Task;
+  taskSave: Task;
 };
 
 
-export type MutationTaskCreateArgs = {
-  task: TaskCreateInput;
-};
-
-
-export type MutationTaskUpdateArgs = {
-  task: TaskUpdateInput;
+export type MutationTaskSaveArgs = {
+  task: TaskSaveInput;
 };
 
 export type Query = {
@@ -63,7 +57,8 @@ export type Task = {
   title: Scalars['String']['output'];
 };
 
-export type TaskCreateInput = {
+export type TaskSaveInput = {
+  dbId?: InputMaybe<Scalars['Int']['input']>;
   description: Scalars['String']['input'];
   earliesStart?: InputMaybe<Scalars['LocalDateTime']['input']>;
   effort?: InputMaybe<Scalars['Float']['input']>;
@@ -72,36 +67,18 @@ export type TaskCreateInput = {
   title: Scalars['String']['input'];
 };
 
-export type TaskUpdateInput = {
-  dbId: Scalars['Int']['input'];
-  description?: InputMaybe<Scalars['String']['input']>;
-  earliesStart?: InputMaybe<Scalars['LocalDateTime']['input']>;
-  effort?: InputMaybe<Scalars['Float']['input']>;
-  parentId?: InputMaybe<Scalars['Int']['input']>;
-  scheduleTarget?: InputMaybe<Scalars['LocalDateTime']['input']>;
-  title?: InputMaybe<Scalars['String']['input']>;
-};
-
 export type TasksQueryVariables = Exact<{ [key: string]: never; }>;
 
 
 export type TasksQuery = { __typename?: 'Query', tasks: Array<{ __typename?: 'Task', dbId: number, title: string, description: string, parent?: { __typename?: 'Task', dbId: number } | null }> };
 
-export type Task_CreateMutationVariables = Exact<{
-  task: TaskCreateInput;
+export type Task_SaveMutationVariables = Exact<{
+  task: TaskSaveInput;
 }>;
 
 
-export type Task_CreateMutation = { __typename?: 'Mutation', taskCreate: { __typename?: 'Task', dbId: number } };
-
-export type Task_UpdateMutationVariables = Exact<{
-  task: TaskUpdateInput;
-}>;
-
-
-export type Task_UpdateMutation = { __typename?: 'Mutation', taskUpdate: { __typename?: 'Task', dbId: number } };
+export type Task_SaveMutation = { __typename?: 'Mutation', taskSave: { __typename?: 'Task', dbId: number } };
 
 
 export const TasksDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"tasks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"tasks"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"parent"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}}]} as unknown as DocumentNode<TasksQuery, TasksQueryVariables>;
-export const Task_CreateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"task_create"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"task"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TaskCreateInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taskCreate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"task"},"value":{"kind":"Variable","name":{"kind":"Name","value":"task"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]} as unknown as DocumentNode<Task_CreateMutation, Task_CreateMutationVariables>;
-export const Task_UpdateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"task_update"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"task"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TaskUpdateInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taskUpdate"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"task"},"value":{"kind":"Variable","name":{"kind":"Name","value":"task"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]} as unknown as DocumentNode<Task_UpdateMutation, Task_UpdateMutationVariables>;
+export const Task_SaveDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"task_save"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"task"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"TaskSaveInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taskSave"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"task"},"value":{"kind":"Variable","name":{"kind":"Name","value":"task"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]} as unknown as DocumentNode<Task_SaveMutation, Task_SaveMutationVariables>;

@@ -8,11 +8,9 @@ import { computed, type Ref, type ComputedRef } from 'vue';
 import { graphql } from 'src/gql';
 import {
   type Exact,
-  type Task_CreateMutation,
-  type Task_UpdateMutation,
-  type TaskCreateInput,
-  type TaskUpdateInput,
   type TasksQuery,
+  type Task_SaveMutation as Task_SaveMutation,
+  type TaskSaveInput as TaskSaveInput,
 } from 'src/gql/graphql';
 
 export interface Task {
@@ -104,56 +102,43 @@ export function all_tasks(): TaskReturn {
   return { query: query, data: data };
 }
 
-const TASK_CREATE_MUTATION = graphql(`
-  mutation task_create($task: TaskCreateInput!) {
-    taskCreate(task: $task) {
+const TASK_SAVE_MUTATION = graphql(`
+  mutation task_save($task: TaskSaveInput!) {
+    taskSave(task: $task) {
       dbId
     }
   }
 `);
-
-const TASK_UPDATE_MUTATION = graphql(`
-  mutation task_update($task: TaskUpdateInput!) {
-    taskUpdate(task: $task) {
-      dbId
-    }
-  }
-`);
-interface CreateOrUpdateTaskInput extends Partial<Task> {
+interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
 }
 
 interface TaskMutations {
-  create: UseMutationReturn<Task_CreateMutation, Exact<{ task: TaskCreateInput }>>;
-  update: UseMutationReturn<Task_UpdateMutation, Exact<{ task: TaskUpdateInput }>>;
+  store: UseMutationReturn<Task_SaveMutation, Exact<{ task: TaskSaveInput }>>;
 }
 
 export function setup_save_mutations(): TaskMutations {
   return {
-    create: useMutation(TASK_CREATE_MUTATION),
-    update: useMutation(TASK_UPDATE_MUTATION),
+    store: useMutation(TASK_SAVE_MUTATION),
   };
 }
 
-function task_to_obj(task: Ref<CreateOrUpdateTaskInput>): TaskCreateInput {
-  const result: TaskCreateInput & CreateOrUpdateTaskInput = { ...task.value };
-  if (result.parent != null) {
-    result.parentId = result.parent.dbId;
+function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { parent, children, ...fields } = task.value;
+  const result: TaskSaveInput = { ...fields };
+  if (parent != null) {
+    result.parentId = parent.dbId;
   }
-  delete result.parent;
-  delete result.children;
   return result;
 }
 
-export async function save_task(task: Ref<CreateOrUpdateTaskInput>, mutations: TaskMutations) {
-  if (task.value.dbId != null) {
-    await mutations.update.mutate({ task: { dbId: task.value.dbId, ...task_to_obj(task) } });
-  } else {
-    const resp = await mutations.create.mutate({ task: task_to_obj(task) });
-    const dbId = resp?.data?.taskCreate.dbId;
-    if (dbId != null) {
-      task.value.dbId = dbId;
-    }
+export async function save_task(task: Ref<TaskInput>, mutations: TaskMutations) {
+  const resp = await mutations.store.mutate({ task: task_to_obj(task) });
+  const dbId = resp?.data?.taskSave.dbId;
+  if (dbId != null) {
+    task.value.dbId = dbId;
   }
+  // TODO: generic GQL error messages as notifications?
 }
