@@ -4,6 +4,7 @@ pub mod prelude;
 
 pub mod allocated_resource;
 pub mod allocation;
+pub mod dependency;
 pub mod resource;
 pub mod resource_constraint;
 pub mod resource_constraint_entry;

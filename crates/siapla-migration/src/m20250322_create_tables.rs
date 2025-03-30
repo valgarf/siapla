@@ -17,6 +17,7 @@ impl MigrationTrait for Migration {
                     .col(integer_null(Task::ParentId))
                     .col(string(Task::Title))
                     .col(string(Task::Description))
+                    .col(string(Task::Designation))
                     .col(date_time_null(Task::EarliestStart))
                     .col(date_time_null(Task::ScheduleTarget))
                     .col(float_null(Task::Effort))
@@ -28,6 +29,54 @@ impl MigrationTrait for Migration {
                             .on_delete(ForeignKeyAction::SetNull)
                             .on_update(ForeignKeyAction::Cascade),
                     )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Dependency::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Dependency::Id))
+                    .col(string(Dependency::PredecessorId))
+                    .col(string(Dependency::SuccessorId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Dependency_Predecessor")
+                            .from(Dependency::Table, Dependency::PredecessorId)
+                            .to(Task::Table, Task::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Dependency_Successor")
+                            .from(Dependency::Table, Dependency::SuccessorId)
+                            .to(Task::Table, Task::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("IDX_Dependency_PredecessorId")
+                    .table(Dependency::Table)
+                    .col(Dependency::PredecessorId)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("IDX_Dependency_SuccessorId")
+                    .table(Dependency::Table)
+                    .col(Dependency::SuccessorId)
                     .to_owned(),
             )
             .await?;
@@ -151,30 +200,56 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(Task::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(AllocatedResource::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
             .await?;
 
         manager
-            .drop_table(Table::drop().table(Resource::Table).to_owned())
-            .await?;
-
-        manager
-            .drop_table(Table::drop().table(ResourceConstraint::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(Allocation::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
             .await?;
 
         manager
             .drop_table(
                 Table::drop()
                     .table(ResourceConstraintEntry::Table)
+                    .if_exists()
                     .to_owned(),
             )
             .await?;
 
         manager
-            .drop_table(Table::drop().table(Allocation::Table).to_owned())
+            .drop_table(
+                Table::drop()
+                    .table(ResourceConstraint::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
             .await?;
+
         manager
-            .drop_table(Table::drop().table(AllocatedResource::Table).to_owned())
+            .drop_table(Table::drop().table(Resource::Table).if_exists().to_owned())
+            .await?;
+
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Dependency::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .drop_table(Table::drop().table(Task::Table).if_exists().to_owned())
             .await?;
 
         Ok(())
@@ -188,9 +263,18 @@ enum Task {
     ParentId,
     Title,
     Description,
+    Designation,
     EarliestStart,
     ScheduleTarget,
     Effort,
+}
+
+#[derive(DeriveIden)]
+enum Dependency {
+    Table,
+    Id,
+    PredecessorId,
+    SuccessorId,
 }
 
 #[derive(DeriveIden)]

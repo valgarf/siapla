@@ -2,6 +2,7 @@
 
 pub use super::allocated_resource::Entity as AllocatedResource;
 pub use super::allocation::Entity as Allocation;
+pub use super::dependency::Entity as Dependency;
 pub use super::resource::Entity as Resource;
 pub use super::resource_constraint::Entity as ResourceConstraint;
 pub use super::resource_constraint_entry::Entity as ResourceConstraintEntry;
