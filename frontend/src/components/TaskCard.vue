@@ -13,8 +13,8 @@
 
 <script setup lang="ts">
 import { Dialog } from 'quasar';
-import { type Task } from 'src/model/tasks';
 import TaskDialog from './TaskDialog.vue';
+import { type Task } from 'src/stores/task';
 
 interface Props {
     task: Task;

@@ -6,11 +6,11 @@
         {{ todo.id }} - {{ todo.content }}
       </li>
     </ul>
-    <p v-if="loading">Loading GQL...</p>
-    <p v-else-if="error">Error: {{ error }}</p>
+    <p v-if="taskStore.loading">Loading GQL...</p>
+    <p v-else-if="taskStore.apollo_errors">Error: {{ taskStore.apollo_errors }}</p>
     <div v-else>
       <ul>
-        <li v-for="t in data?.tasks" :key="t.dbId">
+        <li v-for="t in taskStore.tasks" :key="t.dbId">
           {{ t.title }} | {{ t.description }}
         </li>
       </ul>
@@ -22,18 +22,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watchEffect } from 'vue';
+import { computed, ref } from 'vue';
 import type { Todo, Meta } from './models';
-import { all_tasks } from 'src/model/tasks';
+import { useTaskStore } from 'src/stores/task';
 
-
-const { data, query: { loading, error } } = all_tasks();
-
-// const { result, loading, error } = useQuery(TASK_QUERY)
-
-watchEffect(() => {
-  console.log(error, data);
-})
+const taskStore = useTaskStore();
 
 
 interface Props {

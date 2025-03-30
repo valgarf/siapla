@@ -1,5 +1,5 @@
 <template>
-  <div v-if="!loading" style="
+  <div v-if="!taskStore.loading" style="
       display:inline-grid;
       grid-template-columns: repeat(auto-fill, 200px);
       grid-auto-columns: 200px;
@@ -20,19 +20,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { all_tasks } from 'src/model/tasks';
 import TaskCard from './TaskCard.vue';
 import TaskDialog from './TaskDialog.vue';
 import { Dialog } from 'quasar';
+import { useTaskStore } from 'src/stores/task';
 
 
-const { data, query: { loading } } = all_tasks();
+const taskStore = useTaskStore();
+
 const tasks = computed(() => {
-  const tasks = data.value?.tasks;
-  if (tasks == null) {
-    return [];
-  }
-  const result = Array.from(tasks)
+  const result = [...taskStore.tasks];
   result.sort((t1, t2) => t1.title < t2.title ? 1 : -1)
   return result
 })
