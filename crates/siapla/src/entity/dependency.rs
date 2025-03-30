@@ -15,8 +15,8 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub predecessor_id: String,
-    pub successor_id: String,
+    pub predecessor_id: i32,
+    pub successor_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -49,8 +49,8 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::PredecessorId => ColumnType::String(StringLen::None).def(),
-            Self::SuccessorId => ColumnType::String(StringLen::None).def(),
+            Self::PredecessorId => ColumnType::Integer.def(),
+            Self::SuccessorId => ColumnType::Integer.def(),
         }
     }
 }

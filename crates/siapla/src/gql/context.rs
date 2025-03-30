@@ -5,6 +5,7 @@ use std::{
 };
 
 use super::dataloader::{ByColBatcher, ByColLoader};
+use futures::TryFutureExt;
 use sea_orm::{Database, DatabaseConnection, EntityTrait, strum::IntoEnumIterator};
 use tokio::sync::{OnceCell, RwLock};
 #[derive(Clone)]
@@ -58,62 +59,80 @@ impl Context {
     /// const CIDX: usize = task::Column::Id as usize;
     /// ctx.load_by_col::<task::Entity, CIDX>(parent_id).await
     /// ```
-    pub async fn load_by_col<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_by_col<ET: EntityTrait, const CIDX: usize>(
         &self,
         value: impl Into<sea_orm::Value>,
-    ) -> anyhow::Result<Vec<ET::Model>>
+    ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
     where
         ET::Column: IntoEnumIterator,
     {
-        // check that the column exists
-        <ET::Column as IntoEnumIterator>::iter()
-            .nth(CIDX)
-            .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
-        loop {
-            let read_loaders = self.by_col_loaders.read().await;
-            let opt_loader = read_loaders.get::<ByColLoader<ET, CIDX>>();
-            let loader = match opt_loader {
-                Some(loader) => loader,
-                None => {
-                    drop(read_loaders);
-                    let mut write_loaders = self.by_col_loaders.write().await;
-                    let loader_entry = write_loaders.entry::<ByColLoader<ET, CIDX>>();
-                    match loader_entry {
-                        anymap::Entry::Occupied(_) => {
-                            // retry with a read lock
+        let loaders = Arc::clone(&self.by_col_loaders);
+        let me = self.me.clone();
+        let value: sea_orm::Value = value.into();
+        let fut = async move {
+            // check that the column exists
+            <ET::Column as IntoEnumIterator>::iter()
+                .nth(CIDX)
+                .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
+            loop {
+                let read_loaders = loaders.read().await;
+                let opt_loader = read_loaders.get::<ByColLoader<ET, CIDX>>();
+                let loader = match opt_loader {
+                    Some(loader) => loader,
+                    None => {
+                        drop(read_loaders);
+                        let mut write_loaders = loaders.write().await;
+                        let loader_entry = write_loaders.entry::<ByColLoader<ET, CIDX>>();
+                        match loader_entry {
+                            anymap::Entry::Occupied(_) => {
+                                // retry with a read lock
+                            }
+                            anymap::Entry::Vacant(entry) => {
+                                // insert new loader and then retry with read lock
+                                let loader =
+                                    ByColLoader::<ET, CIDX>::new(ByColBatcher::<ET, CIDX> {
+                                        ctx: me.clone(),
+                                        pd: PhantomData,
+                                    })
+                                    .with_yield_count(100);
+                                entry.insert(loader);
+                            }
                         }
-                        anymap::Entry::Vacant(entry) => {
-                            // insert new loader and then retry with read lock
-                            let loader = ByColLoader::<ET, CIDX>::new(ByColBatcher::<ET, CIDX> {
-                                ctx: self.me.clone(),
-                                pd: PhantomData,
-                            })
-                            .with_yield_count(100);
-                            entry.insert(loader);
-                        }
+                        drop(write_loaders);
+                        continue;
                     }
-                    drop(write_loaders);
-                    continue;
-                }
-            };
-            return load_by_column_value(loader, value).await;
-        }
+                };
+                return load_by_column_value(loader, value).await;
+            }
+        };
+        fut
     }
 
-    pub async fn load_one_by_col<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_one_by_col<ET: EntityTrait, const CIDX: usize>(
         &self,
         value: impl Into<sea_orm::Value>,
-    ) -> anyhow::Result<Option<ET::Model>>
+    ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
     where
         ET::Column: IntoEnumIterator,
     {
-        let mut res = self.load_by_col::<ET, CIDX>(value).await?;
-        if res.is_empty() {
-            Ok(None)
-        } else if res.len() == 1 {
-            Ok(res.drain(..).next())
-        } else {
-            Err(anyhow::anyhow!("More than one entry found"))
-        }
+        let fut = self.load_by_col::<ET, CIDX>(value);
+        let new_fut = fut.and_then(|mut res: Vec<ET::Model>| async move {
+            if res.is_empty() {
+                Ok(None)
+            } else if res.len() == 1 {
+                Ok(res.drain(..).next())
+            } else {
+                Err(anyhow::anyhow!("More than one entry found"))
+            }
+        });
+        new_fut
+        // let mut res = self.load_by_col::<ET, CIDX>(value).await?;
+        // if res.is_empty() {
+        //     Ok(None)
+        // } else if res.len() == 1 {
+        //     Ok(res.drain(..).next())
+        // } else {
+        //     Err(anyhow::anyhow!("More than one entry found"))
+        // }
     }
 }

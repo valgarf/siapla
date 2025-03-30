@@ -39,8 +39,8 @@ impl MigrationTrait for Migration {
                     .table(Dependency::Table)
                     .if_not_exists()
                     .col(pk_auto(Dependency::Id))
-                    .col(string(Dependency::PredecessorId))
-                    .col(string(Dependency::SuccessorId))
+                    .col(integer(Dependency::PredecessorId))
+                    .col(integer(Dependency::SuccessorId))
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_Dependency_Predecessor")
