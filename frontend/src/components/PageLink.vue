@@ -1,5 +1,5 @@
 <template>
-  <q-item clickable tag="a" target="_blank" :to="link">
+  <q-item clickable tag="a" :target="newPage ? '_blank' : undefined" :to="link">
     <q-item-section v-if="icon" avatar>
       <q-icon :name="icon" />
     </q-item-section>
@@ -17,11 +17,13 @@ export interface PageLinkProps {
   caption?: string;
   link?: string;
   icon?: string;
+  newPage?: boolean;
 };
 
 withDefaults(defineProps<PageLinkProps>(), {
   caption: '',
   link: '#',
   icon: '',
+  newPage: false,
 });
 </script>
