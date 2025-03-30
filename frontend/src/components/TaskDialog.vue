@@ -5,10 +5,12 @@
                 <div class="row items-center">
                     <q-input v-if="edit" outlined class="text-h5 col" v-model="local_task.title" />
                     <div v-else class="text-h5 col">{{ local_task.title }}</div>
-                    <q-btn flat :loading="taskStore.saving" color="primary" :icon="edit ? undefined : 'edit'"
-                        class="q-ma-xs" @click="toggleEdit()">{{ edit ? "Save" : null }}
+                    <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary"
+                        :disable="taskStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "Save"
+                        : null }}
                     </q-btn>
-                    <q-btn flat color="negative" icon="delete" class="q-ma-xs"></q-btn>
+                    <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
+                        :disable="taskStore.saving" class="q-ma-xs"></q-btn>
                     <q-btn flat @click="onDialogHide" icon="close"></q-btn>
                 </div>
             </q-card-section>
@@ -29,7 +31,7 @@
 </style>
 
 <script setup lang="ts">
-import { useDialogPluginComponent } from 'quasar'
+import { Dialog, useDialogPluginComponent } from 'quasar'
 import MarkdownEditor from './MarkdownEditor.vue';
 import { ref, watchEffect } from 'vue';
 import { useTaskStore, type Task } from 'src/stores/task';
@@ -79,6 +81,29 @@ const taskStore = useTaskStore()
 async function save() {
     console.log("SAVE", { ...local_task.value });
     await taskStore.save_task(local_task);
+}
+
+async function deleteTask() {
+    const taskId = local_task.value.dbId
+    if (taskId == null) {
+        onDialogHide()
+        return
+    }
+    const dialogResolved = new Promise((resolve, reject) => {
+        Dialog.create({
+            title: 'Delete?',
+            message: 'Would you really like to delete the task?',
+            cancel: true,
+            persistent: true
+        }).onOk(resolve).onCancel(reject).onDismiss(reject)
+    })
+    try {
+        await dialogResolved
+    } catch {
+        return
+    }
+    await taskStore.delete_task(taskId);
+    onDialogHide();
 }
 
 </script>

@@ -9,6 +9,7 @@ scalar LocalDateTime
 
 type Mutation {
   new: Mutation!
+  taskDelete(taskId: Int!): Boolean!
   taskSave(task: TaskSaveInput!): Task!
 }
 
