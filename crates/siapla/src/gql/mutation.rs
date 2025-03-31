@@ -21,7 +21,36 @@ impl Mutation {
         let predecessors = task.predecessors.take();
         let successors = task.successors.take();
         let am = task::ActiveModel::from(task);
-        let txn = ctx.db().await?.begin().await?;
+        let db = ctx.db().await?;
+        // Note: must be done outside of a transaction, otherwise it will block for sqlite
+        let mut existing_predecessors: HashSet<i32> = Default::default();
+        let mut existing_successors: HashSet<i32> = Default::default();
+        const CIDX: usize = task::Column::Id as usize;
+        if (predecessors.is_some() || successors.is_some()) && am.id.is_set() {
+            let model = ctx
+                .load_one_by_col::<task::Entity, CIDX>(am.id.clone().into_value().unwrap())
+                .await?;
+            if let Some(model) = model {
+                if predecessors.is_some() {
+                    existing_predecessors = model
+                        .predecessors(ctx)
+                        .await?
+                        .iter()
+                        .map(|el| el.id)
+                        .collect();
+                }
+                if predecessors.is_some() {
+                    existing_successors = model
+                        .successors(ctx)
+                        .await?
+                        .iter()
+                        .map(|el| el.id)
+                        .collect();
+                }
+            }
+        }
+
+        let txn = db.begin().await?;
         tokio::time::sleep(Duration::from_secs(3)).await;
         let model = if am.id.is_set() {
             am.update(&txn).await?
@@ -30,57 +59,55 @@ impl Mutation {
         };
 
         if let Some(mut predecessors) = predecessors {
-            let existing: HashSet<i32> = model
-                .predecessors(ctx)
-                .await?
-                .iter()
-                .map(|el| el.id)
-                .collect();
+            let existing = existing_predecessors;
             let target: HashSet<i32> = HashSet::from_iter(predecessors.drain(..));
-            let remove = existing.difference(&target);
-            let add = target.difference(&existing);
-            dependency::Entity::delete_many()
-                .filter(
-                    dependency::Column::SuccessorId
-                        .eq(model.id)
-                        .and(dependency::Column::PredecessorId.is_in(remove.cloned())),
-                )
+            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
+            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+            if !remove.is_empty() {
+                dependency::Entity::delete_many()
+                    .filter(
+                        dependency::Column::SuccessorId
+                            .eq(model.id)
+                            .and(dependency::Column::PredecessorId.is_in(remove)),
+                    )
+                    .exec(&txn)
+                    .await?;
+            }
+            if !add.is_empty() {
+                dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
+                    predecessor_id: sea_orm::ActiveValue::Set(i),
+                    successor_id: sea_orm::ActiveValue::Set(model.id),
+                    ..Default::default()
+                }))
                 .exec(&txn)
                 .await?;
-            dependency::Entity::insert_many(add.map(|i| dependency::ActiveModel {
-                predecessor_id: sea_orm::ActiveValue::Set(*i),
-                successor_id: sea_orm::ActiveValue::Set(model.id),
-                ..Default::default()
-            }))
-            .exec(&txn)
-            .await?;
+            }
         }
 
         if let Some(mut successors) = successors {
-            let existing: HashSet<i32> = model
-                .successors(ctx)
-                .await?
-                .iter()
-                .map(|el| el.id)
-                .collect();
+            let existing = existing_successors;
             let target: HashSet<i32> = HashSet::from_iter(successors.drain(..));
-            let remove = existing.difference(&target);
-            let add = target.difference(&existing);
-            dependency::Entity::delete_many()
-                .filter(
-                    dependency::Column::PredecessorId
-                        .eq(model.id)
-                        .and(dependency::Column::SuccessorId.is_in(remove.cloned())),
-                )
+            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
+            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+            if !remove.is_empty() {
+                dependency::Entity::delete_many()
+                    .filter(
+                        dependency::Column::PredecessorId
+                            .eq(model.id)
+                            .and(dependency::Column::SuccessorId.is_in(remove)),
+                    )
+                    .exec(&txn)
+                    .await?;
+            }
+            if !add.is_empty() {
+                dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
+                    successor_id: sea_orm::ActiveValue::Set(i),
+                    predecessor_id: sea_orm::ActiveValue::Set(model.id),
+                    ..Default::default()
+                }))
                 .exec(&txn)
                 .await?;
-            dependency::Entity::insert_many(add.map(|i| dependency::ActiveModel {
-                successor_id: sea_orm::ActiveValue::Set(*i),
-                predecessor_id: sea_orm::ActiveValue::Set(model.id),
-                ..Default::default()
-            }))
-            .exec(&txn)
-            .await?;
+            }
         }
         txn.commit().await?;
         Ok(model)

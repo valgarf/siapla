@@ -52,7 +52,7 @@ impl task::Model {
         Ok(TaskDesignation::from_str(&self.designation)?)
     }
     pub async fn predecessors(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
-        const CIDX: usize = dependency::Column::PredecessorId as usize;
+        const CIDX: usize = dependency::Column::SuccessorId as usize;
         let links = ctx.load_by_col::<dependency::Entity, CIDX>(self.id).await?;
         let mut joins = tokio::task::JoinSet::new();
         for l in links {
@@ -74,7 +74,7 @@ impl task::Model {
         }
     }
     pub async fn successors(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
-        const CIDX: usize = dependency::Column::SuccessorId as usize;
+        const CIDX: usize = dependency::Column::PredecessorId as usize;
         let links = ctx.load_by_col::<dependency::Entity, CIDX>(self.id).await?;
         let mut joins = tokio::task::JoinSet::new();
         for l in links {
