@@ -45,10 +45,6 @@ withDefaults(defineProps<Props>(), {
 function showDetailsNew() {
   Dialog.create({
     component: TaskDialog,
-
-    componentProps: {
-      task: { title: "New Task" },
-    }
   })
 }
 

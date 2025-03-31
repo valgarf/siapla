@@ -10,6 +10,8 @@ export interface Task {
   description: string;
   parent: Task | null;
   children: Task[];
+  predecessors: Task[];
+  successors: Task[];
 }
 
 export interface TaskInput extends Partial<Task> {
@@ -26,6 +28,9 @@ const TASK_QUERY = graphql(`
       description
       designation
       parent {
+        dbId
+      }
+      predecessors {
         dbId
       }
     }
@@ -58,6 +63,8 @@ function convert_query_result(query: TasksQuery) {
           designation: t.designation,
           parent: null,
           children: [],
+          predecessors: [],
+          successors: [],
         },
       ];
     }),
@@ -72,17 +79,30 @@ function convert_query_result(query: TasksQuery) {
         parent.children.push(task);
       }
     }
+    for (const pre of t.predecessors) {
+      const task = tasks.get(t.dbId);
+      const pre_task = tasks.get(pre.dbId);
+      if (task != null && pre_task != null) {
+        task.predecessors.push(pre_task);
+        pre_task.successors.push(task);
+      }
+    }
   }
   return tasks;
 }
 
 function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { parent, children, ...fields } = task.value;
-  const result: TaskSaveInput = { ...fields };
-  if (parent != null) {
-    result.parentId = parent.dbId;
-  }
+  const { parent, children, predecessors, successors, ...fields } = task.value;
+  const predecessor_ids = predecessors?.map((t) => t.dbId) || [];
+  console.log('PREDECESSORS:', predecessors, predecessor_ids);
+  const successor_ids = successors?.map((t) => t.dbId) || [];
+  const result: TaskSaveInput = {
+    ...fields,
+    predecessors: predecessor_ids,
+    successors: successor_ids,
+    parentId: parent?.dbId || null,
+  };
   return result;
 }
 
