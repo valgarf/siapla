@@ -5,10 +5,11 @@ use std::{
 };
 
 use super::dataloader::{ByColBatcher, ByColLoader};
+use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::TryFutureExt;
 use sea_orm::{Database, DatabaseConnection, EntityTrait, strum::IntoEnumIterator};
 use tokio::sync::{OnceCell, RwLock};
-#[derive(Clone)]
+
 pub struct Context {
     db: OnceCell<DatabaseConnection>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
@@ -135,4 +136,9 @@ impl Context {
         //     Err(anyhow::anyhow!("More than one entry found"))
         // }
     }
+}
+
+pub async fn add_context(mut req: Request, next: Next) -> Result<Response, StatusCode> {
+    req.extensions_mut().insert(Context::new());
+    Ok(next.run(req).await)
 }

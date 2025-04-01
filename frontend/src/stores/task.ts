@@ -95,7 +95,6 @@ function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { parent, children, predecessors, successors, ...fields } = task.value;
   const predecessor_ids = predecessors?.map((t) => t.dbId) || [];
-  console.log('PREDECESSORS:', predecessors, predecessor_ids);
   const successor_ids = successors?.map((t) => t.dbId) || [];
   const result: TaskSaveInput = {
     ...fields,

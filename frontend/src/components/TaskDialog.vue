@@ -139,7 +139,6 @@ const successors = computed({
 
 
 async function save() {
-    console.log("SAVE", { ...local_task.value });
     await taskStore.save_task(local_task);
 }
 

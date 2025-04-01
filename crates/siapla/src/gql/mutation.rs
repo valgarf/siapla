@@ -2,6 +2,7 @@ use std::{collections::HashSet, time::Duration};
 
 use juniper::{FieldResult, graphql_object};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use tracing::trace;
 
 use crate::entity::{dependency, task};
 
@@ -63,6 +64,10 @@ impl Mutation {
             let target: HashSet<i32> = HashSet::from_iter(predecessors.drain(..));
             let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
             let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+            trace!(
+                "PREDECESSORS: existing={:?}, target={:?}, remove={:?}, add={:?}",
+                existing, target, remove, add
+            );
             if !remove.is_empty() {
                 dependency::Entity::delete_many()
                     .filter(
@@ -89,6 +94,10 @@ impl Mutation {
             let target: HashSet<i32> = HashSet::from_iter(successors.drain(..));
             let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
             let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+            trace!(
+                "SUCCESSORS: existing={:?}, target={:?}, remove={:?}, add={:?}",
+                existing, target, remove, add
+            );
             if !remove.is_empty() {
                 dependency::Entity::delete_many()
                     .filter(

@@ -1,10 +1,13 @@
 use axum::{
-    Extension, Router,
+    Extension, Router, middleware,
     routing::{MethodFilter, get, on},
 };
 use juniper::DefaultScalarValue;
 use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
-use siapla::gql::{Schema, context::Context};
+use siapla::gql::{
+    Schema,
+    context::{Context, add_context},
+};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -54,7 +57,8 @@ async fn main() -> anyhow::Result<()> {
             ServiceBuilder::new()
                 .layer(cors)
                 .layer(Extension(Arc::new(siapla::gql::schema())))
-                .layer(Extension(Context::new())),
+                // .layer(Extension(Context::new())),
+                .layer(middleware::from_fn(add_context)),
         );
     // .route("/", get(homepage))
 
