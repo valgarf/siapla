@@ -1,5 +1,6 @@
 <template>
-    <q-dialog ref="dialogRef" @hide="onDialogHide">
+    <q-dialog ref="dialogRef" @hide="taskStore.reset_task_dialog()"
+        :model-value="taskStore.active_task_dialog !== null">
         <q-card class="q-dialog-plugin card-size">
             <q-card-section><q-breadcrumbs>
                     <q-breadcrumbs-el label="Taks" />
@@ -17,7 +18,7 @@
                     </q-btn>
                     <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                         :disable="taskStore.saving" class="q-ma-xs"></q-btn>
-                    <q-btn flat @click="onDialogHide" icon="close"></q-btn>
+                    <q-btn flat @click="taskStore.reset_task_dialog()" icon="close"></q-btn>
                 </div>
             </q-card-section>
 
@@ -74,41 +75,27 @@
 </style>
 
 <script setup lang="ts">
-import { Dialog, useDialogPluginComponent } from 'quasar'
+import { Dialog, } from 'quasar'
 import MarkdownEditor from './MarkdownEditor.vue';
 import { computed, ref, watchEffect } from 'vue';
 import { type TaskInput, useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import TaskChip from './TaskChip.vue';
 
-interface Props {
-    task: Partial<Task>;
-};
+const taskStore = useTaskStore();
 
-
-const props = withDefaults(defineProps<Props>(), { task: () => { return {} } });
 
 const local_task_default = { title: "", description: "", designation: TaskDesignation.Task };
 const local_task = ref<TaskInput>(local_task_default)
+const edit = ref(local_task.value.dbId == null)
 
 watchEffect(() => {
-    local_task.value = { ...local_task_default, ...props.task }
+    // task changed
+    local_task.value = { ...local_task_default, ...taskStore.active_task_dialog }
+    edit.value = local_task.value.dbId == null
 })
 
-defineEmits([
-    // required by dialog plugin
-    ...useDialogPluginComponent.emits,
-])
 
-const { dialogRef, onDialogHide } = useDialogPluginComponent()
-// dialogRef      - Vue ref to be applied to QDialog
-// onDialogHide   - Function to be used as handler for @hide on QDialog
-// onDialogOK     - Function to call to settle dialog with "ok" outcome
-//                    example: onDialogOK() - no payload
-//                    example: onDialogOK({ /*...*/ }) - with payload
-// onDialogCancel - Function to call to settle dialog with "cancel" outcome
-
-const edit = ref(local_task.value.dbId == null)
 async function toggleEdit() {
     if (edit.value) {
         await save()
@@ -116,7 +103,6 @@ async function toggleEdit() {
     edit.value = !edit.value
 }
 
-const taskStore = useTaskStore()
 
 // This is a not so nice workaround to get select to work. 
 // If we use actual tasks in the model, we get recursion errors, so we only provide the ids.
@@ -197,7 +183,7 @@ async function save() {
 async function deleteTask() {
     const taskId = local_task.value.dbId
     if (taskId == null) {
-        onDialogHide()
+        taskStore.pop_task_dialog()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {
@@ -214,7 +200,7 @@ async function deleteTask() {
         return
     }
     await taskStore.delete_task(taskId);
-    onDialogHide();
+    taskStore.pop_task_dialog();
 }
 
 </script>

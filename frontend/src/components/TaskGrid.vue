@@ -21,8 +21,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import TaskCard from './TaskCard.vue';
-import TaskDialog from './TaskDialog.vue';
-import { Dialog } from 'quasar';
 import { useTaskStore } from 'src/stores/task';
 
 
@@ -43,9 +41,7 @@ withDefaults(defineProps<Props>(), {
 
 // details dialog
 function showDetailsNew() {
-  Dialog.create({
-    component: TaskDialog,
-  })
+  taskStore.push_new_task_dialog()
 }
 
 </script>

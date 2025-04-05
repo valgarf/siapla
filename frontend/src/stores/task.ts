@@ -2,7 +2,7 @@ import { graphql } from 'src/gql';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
 import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
-import { computed, type Ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 
 export interface Task {
   dbId: number;
@@ -125,6 +125,9 @@ export const useTaskStore = defineStore('taskStore', () => {
     const resp = await mut_save_task.mutate({ task: task_to_obj(task) });
     const dbId = resp?.data?.taskSave.dbId;
     if (dbId != null) {
+      if (task.value.dbId == null) {
+        pop_task_dialog(); // a little hacky
+      }
       task.value.dbId = dbId;
     }
     await query_get_all.refetch();
@@ -140,9 +143,47 @@ export const useTaskStore = defineStore('taskStore', () => {
     return result;
     // TODO: generic error handling?
   }
+  const tasks = computed(() => Array.from(task_map.value?.values() || []));
 
   // the store's state
-  const tasks = computed(() => Array.from(task_map.value?.values() || []));
+  const task_dialog_history: Ref<Task[]> = ref([]);
+  const new_task: Ref<boolean> = ref(false);
+
+  function push_task_dialog(taskId: number) {
+    const task = task_map.value?.get(taskId);
+    if (task != null) {
+      task_dialog_history.value.push(task);
+    }
+  }
+  function push_new_task_dialog() {
+    new_task.value = true;
+  }
+  function pop_task_dialog() {
+    if (new_task.value) {
+      new_task.value = false;
+    } else {
+      task_dialog_history.value.pop();
+    }
+  }
+  function reset_task_dialog(taskId?: number) {
+    new_task.value = false;
+    task_dialog_history.value = [];
+    if (taskId != null) {
+      push_task_dialog(taskId);
+    }
+  }
+  const active_task_dialog = computed(() => {
+    if (new_task.value) {
+      console.log('New Task Dialog');
+      return {};
+    }
+    if (task_dialog_history.value.length > 0) {
+      console.log('Existing task: ');
+      return task_dialog_history.value[task_dialog_history.value.length - 1];
+    }
+    return null;
+  });
+
   return {
     gql: {
       query_get_all,
@@ -161,6 +202,11 @@ export const useTaskStore = defineStore('taskStore', () => {
     },
     save_task,
     delete_task,
+    push_task_dialog,
+    push_new_task_dialog,
+    pop_task_dialog,
+    reset_task_dialog,
+    active_task_dialog,
   };
 });
 

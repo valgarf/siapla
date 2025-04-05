@@ -12,25 +12,17 @@
 </template>
 
 <script setup lang="ts">
-import { Dialog } from 'quasar';
-import TaskDialog from './TaskDialog.vue';
-import { type Task } from 'src/stores/task';
+import { useTaskStore, type Task } from 'src/stores/task';
 
 interface Props {
     task: Task;
 };
 
 const props = withDefaults(defineProps<Props>(), {});
-
+const taskStore = useTaskStore();
 // details dialog
 function showDetails() {
-    Dialog.create({
-        component: TaskDialog,
-
-        componentProps: {
-            task: props.task,
-        }
-    })
+    taskStore.push_task_dialog(props.task.dbId)
 }
 
 </script>
