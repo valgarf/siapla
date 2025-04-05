@@ -23,6 +23,7 @@ type Subscription {
 }
 
 type Task {
+  children: [Task!]!
   dbId: Int!
   description: String!
   designation: TaskDesignation!
@@ -42,6 +43,7 @@ enum TaskDesignation {
 }
 
 input TaskSaveInput {
+  children: [Int!]
   dbId: Int
   description: String!
   designation: TaskDesignation!

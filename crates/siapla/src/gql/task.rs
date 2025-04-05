@@ -95,6 +95,10 @@ impl task::Model {
             Ok(values)
         }
     }
+    pub async fn children(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
+        const CIDX: usize = task::Column::ParentId as usize;
+        Ok(ctx.load_by_col::<task::Entity, CIDX>(self.id).await?)
+    }
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<Self>> {
         match self.parent_id {
             None => Ok(None),
@@ -118,6 +122,7 @@ pub struct TaskSaveInput {
     effort: Nullable<f64>,
     pub predecessors: Option<Vec<i32>>,
     pub successors: Option<Vec<i32>>,
+    pub children: Option<Vec<i32>>,
 }
 
 impl From<TaskSaveInput> for crate::entity::task::ActiveModel {

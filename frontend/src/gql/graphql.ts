@@ -54,6 +54,7 @@ export type Subscription = {
 
 export type Task = {
   __typename?: 'Task';
+  children: Array<Task>;
   dbId: Scalars['Int']['output'];
   description: Scalars['String']['output'];
   designation: TaskDesignation;
@@ -73,6 +74,7 @@ export enum TaskDesignation {
 }
 
 export type TaskSaveInput = {
+  children?: InputMaybe<Array<Scalars['Int']['input']>>;
   dbId?: InputMaybe<Scalars['Int']['input']>;
   description: Scalars['String']['input'];
   designation: TaskDesignation;

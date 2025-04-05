@@ -92,14 +92,15 @@ function convert_query_result(query: TasksQuery) {
 }
 
 function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { parent, children, predecessors, successors, ...fields } = task.value;
   const predecessor_ids = predecessors?.map((t) => t.dbId) || [];
   const successor_ids = successors?.map((t) => t.dbId) || [];
+  const children_ids = children?.map((t) => t.dbId) || [];
   const result: TaskSaveInput = {
     ...fields,
     predecessors: predecessor_ids,
     successors: successor_ids,
+    children: children_ids,
     parentId: parent?.dbId || null,
   };
   return result;

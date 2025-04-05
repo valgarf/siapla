@@ -1,6 +1,12 @@
 <template>
     <q-dialog ref="dialogRef" @hide="onDialogHide">
         <q-card class="q-dialog-plugin card-size">
+            <q-card-section><q-breadcrumbs>
+                    <q-breadcrumbs-el label="Taks" />
+                    <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" />
+                    <q-breadcrumbs-el :label="local_task.title" />
+                </q-breadcrumbs>
+            </q-card-section>
             <q-card-section>
                 <div class="row items-center">
                     <q-input v-if="edit" outlined placeholder="Title" class="text-h5 col" v-model="local_task.title" />
@@ -35,16 +41,26 @@
                     stack-label label="predecessors" />
                 <div v-else class="row items-center">
                     <div>predecessors</div>
-                    <q-chip v-for="pre in predecessors" :key="pre.value" color="primary" text-color="white">{{
-                        pre.label }}</q-chip>
+                    <TaskChip v-for="task in local_task.predecessors" :key="task.dbId" :task="task" />
                 </div>
+            </q-card-section>
+            <q-card-section>
                 <q-select v-if="edit" filled v-model="successors" multiple :options="possibleSuccessors" use-chips
                     stack-label label="successors" />
                 <div v-else class="row items-center">
                     <div>successors</div>
-                    <q-chip v-for="suc in successors" :key="suc.value" color="primary" text-color="white">{{
-                        suc.label }}</q-chip>
+                    <TaskChip v-for="task in local_task.successors" :key="task.dbId" :task="task" />
                 </div>
+            </q-card-section>
+            <q-card-section>
+                <q-select v-if="edit" filled v-model="children" multiple :options="possibleChildren" use-chips
+                    stack-label label="children" />
+                <div v-else class="row items-center">
+                    <div>children</div>
+                    <TaskChip v-for="task in local_task.children" :key="task.dbId" :task="task" />
+                </div>
+                <q-select v-if="edit" filled v-model="parent" :options="possibleParents" use-chips stack-label
+                    label="parent" />
             </q-card-section>
         </q-card>
     </q-dialog>
@@ -63,6 +79,7 @@ import MarkdownEditor from './MarkdownEditor.vue';
 import { computed, ref, watchEffect } from 'vue';
 import { type TaskInput, useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
+import TaskChip from './TaskChip.vue';
 
 interface Props {
     task: Partial<Task>;
@@ -114,10 +131,29 @@ function from_select_opt(t: SelectOpt): Task | undefined {
     return taskStore.task(t.value)
 }
 
+const parents = computed(() => {
+    const parents = [];
+    let parent = local_task.value.parent;
+    while (parent != null) {
+        parents.push(parent)
+        parent = parent.parent
+    }
+    return parents.reverse()
+})
+
 const possiblePredecessors = computed(() => {
     return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId).map(to_select_opt)
 })
 const possibleSuccessors = computed(() => {
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId).map(to_select_opt)
+})
+const possibleChildren = computed(() => {
+    return taskStore.tasks.filter((t) => {
+        const parent_ids = parents.value.map((p) => p.dbId);
+        return !parent_ids.includes(t.dbId) && local_task.value.dbId != t.dbId
+    }).map(to_select_opt)
+})
+const possibleParents = computed(() => {
     return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId).map(to_select_opt)
 })
 const predecessors = computed({
@@ -134,6 +170,22 @@ const successors = computed({
     },
     set(value) {
         local_task.value.successors = value.map(from_select_opt).filter((v) => v != undefined)
+    }
+})
+const children = computed({
+    get() {
+        return local_task.value.children?.map(to_select_opt) || []
+    },
+    set(value) {
+        local_task.value.children = value.map(from_select_opt).filter((v) => v != undefined)
+    }
+})
+const parent = computed({
+    get() {
+        return local_task.value.parent != null ? to_select_opt(local_task.value.parent) : null
+    },
+    set(value) {
+        local_task.value.parent = value != null ? from_select_opt(value) ?? null : null
     }
 })
 

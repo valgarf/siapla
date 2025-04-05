@@ -4,6 +4,8 @@ use juniper::{FieldResult, graphql_object};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use tracing::trace;
 
+use sea_orm::prelude::*;
+
 use crate::entity::{dependency, task};
 
 use super::{context::Context, task::TaskSaveInput};
@@ -21,13 +23,16 @@ impl Mutation {
     async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> FieldResult<task::Model> {
         let predecessors = task.predecessors.take();
         let successors = task.successors.take();
+        let children = task.children.take();
         let am = task::ActiveModel::from(task);
         let db = ctx.db().await?;
         // Note: must be done outside of a transaction, otherwise it will block for sqlite
         let mut existing_predecessors: HashSet<i32> = Default::default();
         let mut existing_successors: HashSet<i32> = Default::default();
+        let mut existing_children: HashSet<i32> = Default::default();
         const CIDX: usize = task::Column::Id as usize;
-        if (predecessors.is_some() || successors.is_some()) && am.id.is_set() {
+        if (predecessors.is_some() || successors.is_some() || children.is_some()) && am.id.is_set()
+        {
             let model = ctx
                 .load_one_by_col::<task::Entity, CIDX>(am.id.clone().into_value().unwrap())
                 .await?;
@@ -48,11 +53,13 @@ impl Mutation {
                         .map(|el| el.id)
                         .collect();
                 }
+                if children.is_some() {
+                    existing_children = model.children(ctx).await?.iter().map(|el| el.id).collect();
+                }
             }
         }
 
         let txn = db.begin().await?;
-        tokio::time::sleep(Duration::from_secs(3)).await;
         let model = if am.id.is_set() {
             am.update(&txn).await?
         } else {
@@ -118,13 +125,41 @@ impl Mutation {
                 .await?;
             }
         }
+
+        if let Some(mut children) = children {
+            let existing = existing_children;
+            let target: HashSet<i32> = HashSet::from_iter(children.drain(..));
+            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
+            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+            trace!(
+                "CHILDREN: existing={:?}, target={:?}, remove={:?}, add={:?}",
+                existing, target, remove, add
+            );
+            if !remove.is_empty() {
+                task::Entity::update_many()
+                    .col_expr(task::Column::ParentId, Expr::value(Value::Int(None)))
+                    .filter(task::Column::Id.is_in(remove))
+                    .exec(&txn)
+                    .await?;
+            }
+            if !add.is_empty() {
+                task::Entity::update_many()
+                    .col_expr(
+                        task::Column::ParentId,
+                        Expr::value(Value::Int(Some(model.id))),
+                    )
+                    .filter(task::Column::Id.is_in(add))
+                    .exec(&txn)
+                    .await?;
+            }
+        }
+
         txn.commit().await?;
         Ok(model)
     }
 
     async fn task_delete(ctx: &Context, task_id: i32) -> FieldResult<bool> {
         let db = ctx.db().await?;
-        tokio::time::sleep(Duration::from_secs(3)).await;
         let am = task::ActiveModel {
             id: sea_orm::ActiveValue::Set(task_id),
             ..Default::default()
