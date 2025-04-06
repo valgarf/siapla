@@ -18,8 +18,8 @@ impl MigrationTrait for Migration {
                     .col(string(Task::Title))
                     .col(string(Task::Description))
                     .col(string(Task::Designation))
-                    .col(date_time_null(Task::EarliestStart))
-                    .col(date_time_null(Task::ScheduleTarget))
+                    .col(timestamp_null(Task::EarliestStart))
+                    .col(timestamp_null(Task::ScheduleTarget))
                     .col(float_null(Task::Effort))
                     .foreign_key(
                         ForeignKey::create()
@@ -154,8 +154,8 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(pk_auto(Allocation::Id))
                     .col(integer(Allocation::TaskId))
-                    .col(date_time(Allocation::Start))
-                    .col(date_time(Allocation::End))
+                    .col(timestamp(Allocation::Start))
+                    .col(timestamp(Allocation::End))
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_Allocation_Task")

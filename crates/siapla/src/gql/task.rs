@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools as _};
 use juniper::{FieldResult, GraphQLEnum, Nullable, graphql_object};
 use sea_orm::ActiveValue;
@@ -39,10 +39,10 @@ impl task::Model {
     fn description(&self) -> &str {
         &self.description
     }
-    fn earliest_start(&self) -> &Option<NaiveDateTime> {
+    fn earliest_start(&self) -> &Option<DateTime<Utc>> {
         &self.earliest_start
     }
-    fn schedule_target(&self) -> &Option<NaiveDateTime> {
+    fn schedule_target(&self) -> &Option<DateTime<Utc>> {
         &self.schedule_target
     }
     fn effort(&self) -> Option<f64> {
@@ -117,8 +117,8 @@ pub struct TaskSaveInput {
     description: String,
     designation: TaskDesignation,
     parent_id: Nullable<i32>,
-    earlies_start: Nullable<NaiveDateTime>,
-    schedule_target: Nullable<NaiveDateTime>,
+    earliest_start: Nullable<DateTime<Utc>>,
+    schedule_target: Nullable<DateTime<Utc>>,
     effort: Nullable<f64>,
     pub predecessors: Option<Vec<i32>>,
     pub successors: Option<Vec<i32>>,
@@ -133,7 +133,7 @@ impl From<TaskSaveInput> for crate::entity::task::ActiveModel {
             description: ActiveValue::Set(value.description),
             designation: ActiveValue::Set(value.designation.into()),
             parent_id: nullable_to_av!(value.parent_id),
-            earliest_start: nullable_to_av!(value.earlies_start),
+            earliest_start: nullable_to_av!(value.earliest_start),
             schedule_target: nullable_to_av!(value.schedule_target),
             effort: nullable_to_av!(value.effort.map(|v| v as f32)),
         }

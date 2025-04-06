@@ -540,7 +540,7 @@
             "deprecationReason": null
           },
           {
-            "name": "earliesStart",
+            "name": "earliestStart",
             "description": null,
             "type": {
               "kind": "SCALAR",

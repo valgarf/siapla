@@ -12,6 +12,9 @@ export interface Task {
   children: Task[];
   predecessors: Task[];
   successors: Task[];
+  earliestStart: Date | null;
+  scheduleTarget: Date | null;
+  effort: number | null;
 }
 
 export interface TaskInput extends Partial<Task> {
@@ -33,6 +36,9 @@ const TASK_QUERY = graphql(`
       predecessors {
         dbId
       }
+      earliestStart
+      scheduleTarget
+      effort
     }
   }
 `);
@@ -65,6 +71,9 @@ function convert_query_result(query: TasksQuery) {
           children: [],
           predecessors: [],
           successors: [],
+          earliestStart: t.earliestStart == null ? null : new Date(t.earliestStart),
+          scheduleTarget: t.scheduleTarget == null ? null : new Date(t.scheduleTarget),
+          effort: t.effort ?? null,
         },
       ];
     }),
@@ -92,7 +101,8 @@ function convert_query_result(query: TasksQuery) {
 }
 
 function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
-  const { parent, children, predecessors, successors, ...fields } = task.value;
+  const { parent, children, predecessors, successors, earliestStart, scheduleTarget, ...fields } =
+    task.value;
   const predecessor_ids = predecessors?.map((t) => t.dbId) || [];
   const successor_ids = successors?.map((t) => t.dbId) || [];
   const children_ids = children?.map((t) => t.dbId) || [];
@@ -102,6 +112,8 @@ function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
     successors: successor_ids,
     children: children_ids,
     parentId: parent?.dbId || null,
+    earliestStart: earliestStart == null ? null : earliestStart.toISOString(),
+    scheduleTarget: scheduleTarget == null ? null : scheduleTarget.toISOString(),
   };
   return result;
 }
@@ -174,12 +186,20 @@ export const useTaskStore = defineStore('taskStore', () => {
   }
   const active_task_dialog = computed(() => {
     if (new_task.value) {
-      console.log('New Task Dialog');
       return {};
     }
     if (task_dialog_history.value.length > 0) {
-      console.log('Existing task: ');
       return task_dialog_history.value[task_dialog_history.value.length - 1];
+    }
+    return null;
+  });
+  const prev_task_dialog = computed(() => {
+    if (new_task.value) {
+      if (task_dialog_history.value.length > 0) {
+        return task_dialog_history.value[task_dialog_history.value.length - 1];
+      }
+    } else if (task_dialog_history.value.length > 1) {
+      return task_dialog_history.value[task_dialog_history.value.length - 2];
     }
     return null;
   });
@@ -207,6 +227,7 @@ export const useTaskStore = defineStore('taskStore', () => {
     pop_task_dialog,
     reset_task_dialog,
     active_task_dialog,
+    prev_task_dialog,
   };
 });
 

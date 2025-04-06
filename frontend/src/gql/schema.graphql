@@ -47,7 +47,7 @@ input TaskSaveInput {
   dbId: Int
   description: String!
   designation: TaskDesignation!
-  earliesStart: LocalDateTime
+  earliestStart: LocalDateTime
   effort: Float
   parentId: Int
   predecessors: [Int!]

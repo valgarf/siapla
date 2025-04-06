@@ -154,6 +154,7 @@ impl Mutation {
             }
         }
 
+        // TODO: before committing, check if we now have predecessor or parent cycles!
         txn.commit().await?;
         Ok(model)
     }

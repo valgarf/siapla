@@ -19,8 +19,8 @@ pub struct Model {
     pub title: String,
     pub description: String,
     pub designation: String,
-    pub earliest_start: Option<DateTime>,
-    pub schedule_target: Option<DateTime>,
+    pub earliest_start: Option<DateTimeUtc>,
+    pub schedule_target: Option<DateTimeUtc>,
     pub effort: Option<f32>,
 }
 
@@ -63,8 +63,8 @@ impl ColumnTrait for Column {
             Self::Title => ColumnType::String(StringLen::None).def(),
             Self::Description => ColumnType::String(StringLen::None).def(),
             Self::Designation => ColumnType::String(StringLen::None).def(),
-            Self::EarliestStart => ColumnType::DateTime.def().null(),
-            Self::ScheduleTarget => ColumnType::DateTime.def().null(),
+            Self::EarliestStart => ColumnType::Timestamp.def().null(),
+            Self::ScheduleTarget => ColumnType::Timestamp.def().null(),
             Self::Effort => ColumnType::Float.def().null(),
         }
     }

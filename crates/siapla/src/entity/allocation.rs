@@ -16,8 +16,8 @@ impl EntityName for Entity {
 pub struct Model {
     pub id: i32,
     pub task_id: i32,
-    pub start: DateTime,
-    pub end: DateTime,
+    pub start: DateTimeUtc,
+    pub end: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -52,8 +52,8 @@ impl ColumnTrait for Column {
         match self {
             Self::Id => ColumnType::Integer.def(),
             Self::TaskId => ColumnType::Integer.def(),
-            Self::Start => ColumnType::DateTime.def(),
-            Self::End => ColumnType::DateTime.def(),
+            Self::Start => ColumnType::Timestamp.def(),
+            Self::End => ColumnType::Timestamp.def(),
         }
     }
 }
