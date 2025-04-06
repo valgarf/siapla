@@ -15,6 +15,7 @@ export interface Task {
   earliestStart: Date | null;
   scheduleTarget: Date | null;
   effort: number | null;
+  designation: TaskDesignation;
 }
 
 export interface TaskInput extends Partial<Task> {
@@ -39,6 +40,7 @@ const TASK_QUERY = graphql(`
       earliestStart
       scheduleTarget
       effort
+      designation
     }
   }
 `);

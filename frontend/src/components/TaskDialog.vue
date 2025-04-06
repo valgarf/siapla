@@ -44,41 +44,56 @@
                     local_task.designation }}</q-chip>
             </q-card-section>
 
-            <q-card-section v-if="local_task.designation != TaskDesignation.Requirement">
+            <q-card-section
+                v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
                 <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
                     :edit="edit" />
             </q-card-section>
-            <q-card-section v-if="local_task.designation != TaskDesignation.Milestone">
+            <q-card-section
+                v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)">
                 <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
                     :edit="edit" />
             </q-card-section>
-            <q-card-section v-if="edit">
+            <q-card-section v-show="edit">
                 <q-select filled v-model="parent" :options="possibleParents" use-chips stack-label label="parent" />
             </q-card-section>
-            <q-card-section v-if="local_task.designation == TaskDesignation.Group">
+            <q-card-section
+                v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)">
                 <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren"
                     :edit="edit" />
             </q-card-section>
-            <q-card-section v-if="local_task.designation == TaskDesignation.Requirement">
+            <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
                 <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Start:</div>
                     <div>{{ format_datetime(local_task.earliestStart) }}</div>
                 </div>
             </q-card-section>
-            <q-card-section v-if="local_task.designation == TaskDesignation.Milestone">
+            <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
                 <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Schedule:</div>
                     <div>{{ format_datetime(local_task.scheduleTarget) }}</div>
                 </div>
             </q-card-section>
-            <q-card-section v-if="local_task.designation == TaskDesignation.Task">
+            <q-card-section v-show="local_task.designation == TaskDesignation.Task">
                 <q-input v-if="edit" label="effort (days)" stack-label type="number"
                     v-model.number="local_task.effort" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Effort:</div>
                     <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
+                </div>
+            </q-card-section>
+            <q-card-section v-show="effective_requirements.length > 0">
+                <div class="col">
+                    <div class="text-subtitle2">Requirements</div>
+                    <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
+                </div>
+            </q-card-section>
+            <q-card-section v-show="effective_milestones.length > 0">
+                <div class="col">
+                    <div class="text-subtitle2">Milestones</div>
+                    <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
                 </div>
             </q-card-section>
         </q-card>
@@ -101,6 +116,7 @@ import { TaskDesignation } from 'src/gql/graphql';
 import EditableTaskList from './EditableTaskList.vue';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
+import TaskChip from './TaskChip.vue';
 
 const taskStore = useTaskStore();
 
@@ -128,10 +144,10 @@ const parents = computed(() => {
 })
 
 const possiblePredecessors = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId)
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Milestone)
 })
 const possibleSuccessors = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId)
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Requirement)
 })
 const possibleChildren = computed(() => {
     return taskStore.tasks.filter((t) => {
@@ -163,6 +179,48 @@ const parent = computed({
     set(value) {
         local_task.value.parent = value != null ? from_select_opt(value) ?? null : null
     }
+})
+
+function _get_milestones(task: Partial<Task>): Set<Task> {
+    let result: Set<Task> = new Set([])
+    if (task.designation == TaskDesignation.Milestone && task.dbId != null) {
+        const store_task = taskStore.task(task.dbId)
+        if (store_task != null) { result.add(store_task) }
+    }
+    if (task.parent != null) {
+        result = result.union(_get_milestones(task.parent))
+    }
+    for (const suc of task.successors ?? []) {
+        result = result.union(_get_milestones(suc))
+    }
+    return result
+}
+
+const effective_milestones = computed(() => {
+    const result = Array.from(_get_milestones(local_task.value)).filter((t) => t.dbId != local_task.value.dbId);
+    result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
+    return result
+})
+
+function _get_requirements(task: Partial<Task>): Set<Task> {
+    let result: Set<Task> = new Set([])
+    if (task.designation == TaskDesignation.Requirement && task.dbId != null) {
+        const store_task = taskStore.task(task.dbId)
+        if (store_task != null) { result.add(store_task) }
+    }
+    if (task.parent != null) {
+        result = result.union(_get_requirements(task.parent))
+    }
+    for (const pre of task.predecessors ?? []) {
+        result = result.union(_get_requirements(pre))
+    }
+    return result
+}
+
+const effective_requirements = computed(() => {
+    const result = Array.from(_get_requirements(local_task.value)).filter((t) => t.dbId != local_task.value.dbId);
+    result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
+    return result
 })
 
 // actions

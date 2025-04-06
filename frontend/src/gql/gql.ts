@@ -14,12 +14,12 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n    }\n  }\n": typeof types.TasksDocument,
+    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n      designation\n    }\n  }\n": typeof types.TasksDocument,
     "\n  mutation task_save($task: TaskSaveInput!) {\n    taskSave(task: $task) {\n      dbId\n    }\n  }\n": typeof types.Task_SaveDocument,
     "\n  mutation task_delete($taskId: Int!) {\n    taskDelete(taskId: $taskId)\n  }\n": typeof types.Task_DeleteDocument,
 };
 const documents: Documents = {
-    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n    }\n  }\n": types.TasksDocument,
+    "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n      designation\n    }\n  }\n": types.TasksDocument,
     "\n  mutation task_save($task: TaskSaveInput!) {\n    taskSave(task: $task) {\n      dbId\n    }\n  }\n": types.Task_SaveDocument,
     "\n  mutation task_delete($taskId: Int!) {\n    taskDelete(taskId: $taskId)\n  }\n": types.Task_DeleteDocument,
 };
@@ -41,7 +41,7 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function graphql(source: "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n    }\n  }\n"): (typeof documents)["\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n    }\n  }\n"];
+export function graphql(source: "\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n      designation\n    }\n  }\n"): (typeof documents)["\n  query tasks {\n    tasks {\n      dbId\n      title\n      description\n      designation\n      parent {\n        dbId\n      }\n      predecessors {\n        dbId\n      }\n      earliestStart\n      scheduleTarget\n      effort\n      designation\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
