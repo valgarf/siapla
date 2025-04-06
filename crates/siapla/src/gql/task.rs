@@ -16,6 +16,7 @@ use crate::entity::{dependency, task};
 #[derive(GraphQLEnum, IntoStaticStr, EnumString)]
 enum TaskDesignation {
     Task,
+    Group,
     Requirement,
     Milestone,
 }

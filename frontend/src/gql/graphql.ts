@@ -15,13 +15,20 @@ export type Scalars = {
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
   /**
-   * Combined date and time (without time zone) in `yyyy-MM-dd HH:mm:ss` format.
+   * Combined date and time (with time zone) in [RFC 3339][0] format.
    *
-   * See also [`chrono::NaiveDateTime`][1] for details.
+   * Represents a description of an exact instant on the time-line (such as the
+   * instant that a user account was created).
    *
-   * [1]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html
+   * [`DateTime` scalar][1] compliant.
+   *
+   * See also [`chrono::DateTime`][2] for details.
+   *
+   * [0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5
+   * [1]: https://graphql-scalars.dev/docs/scalars/date-time
+   * [2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
    */
-  LocalDateTime: { input: string; output: string; }
+  DateTime: { input: any; output: any; }
 };
 
 export type Mutation = {
@@ -58,16 +65,17 @@ export type Task = {
   dbId: Scalars['Int']['output'];
   description: Scalars['String']['output'];
   designation: TaskDesignation;
-  earliestStart?: Maybe<Scalars['LocalDateTime']['output']>;
+  earliestStart?: Maybe<Scalars['DateTime']['output']>;
   effort?: Maybe<Scalars['Float']['output']>;
   parent?: Maybe<Task>;
   predecessors: Array<Task>;
-  scheduleTarget?: Maybe<Scalars['LocalDateTime']['output']>;
+  scheduleTarget?: Maybe<Scalars['DateTime']['output']>;
   successors: Array<Task>;
   title: Scalars['String']['output'];
 };
 
 export enum TaskDesignation {
+  Group = 'GROUP',
   Milestone = 'MILESTONE',
   Requirement = 'REQUIREMENT',
   Task = 'TASK'
@@ -78,11 +86,11 @@ export type TaskSaveInput = {
   dbId?: InputMaybe<Scalars['Int']['input']>;
   description: Scalars['String']['input'];
   designation: TaskDesignation;
-  earliestStart?: InputMaybe<Scalars['LocalDateTime']['input']>;
+  earliestStart?: InputMaybe<Scalars['DateTime']['input']>;
   effort?: InputMaybe<Scalars['Float']['input']>;
   parentId?: InputMaybe<Scalars['Int']['input']>;
   predecessors?: InputMaybe<Array<Scalars['Int']['input']>>;
-  scheduleTarget?: InputMaybe<Scalars['LocalDateTime']['input']>;
+  scheduleTarget?: InputMaybe<Scalars['DateTime']['input']>;
   successors?: InputMaybe<Array<Scalars['Int']['input']>>;
   title: Scalars['String']['input'];
 };
@@ -90,7 +98,7 @@ export type TaskSaveInput = {
 export type TasksQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type TasksQuery = { __typename?: 'Query', tasks: Array<{ __typename?: 'Task', dbId: number, title: string, description: string, designation: TaskDesignation, earliestStart?: string | null, scheduleTarget?: string | null, effort?: number | null, parent?: { __typename?: 'Task', dbId: number } | null, predecessors: Array<{ __typename?: 'Task', dbId: number }> }> };
+export type TasksQuery = { __typename?: 'Query', tasks: Array<{ __typename?: 'Task', dbId: number, title: string, description: string, designation: TaskDesignation, earliestStart?: any | null, scheduleTarget?: any | null, effort?: number | null, parent?: { __typename?: 'Task', dbId: number } | null, predecessors: Array<{ __typename?: 'Task', dbId: number }> }> };
 
 export type Task_SaveMutationVariables = Exact<{
   task: TaskSaveInput;

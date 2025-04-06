@@ -37,41 +37,43 @@
                     text-color="secondary" color="white" :options="[
                         { label: 'Requirement', value: TaskDesignation.Requirement },
                         { label: 'Task', value: TaskDesignation.Task },
+                        { label: 'Group', value: TaskDesignation.Group },
                         { label: 'Milestone', value: TaskDesignation.Milestone }
                     ]" />
                 <q-chip v-else color="secondary" text-color="white" class="q-pa-md">{{
                     local_task.designation }}</q-chip>
             </q-card-section>
-            <q-card-section>
+
+            <q-card-section v-if="local_task.designation != TaskDesignation.Requirement">
                 <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
                     :edit="edit" />
             </q-card-section>
-            <q-card-section>
+            <q-card-section v-if="local_task.designation != TaskDesignation.Milestone">
                 <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
                     :edit="edit" />
             </q-card-section>
             <q-card-section v-if="edit">
                 <q-select filled v-model="parent" :options="possibleParents" use-chips stack-label label="parent" />
             </q-card-section>
-            <q-card-section>
+            <q-card-section v-if="local_task.designation == TaskDesignation.Group">
                 <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren"
                     :edit="edit" />
             </q-card-section>
-            <q-card-section>
+            <q-card-section v-if="local_task.designation == TaskDesignation.Requirement">
                 <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Start:</div>
                     <div>{{ format_datetime(local_task.earliestStart) }}</div>
                 </div>
             </q-card-section>
-            <q-card-section>
+            <q-card-section v-if="local_task.designation == TaskDesignation.Milestone">
                 <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Schedule:</div>
                     <div>{{ format_datetime(local_task.scheduleTarget) }}</div>
                 </div>
             </q-card-section>
-            <q-card-section>
+            <q-card-section v-if="local_task.designation == TaskDesignation.Task">
                 <q-input v-if="edit" label="effort (days)" stack-label type="number"
                     v-model.number="local_task.effort" />
                 <div v-else class="row items-baseline">

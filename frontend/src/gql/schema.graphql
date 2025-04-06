@@ -1,11 +1,18 @@
 """
-Combined date and time (without time zone) in `yyyy-MM-dd HH:mm:ss` format.
+Combined date and time (with time zone) in [RFC 3339][0] format.
 
-See also [`chrono::NaiveDateTime`][1] for details.
+Represents a description of an exact instant on the time-line (such as the
+instant that a user account was created).
 
-[1]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html
+[`DateTime` scalar][1] compliant.
+
+See also [`chrono::DateTime`][2] for details.
+
+[0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5
+[1]: https://graphql-scalars.dev/docs/scalars/date-time
+[2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
 """
-scalar LocalDateTime
+scalar DateTime
 
 type Mutation {
   new: Mutation!
@@ -27,16 +34,17 @@ type Task {
   dbId: Int!
   description: String!
   designation: TaskDesignation!
-  earliestStart: LocalDateTime
+  earliestStart: DateTime
   effort: Float
   parent: Task
   predecessors: [Task!]!
-  scheduleTarget: LocalDateTime
+  scheduleTarget: DateTime
   successors: [Task!]!
   title: String!
 }
 
 enum TaskDesignation {
+  GROUP
   MILESTONE
   REQUIREMENT
   TASK
@@ -47,11 +55,11 @@ input TaskSaveInput {
   dbId: Int
   description: String!
   designation: TaskDesignation!
-  earliestStart: LocalDateTime
+  earliestStart: DateTime
   effort: Float
   parentId: Int
   predecessors: [Int!]
-  scheduleTarget: LocalDateTime
+  scheduleTarget: DateTime
   successors: [Int!]
   title: String!
 }

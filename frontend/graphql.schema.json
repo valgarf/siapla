@@ -26,6 +26,17 @@
       },
       {
         "kind": "SCALAR",
+        "name": "DateTime",
+        "description": "Combined date and time (with time zone) in [RFC 3339][0] format.\n\nRepresents a description of an exact instant on the time-line (such as the\ninstant that a user account was created).\n\n[`DateTime` scalar][1] compliant.\n\nSee also [`chrono::DateTime`][2] for details.\n\n[0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5\n[1]: https://graphql-scalars.dev/docs/scalars/date-time\n[2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html",
+        "isOneOf": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
         "name": "Float",
         "description": "The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](https://en.wikipedia.org/wiki/IEEE_floating_point).",
         "isOneOf": null,
@@ -39,17 +50,6 @@
         "kind": "SCALAR",
         "name": "Int",
         "description": "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.",
-        "isOneOf": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
-        "name": "LocalDateTime",
-        "description": "Combined date and time (without time zone) in `yyyy-MM-dd HH:mm:ss` format.\n\nSee also [`chrono::NaiveDateTime`][1] for details.\n\n[1]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDateTime.html",
         "isOneOf": null,
         "fields": null,
         "inputFields": null,
@@ -326,7 +326,7 @@
             "args": [],
             "type": {
               "kind": "SCALAR",
-              "name": "LocalDateTime",
+              "name": "DateTime",
               "ofType": null
             },
             "isDeprecated": false,
@@ -386,7 +386,7 @@
             "args": [],
             "type": {
               "kind": "SCALAR",
-              "name": "LocalDateTime",
+              "name": "DateTime",
               "ofType": null
             },
             "isDeprecated": false,
@@ -447,6 +447,12 @@
         "inputFields": null,
         "interfaces": null,
         "enumValues": [
+          {
+            "name": "GROUP",
+            "description": null,
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
           {
             "name": "MILESTONE",
             "description": null,
@@ -544,7 +550,7 @@
             "description": null,
             "type": {
               "kind": "SCALAR",
-              "name": "LocalDateTime",
+              "name": "DateTime",
               "ofType": null
             },
             "defaultValue": null,
@@ -600,7 +606,7 @@
             "description": null,
             "type": {
               "kind": "SCALAR",
-              "name": "LocalDateTime",
+              "name": "DateTime",
               "ofType": null
             },
             "defaultValue": null,
