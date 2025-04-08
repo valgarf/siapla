@@ -228,8 +228,11 @@ const effective_requirements = computed(() => {
 async function toggleEdit() {
     if (edit.value) {
         await save()
+        edit.value = false
     }
-    edit.value = !edit.value
+    else {
+        edit.value = true
+    }
 }
 
 
@@ -256,8 +259,7 @@ async function deleteTask() {
     } catch {
         return
     }
-    await taskStore.delete_task(taskId);
-    taskStore.pop_task_dialog();
+    await taskStore.delete_task(taskId, true);
 }
 
 </script>

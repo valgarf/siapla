@@ -140,18 +140,27 @@ export const useTaskStore = defineStore('taskStore', () => {
     const dbId = resp?.data?.taskSave.dbId;
     if (dbId != null) {
       if (task.value.dbId == null) {
-        pop_task_dialog(); // a little hacky
+        // a little hacky
+        task.value.dbId = dbId;
+        await query_get_all.refetch();
+        // TODO: generic error handling?
+        pop_task_dialog();
+        push_task_dialog(dbId);
+      } else {
+        task.value.dbId = dbId;
+        await query_get_all.refetch();
+        // TODO: generic error handling?
       }
-      task.value.dbId = dbId;
     }
-    await query_get_all.refetch();
-    // TODO: generic error handling?
   }
 
-  async function delete_task(taskId: number) {
+  async function delete_task(taskId: number, pop: boolean = true) {
     const resp = await mut_delete_task.mutate({ taskId: taskId });
     const result = resp?.data?.taskDelete;
     if (result) {
+      if (pop) {
+        pop_task_dialog();
+      }
       await query_get_all.refetch();
     }
     return result;
@@ -160,13 +169,13 @@ export const useTaskStore = defineStore('taskStore', () => {
   const tasks = computed(() => Array.from(task_map.value?.values() || []));
 
   // the store's state
-  const task_dialog_history: Ref<Task[]> = ref([]);
+  const task_dialog_history: Ref<number[]> = ref([]);
   const new_task: Ref<boolean> = ref(false);
 
   function push_task_dialog(taskId: number) {
     const task = task_map.value?.get(taskId);
     if (task != null) {
-      task_dialog_history.value.push(task);
+      task_dialog_history.value.push(taskId);
     }
   }
   function push_new_task_dialog() {
@@ -191,7 +200,11 @@ export const useTaskStore = defineStore('taskStore', () => {
       return {};
     }
     if (task_dialog_history.value.length > 0) {
-      return task_dialog_history.value[task_dialog_history.value.length - 1];
+      const taskId = task_dialog_history.value[task_dialog_history.value.length - 1];
+      if (taskId == null) {
+        return null;
+      }
+      return task_map.value?.get(taskId);
     }
     return null;
   });
@@ -201,7 +214,11 @@ export const useTaskStore = defineStore('taskStore', () => {
         return task_dialog_history.value[task_dialog_history.value.length - 1];
       }
     } else if (task_dialog_history.value.length > 1) {
-      return task_dialog_history.value[task_dialog_history.value.length - 2];
+      const taskId = task_dialog_history.value[task_dialog_history.value.length - 2];
+      if (taskId == null) {
+        return null;
+      }
+      return task_map.value?.get(taskId);
     }
     return null;
   });
