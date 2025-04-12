@@ -84,11 +84,98 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
+                    .table(Holiday::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Holiday::Id))
+                    .col(string(Holiday::Name))
+                    .col(date(Holiday::Start))
+                    .col(date(Holiday::End))
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(HolidayEntry::Table)
+                    .if_not_exists()
+                    .col(pk_auto(HolidayEntry::Id))
+                    .col(integer(HolidayEntry::HolidayId))
+                    .col(string_null(HolidayEntry::Name))
+                    .col(date(HolidayEntry::Date))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_HolidayEntry_Holiday")
+                            .from(HolidayEntry::Table, HolidayEntry::HolidayId)
+                            .to(Holiday::Table, Holiday::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
                     .table(Resource::Table)
                     .if_not_exists()
                     .col(pk_auto(Resource::Id))
                     .col(string(Resource::Name))
-                    .col(string(Resource::Availability))
+                    .col(string(Resource::Timezone))
+                    .col(timestamp(Resource::Added))
+                    .col(timestamp_null(Resource::Removed))
+                    .col(integer_null(Resource::HolidayId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Resource_Holiday")
+                            .from(Resource::Table, Resource::HolidayId)
+                            .to(Holiday::Table, Holiday::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::SetNull),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Availability::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Availability::Id))
+                    .col(integer(Availability::ResourceId))
+                    .col(string_len(Availability::Weekday, 2)) // MO, TU, WE, TH, FR, SA, SU
+                    .col(decimal(Availability::Duration)) // hours
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Availability_Resource")
+                            .from(Availability::Table, Availability::ResourceId)
+                            .to(Resource::Table, Resource::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Vacation::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Vacation::Id))
+                    .col(integer(Vacation::ResourceId))
+                    .col(timestamp(Vacation::From))
+                    .col(timestamp(Vacation::Until))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Vacation_Resource")
+                            .from(Vacation::Table, Vacation::ResourceId)
+                            .to(Resource::Table, Resource::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await?;
@@ -278,11 +365,49 @@ enum Dependency {
 }
 
 #[derive(DeriveIden)]
+enum Holiday {
+    Table,
+    Id,
+    Name,
+    Start,
+    End,
+}
+
+#[derive(DeriveIden)]
+enum HolidayEntry {
+    Table,
+    Id,
+    HolidayId,
+    Name,
+    Date,
+}
+#[derive(DeriveIden)]
 enum Resource {
     Table,
     Id,
     Name,
-    Availability,
+    Timezone,
+    Added,
+    Removed,
+    HolidayId,
+}
+
+#[derive(DeriveIden)]
+enum Vacation {
+    Table,
+    Id,
+    ResourceId,
+    From,
+    Until,
+}
+
+#[derive(DeriveIden)]
+enum Availability {
+    Table,
+    Id,
+    ResourceId,
+    Weekday,
+    Duration,
 }
 
 #[derive(DeriveIden)]
