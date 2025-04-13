@@ -1203,7 +1203,6 @@
                 "required": [
                     "category",
                     "code",
-                    "comment",
                     "name",
                     "officialLanguages",
                     "shortName"

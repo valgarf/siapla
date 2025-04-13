@@ -24,8 +24,8 @@ pub struct SubdivisionResponse {
     #[serde(rename = "code")]
     pub code: String,
     /// Localized comments of the subdivision
-    #[serde(rename = "comment")]
-    pub comment: Vec<models::LocalizedText>,
+    #[serde(rename = "comment", skip_serializing_if = "Option::is_none")]
+    pub comment: Option<Vec<models::LocalizedText>>,
     /// ISO 3166-2 subdivision code (if defined)
     #[serde(rename = "isoCode", default, with = "::serde_with::rust::double_option", skip_serializing_if = "Option::is_none")]
     pub iso_code: Option<Option<String>>,
@@ -42,12 +42,12 @@ pub struct SubdivisionResponse {
 
 impl SubdivisionResponse {
     /// Representation of a subdivision
-    pub fn new(category: Vec<models::LocalizedText>, code: String, comment: Vec<models::LocalizedText>, name: Vec<models::LocalizedText>, official_languages: Vec<String>, short_name: String) -> SubdivisionResponse {
+    pub fn new(category: Vec<models::LocalizedText>, code: String, name: Vec<models::LocalizedText>, official_languages: Vec<String>, short_name: String) -> SubdivisionResponse {
         SubdivisionResponse {
             category,
             children: None,
             code,
-            comment,
+            comment: None,
             iso_code: None,
             name,
             official_languages,

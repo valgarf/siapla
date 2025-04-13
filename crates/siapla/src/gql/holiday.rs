@@ -7,9 +7,7 @@ use sea_orm::{
 use super::context::Context;
 use crate::entity::{holiday, holiday_entry};
 
-use siapla_open_holidays_api::apis::{
-    configuration::Configuration, holidays_api::public_holidays_get,
-};
+use siapla_open_holidays_api::apis::{configuration::Configuration, holidays_api, regional_api};
 //
 #[graphql_object]
 #[graphql(name = "Holiday")]
@@ -91,6 +89,7 @@ impl holiday::Model {
                     .await?;
                 }
                 holiday::Entity::update(holiday::ActiveModel {
+                    id: ActiveValue::Set(self.id),
                     start: ActiveValue::Set(Some(start.min(from))),
                     end: ActiveValue::Set(Some(end.max(until))),
                     ..Default::default()
@@ -129,7 +128,7 @@ impl holiday::Model {
             base_path: "https://openholidaysapi.org".into(),
             ..Default::default()
         };
-        let entries = public_holidays_get(
+        let entries = holidays_api::public_holidays_get(
             &config,
             &self.external_id[0..2],
             from,
@@ -180,19 +179,43 @@ impl holiday::Model {
         let holiday = match existing {
             Some(holiday) => holiday,
             None => {
-                let am = holiday::ActiveModel {
-                    name: ActiveValue::Set(isocode.clone()),
-                    external_id: ActiveValue::Set(isocode.clone()),
-                    ..Default::default()
-                };
-                let id = holiday::Entity::insert(am).exec(txn).await?.last_insert_id;
-                holiday::Entity::find_by_id(id)
-                    .one(txn)
-                    .await?
-                    .ok_or(anyhow!(
-                        "We just created a holiday with id {}! Where is it?",
-                        id
-                    ))?
+                let subdivisions = regional_api::subdivisions_get(
+                    &Configuration {
+                        base_path: "https://openholidaysapi.org".into(),
+                        ..Default::default()
+                    },
+                    &isocode[0..2],
+                    "EN".into(),
+                )
+                .await?;
+                let name = subdivisions
+                    .into_iter()
+                    .filter_map(|sub| {
+                        if sub.iso_code.unwrap_or(None).unwrap_or("".into()) == isocode {
+                            sub.name.first().map(|n| n.text.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .next();
+                match name {
+                    None => Err(anyhow!("Isocode for country/region '{}' unknown", isocode))?,
+                    Some(name) => {
+                        let am = holiday::ActiveModel {
+                            name: ActiveValue::Set(name),
+                            external_id: ActiveValue::Set(isocode.clone()),
+                            ..Default::default()
+                        };
+                        let id = holiday::Entity::insert(am).exec(txn).await?.last_insert_id;
+                        holiday::Entity::find_by_id(id)
+                            .one(txn)
+                            .await?
+                            .ok_or(anyhow!(
+                                "We just created a holiday with id {}! Where is it?",
+                                id
+                            ))?
+                    }
+                }
             }
         };
 

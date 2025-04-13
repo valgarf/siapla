@@ -115,6 +115,7 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+        // TODO: create all necessary indices
 
         manager
             .create_table(
@@ -324,7 +325,30 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
+            .drop_table(Table::drop().table(Vacation::Table).if_exists().to_owned())
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Availability::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
             .drop_table(Table::drop().table(Resource::Table).if_exists().to_owned())
+            .await?;
+
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(HolidayEntry::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Holiday::Table).if_exists().to_owned())
             .await?;
 
         manager
