@@ -87,6 +87,7 @@ impl MigrationTrait for Migration {
                     .table(Holiday::Table)
                     .if_not_exists()
                     .col(pk_auto(Holiday::Id))
+                    .col(string(Holiday::ExternalId))
                     .col(string(Holiday::Name))
                     .col(date(Holiday::Start))
                     .col(date(Holiday::End))
@@ -368,6 +369,7 @@ enum Dependency {
 enum Holiday {
     Table,
     Id,
+    ExternalId,
     Name,
     Start,
     End,

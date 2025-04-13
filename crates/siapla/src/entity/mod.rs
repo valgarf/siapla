@@ -4,8 +4,12 @@ pub mod prelude;
 
 pub mod allocated_resource;
 pub mod allocation;
+pub mod availability;
 pub mod dependency;
+pub mod holiday;
+pub mod holiday_entry;
 pub mod resource;
 pub mod resource_constraint;
 pub mod resource_constraint_entry;
 pub mod task;
+pub mod vacation;

@@ -2,8 +2,12 @@
 
 pub use super::allocated_resource::Entity as AllocatedResource;
 pub use super::allocation::Entity as Allocation;
+pub use super::availability::Entity as Availability;
 pub use super::dependency::Entity as Dependency;
+pub use super::holiday::Entity as Holiday;
+pub use super::holiday_entry::Entity as HolidayEntry;
 pub use super::resource::Entity as Resource;
 pub use super::resource_constraint::Entity as ResourceConstraint;
 pub use super::resource_constraint_entry::Entity as ResourceConstraintEntry;
 pub use super::task::Entity as Task;
+pub use super::vacation::Entity as Vacation;

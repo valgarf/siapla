@@ -16,14 +16,20 @@ impl EntityName for Entity {
 pub struct Model {
     pub id: i32,
     pub name: String,
-    pub availability: String,
+    pub timezone: String,
+    pub added: DateTimeUtc,
+    pub removed: Option<DateTimeUtc>,
+    pub holiday_id: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     Id,
     Name,
-    Availability,
+    Timezone,
+    Added,
+    Removed,
+    HolidayId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -41,8 +47,11 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     AllocatedResource,
+    Availability,
+    Holiday,
     ResourceConstraint,
     ResourceConstraintEntry,
+    Vacation,
 }
 
 impl ColumnTrait for Column {
@@ -51,7 +60,10 @@ impl ColumnTrait for Column {
         match self {
             Self::Id => ColumnType::Integer.def(),
             Self::Name => ColumnType::String(StringLen::None).def(),
-            Self::Availability => ColumnType::String(StringLen::None).def(),
+            Self::Timezone => ColumnType::String(StringLen::None).def(),
+            Self::Added => ColumnType::Timestamp.def(),
+            Self::Removed => ColumnType::Timestamp.def().null(),
+            Self::HolidayId => ColumnType::Integer.def().null(),
         }
     }
 }
@@ -60,10 +72,16 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
+            Self::Availability => Entity::has_many(super::availability::Entity).into(),
+            Self::Holiday => Entity::belongs_to(super::holiday::Entity)
+                .from(Column::HolidayId)
+                .to(super::holiday::Column::Id)
+                .into(),
             Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
             Self::ResourceConstraintEntry => {
                 Entity::has_many(super::resource_constraint_entry::Entity).into()
             }
+            Self::Vacation => Entity::has_many(super::vacation::Entity).into(),
         }
     }
 }
@@ -71,6 +89,18 @@ impl RelationTrait for Relation {
 impl Related<super::allocated_resource::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AllocatedResource.def()
+    }
+}
+
+impl Related<super::availability::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Availability.def()
+    }
+}
+
+impl Related<super::holiday::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Holiday.def()
     }
 }
 
@@ -83,6 +113,12 @@ impl Related<super::resource_constraint::Entity> for Entity {
 impl Related<super::resource_constraint_entry::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ResourceConstraintEntry.def()
+    }
+}
+
+impl Related<super::vacation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Vacation.def()
     }
 }
 
