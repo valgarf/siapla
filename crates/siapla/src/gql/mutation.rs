@@ -26,6 +26,7 @@ impl Mutation {
         let children = task.children.take();
         let am = task::ActiveModel::from(task);
         let db = ctx.db().await?;
+
         // Note: must be done outside of a transaction, otherwise it will block for sqlite
         let mut existing_predecessors: HashSet<i32> = Default::default();
         let mut existing_successors: HashSet<i32> = Default::default();

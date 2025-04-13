@@ -11,7 +11,10 @@ use super::{
     common::{nullable_to_av, opt_to_av},
     context::Context,
 };
-use crate::entity::{dependency, task};
+use crate::{
+    entity::{dependency, task},
+    gql::common::resolve_many_to_many,
+};
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString)]
 enum TaskDesignation {
@@ -53,48 +56,28 @@ impl task::Model {
         Ok(TaskDesignation::from_str(&self.designation)?)
     }
     pub async fn predecessors(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
-        const CIDX: usize = dependency::Column::SuccessorId as usize;
-        let links = ctx.load_by_col::<dependency::Entity, CIDX>(self.id).await?;
-        let mut joins = tokio::task::JoinSet::new();
-        for l in links {
-            const CIDX: usize = task::Column::Id as usize;
-            joins.spawn(ctx.load_one_by_col::<task::Entity, CIDX>(l.predecessor_id));
-        }
-        let results = joins.join_all().await;
-        let (values, mut errors): (Vec<_>, Vec<_>) =
-            results.into_iter().partition_map(|v| match v {
-                Ok(Some(v)) => Either::Left(v),
-                Ok(None) => Either::Right(anyhow!("Could not resolve dependency link")),
-                Err(e) => Either::Right(e),
-            });
-        let first_error = errors.drain(..).next();
-        if let Some(err) = first_error {
-            Err(err)?
-        } else {
-            Ok(values)
-        }
+        let result = resolve_many_to_many!(
+            ctx,
+            dependency::Entity,
+            dependency::Column::SuccessorId,
+            self.id,
+            |l: dependency::Model| l.predecessor_id,
+            task::Entity,
+            task::Column::Id
+        );
+        Ok(result?)
     }
     pub async fn successors(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
-        const CIDX: usize = dependency::Column::PredecessorId as usize;
-        let links = ctx.load_by_col::<dependency::Entity, CIDX>(self.id).await?;
-        let mut joins = tokio::task::JoinSet::new();
-        for l in links {
-            const CIDX: usize = task::Column::Id as usize;
-            joins.spawn(ctx.load_one_by_col::<task::Entity, CIDX>(l.successor_id));
-        }
-        let results = joins.join_all().await;
-        let (values, mut errors): (Vec<_>, Vec<_>) =
-            results.into_iter().partition_map(|v| match v {
-                Ok(Some(v)) => Either::Left(v),
-                Ok(None) => Either::Right(anyhow!("Could not resolve dependency link")),
-                Err(e) => Either::Right(e),
-            });
-        let first_error = errors.drain(..).next();
-        if let Some(err) = first_error {
-            Err(err)?
-        } else {
-            Ok(values)
-        }
+        let result = resolve_many_to_many!(
+            ctx,
+            dependency::Entity,
+            dependency::Column::PredecessorId,
+            self.id,
+            |l: dependency::Model| l.successor_id,
+            task::Entity,
+            task::Column::Id
+        );
+        Ok(result?)
     }
     pub async fn children(&self, ctx: &Context) -> FieldResult<Vec<Self>> {
         const CIDX: usize = task::Column::ParentId as usize;
