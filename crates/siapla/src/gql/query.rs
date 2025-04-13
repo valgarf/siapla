@@ -1,4 +1,4 @@
-use crate::entity::task;
+use crate::entity::{holiday, task};
 
 use super::context::Context;
 use juniper::{FieldResult, graphql_object};
@@ -25,6 +25,17 @@ impl Query {
             .all(ctx.db().await?)
             .await?;
         Ok(res)
+    }
+
+    async fn get_from_open_holidays(
+        ctx: &Context,
+        isocode: String,
+    ) -> FieldResult<Option<holiday::Model>> {
+        let db = ctx.db().await?;
+        let txn = db.begin().await?;
+        let result = holiday::Model::get_from_open_holidays(&txn, isocode).await?;
+        txn.commit().await?;
+        Ok(Some(result))
     }
 }
 

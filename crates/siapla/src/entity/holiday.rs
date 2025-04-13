@@ -17,8 +17,8 @@ pub struct Model {
     pub id: i32,
     pub external_id: String,
     pub name: String,
-    pub start: Date,
-    pub end: Date,
+    pub start: Option<Date>,
+    pub end: Option<Date>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -55,8 +55,8 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::ExternalId => ColumnType::String(StringLen::None).def(),
             Self::Name => ColumnType::String(StringLen::None).def(),
-            Self::Start => ColumnType::Date.def(),
-            Self::End => ColumnType::Date.def(),
+            Self::Start => ColumnType::Date.def().null(),
+            Self::End => ColumnType::Date.def().null(),
         }
     }
 }

@@ -1,0 +1,19 @@
+# HolidayByDateResponse
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**comment** | Option<[**Vec<models::LocalizedText>**](LocalizedText.md)> | Additional localized comments | [optional]
+**country** | [**models::CountryReference**](CountryReference.md) |  | 
+**id** | [**uuid::Uuid**](uuid::Uuid.md) | Unqiue holiday id | 
+**name** | [**Vec<models::LocalizedText>**](LocalizedText.md) | Localized names of the holiday | 
+**nationwide** | **bool** | Is the holiday nationwide? | 
+**regional_scope** | Option<[**models::RegionalScope**](RegionalScope.md)> |  | [optional]
+**subdivisions** | Option<[**Vec<models::SubdivisionReference>**](SubdivisionReference.md)> | List of subdivision references | [optional]
+**temporal_scope** | Option<[**models::TemporalScope**](TemporalScope.md)> |  | [optional]
+**r#type** | [**models::HolidayType**](HolidayType.md) |  | 
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
+

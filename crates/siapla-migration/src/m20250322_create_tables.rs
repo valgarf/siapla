@@ -89,8 +89,8 @@ impl MigrationTrait for Migration {
                     .col(pk_auto(Holiday::Id))
                     .col(string(Holiday::ExternalId))
                     .col(string(Holiday::Name))
-                    .col(date(Holiday::Start))
-                    .col(date(Holiday::End))
+                    .col(date_null(Holiday::Start))
+                    .col(date_null(Holiday::End))
                     .to_owned(),
             )
             .await?;

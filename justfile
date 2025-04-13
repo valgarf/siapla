@@ -32,6 +32,23 @@ serve:
 generate-frontend-gql:
     npm run codegen
 
+[working-directory("./crates")]
+generate-holidays-api:
+    docker run --rm -u $(id -u):$(id -g)  \
+    -v $PWD:/local openapitools/openapi-generator-cli generate \
+    -i /local/siapla-open-holidays-api/api-definition.json \
+    -g rust \
+    --additional-properties packageName=siapla-open-holidays-api \
+    --additional-properties packageVersion=0.1.0 \
+    --additional-properties basePath=https://openholidaysapi.org \
+    --type-mappings date=chrono::NaiveDate \
+    --import-mappings date=chrono::NaiveDate \
+    -o /local/siapla-open-holidays-api
+    cargo add -p siapla-open-holidays-api chrono -F serde
+    # original definition (sadly does not match real API perfectly):
+    # -i https://openholidaysapi.org/swagger/v1/swagger.json \
+                
 [working-directory("./run-data")]
 export-schema:
     cargo run -p siapla --bin siapla-export-schema
+
