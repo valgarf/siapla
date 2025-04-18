@@ -2901,6 +2901,7 @@ dependencies = [
  "reqwest",
  "sea-orm",
  "serde",
+ "serde_json",
  "siapla-open-holidays-api",
  "strum 0.27.1",
  "thiserror 2.0.12",

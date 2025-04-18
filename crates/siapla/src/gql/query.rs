@@ -1,6 +1,9 @@
 use crate::entity::{holiday, task};
 
-use super::context::Context;
+use super::{
+    context::Context,
+    holiday::{Country, GQLHoliday},
+};
 use juniper::{FieldResult, graphql_object};
 use sea_orm::*;
 
@@ -27,15 +30,35 @@ impl Query {
         Ok(res)
     }
 
+    async fn countries() -> Vec<Country> {
+        super::holiday::countries()
+            .iter()
+            .map(|(code, name)| Country {
+                name: name.clone(),
+                isocode: code.clone(),
+            })
+            .collect()
+    }
+
+    async fn country(isocode: String) -> Option<Country> {
+        super::holiday::countries()
+            .get(&isocode)
+            .map(|name| Country {
+                name: name.clone(),
+                isocode: isocode.clone(),
+            })
+    }
+
     async fn get_from_open_holidays(
         ctx: &Context,
         isocode: String,
-    ) -> FieldResult<Option<holiday::Model>> {
+    ) -> FieldResult<Option<GQLHoliday>> {
         let db = ctx.db().await?;
         let txn = db.begin().await?;
         let result = holiday::Model::get_from_open_holidays(&txn, isocode).await?;
         txn.commit().await?;
-        Ok(Some(result))
+
+        Ok(Some(GQLHoliday::from_model(result)))
     }
 }
 
