@@ -13,6 +13,7 @@ use crate::entity::{holiday, holiday_entry};
 use siapla_open_holidays_api::apis::{configuration::Configuration, holidays_api, regional_api};
 //
 
+#[derive(Debug, Clone)]
 pub struct Country {
     pub isocode: String,
     pub name: String,
@@ -27,7 +28,7 @@ impl Country {
     fn name(&self) -> &str {
         &self.name
     }
-    async fn regions(&self, _ctx: &Context) -> anyhow::Result<Vec<Region>> {
+    pub async fn regions(&self, _ctx: &Context) -> anyhow::Result<Vec<Region>> {
         let subdivisions = regional_api::subdivisions_get(
             &Configuration {
                 base_path: "https://openholidaysapi.org".into(),
@@ -56,6 +57,7 @@ impl Country {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Region {
     pub isocode: String,
     pub country_name: String,
@@ -218,6 +220,7 @@ impl holiday::Model {
         }
 
         Ok(holiday_entry::Entity::find()
+            .filter(holiday_entry::Column::HolidayId.eq(self.id))
             .filter(holiday_entry::Column::Date.gte(from))
             .filter(holiday_entry::Column::Date.lte(until))
             .all(txn)

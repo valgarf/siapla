@@ -2,10 +2,11 @@ use crate::entity::{holiday, task};
 
 use super::{
     context::Context,
-    holiday::{Country, GQLHoliday},
+    holiday::{Country, GQLHoliday, Region},
 };
 use juniper::{FieldResult, graphql_object};
 use sea_orm::*;
+use tracing::warn;
 
 #[derive(Default)]
 pub struct Query;
@@ -47,6 +48,25 @@ impl Query {
                 name: name.clone(),
                 isocode: isocode.clone(),
             })
+    }
+
+    async fn region(isocode: String, ctx: &Context) -> anyhow::Result<Option<Region>> {
+        let country = super::holiday::countries()
+            .get(&isocode[0..2])
+            .map(|name| Country {
+                name: name.clone(),
+                isocode: isocode[0..2].to_owned(),
+            });
+        let country = match country {
+            Some(country) => country,
+            None => return Ok(None),
+        };
+        Ok(country
+            .regions(ctx)
+            .await?
+            .iter()
+            .find(|r| r.isocode == isocode)
+            .cloned())
     }
 
     async fn get_from_open_holidays(
