@@ -26,40 +26,6 @@ impl Mutation {
         let children = task.children.take();
         let am = task::ActiveModel::from(task);
         let txn = ctx.txn().await?;
-
-        // Note: must be done outside of a transaction, otherwise it will block for sqlite
-        let mut existing_predecessors: HashSet<i32> = Default::default();
-        let mut existing_successors: HashSet<i32> = Default::default();
-        let mut existing_children: HashSet<i32> = Default::default();
-        const CIDX: usize = task::Column::Id as usize;
-        if (predecessors.is_some() || successors.is_some() || children.is_some()) && am.id.is_set()
-        {
-            let model = ctx
-                .load_one_by_col::<task::Entity, CIDX>(am.id.clone().into_value().unwrap())
-                .await?;
-            if let Some(model) = model {
-                if predecessors.is_some() {
-                    existing_predecessors = model
-                        .predecessors(ctx)
-                        .await?
-                        .iter()
-                        .map(|el| el.id)
-                        .collect();
-                }
-                if predecessors.is_some() {
-                    existing_successors = model
-                        .successors(ctx)
-                        .await?
-                        .iter()
-                        .map(|el| el.id)
-                        .collect();
-                }
-                if children.is_some() {
-                    existing_children = model.children(ctx).await?.iter().map(|el| el.id).collect();
-                }
-            }
-        }
-
         let model = if am.id.is_set() {
             am.update(txn).await?
         } else {
@@ -67,7 +33,12 @@ impl Mutation {
         };
 
         if let Some(mut predecessors) = predecessors {
-            let existing = existing_predecessors;
+            let existing: HashSet<i32> = model
+                .predecessors(ctx)
+                .await?
+                .iter()
+                .map(|el| el.id)
+                .collect();
             let target: HashSet<i32> = HashSet::from_iter(predecessors.drain(..));
             let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
             let add: HashSet<i32> = target.difference(&existing).cloned().collect();
@@ -97,7 +68,12 @@ impl Mutation {
         }
 
         if let Some(mut successors) = successors {
-            let existing = existing_successors;
+            let existing: HashSet<i32> = model
+                .successors(ctx)
+                .await?
+                .iter()
+                .map(|el| el.id)
+                .collect();
             let target: HashSet<i32> = HashSet::from_iter(successors.drain(..));
             let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
             let add: HashSet<i32> = target.difference(&existing).cloned().collect();
@@ -127,7 +103,8 @@ impl Mutation {
         }
 
         if let Some(mut children) = children {
-            let existing = existing_children;
+            let existing: HashSet<i32> =
+                model.children(ctx).await?.iter().map(|el| el.id).collect();
             let target: HashSet<i32> = HashSet::from_iter(children.drain(..));
             let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
             let add: HashSet<i32> = target.difference(&existing).cloned().collect();
