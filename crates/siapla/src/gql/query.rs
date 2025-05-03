@@ -25,7 +25,7 @@ impl Query {
     async fn tasks(ctx: &Context) -> FieldResult<Vec<task::Model>> {
         let res = task::Entity::find()
             .order_by_asc(task::Column::Title)
-            .all(ctx.db().await?)
+            .all(ctx.txn().await?)
             .await?;
         Ok(res)
     }
@@ -72,10 +72,8 @@ impl Query {
         ctx: &Context,
         isocode: String,
     ) -> FieldResult<Option<GQLHoliday>> {
-        let db = ctx.db().await?;
-        let txn = db.begin().await?;
-        let result = holiday::Model::get_from_open_holidays(&txn, isocode).await?;
-        txn.commit().await?;
+        let txn = ctx.txn().await?;
+        let result = holiday::Model::get_from_open_holidays(txn, isocode).await?;
 
         Ok(Some(GQLHoliday::from_model(result)))
     }

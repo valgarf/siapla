@@ -7,11 +7,13 @@ use std::{
 use super::dataloader::{ByColBatcher, ByColLoader};
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::TryFutureExt;
-use sea_orm::{Database, DatabaseConnection, EntityTrait, strum::IntoEnumIterator};
+use sea_orm::{
+    Database, DatabaseTransaction, EntityTrait, TransactionTrait as _, strum::IntoEnumIterator,
+};
 use tokio::sync::{OnceCell, RwLock};
 
 pub struct Context {
-    db: OnceCell<DatabaseConnection>,
+    txn: OnceCell<DatabaseTransaction>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
     me: Weak<Self>,
 }
@@ -36,7 +38,7 @@ where
 impl Context {
     pub fn new() -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
-            db: Default::default(),
+            txn: Default::default(),
             by_col_loaders: Arc::new(RwLock::new(
                 anymap::Map::<dyn anymap::any::Any + Send + Sync>::new(),
             )),
@@ -44,12 +46,29 @@ impl Context {
         })
     }
 
-    pub async fn db(&self) -> anyhow::Result<&DatabaseConnection> {
-        self.db
+    pub async fn txn(&self) -> anyhow::Result<&DatabaseTransaction> {
+        self.txn
             .get_or_try_init::<anyhow::Error, _, _>(|| async {
-                Ok(Database::connect(env::var("DATABASE_URL")?).await?)
+                Ok(Database::connect(env::var("DATABASE_URL")?)
+                    .await?
+                    .begin()
+                    .await?)
             })
             .await
+    }
+
+    pub async fn commit(&mut self) -> anyhow::Result<()> {
+        if let Some(txn) = self.txn.take() {
+            txn.commit().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn rollback(&mut self) -> anyhow::Result<()> {
+        if let Some(txn) = self.txn.take() {
+            txn.rollback().await?
+        }
+        Ok(())
     }
 
     /// Generic dataloader that loads values by column value
@@ -139,6 +158,12 @@ impl Context {
 }
 
 pub async fn add_context(mut req: Request, next: Next) -> Result<Response, StatusCode> {
-    req.extensions_mut().insert(Context::new());
-    Ok(next.run(req).await)
+    let ctx = Context::new();
+    req.extensions_mut().insert(Arc::clone(&ctx));
+    let res = next.run(req).await;
+    let mut ctx = Arc::into_inner(ctx).expect("All other references should have been destroyed");
+    ctx.commit()
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(res)
 }

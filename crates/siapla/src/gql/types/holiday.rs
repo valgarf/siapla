@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::OnceLock};
 use anyhow::anyhow;
 use juniper::{FieldResult, graphql_object};
 use sea_orm::{
-    ActiveValue, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, TransactionTrait,
+    ActiveValue, ColumnTrait, DatabaseTransaction, EntityTrait, Order, QueryFilter, QueryOrder,
 };
 use tokio::sync::OnceCell;
 
@@ -113,11 +113,8 @@ impl GQLHoliday {
         until: chrono::NaiveDate,
     ) -> anyhow::Result<Vec<holiday_entry::Model>> {
         let model = self.get_model(ctx).await?;
-        let db = ctx.db().await?;
-        let txn = db.begin().await?;
-        let result = model.ensure_entries(&txn, from, until).await;
-        txn.commit().await?;
-        result
+        let txn = ctx.txn().await?;
+        model.ensure_entries(txn, from, until).await
     }
 }
 
@@ -154,9 +151,8 @@ impl GQLHoliday {
         let result = self
             .model
             .get_or_try_init(move || async {
-                let txn = ctx.db().await?.begin().await?;
-                let result = holiday::Model::get_from_open_holidays(&txn, isocode).await?;
-                txn.commit().await?;
+                let txn = ctx.txn().await?;
+                let result = holiday::Model::get_from_open_holidays(txn, isocode).await?;
                 Ok::<_, anyhow::Error>(result)
             })
             .await?;
@@ -225,6 +221,7 @@ impl holiday::Model {
             .filter(holiday_entry::Column::HolidayId.eq(self.id))
             .filter(holiday_entry::Column::Date.gte(from))
             .filter(holiday_entry::Column::Date.lte(until))
+            .order_by(holiday_entry::Column::Date, Order::Asc)
             .all(txn)
             .await?)
     }

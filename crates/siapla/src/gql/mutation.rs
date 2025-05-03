@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use juniper::{FieldResult, graphql_object};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use tracing::trace;
 
 use sea_orm::prelude::*;
@@ -25,7 +25,7 @@ impl Mutation {
         let successors = task.successors.take();
         let children = task.children.take();
         let am = task::ActiveModel::from(task);
-        let db = ctx.db().await?;
+        let txn = ctx.txn().await?;
 
         // Note: must be done outside of a transaction, otherwise it will block for sqlite
         let mut existing_predecessors: HashSet<i32> = Default::default();
@@ -60,11 +60,10 @@ impl Mutation {
             }
         }
 
-        let txn = db.begin().await?;
         let model = if am.id.is_set() {
-            am.update(&txn).await?
+            am.update(txn).await?
         } else {
-            am.insert(&txn).await?
+            am.insert(txn).await?
         };
 
         if let Some(mut predecessors) = predecessors {
@@ -83,7 +82,7 @@ impl Mutation {
                             .eq(model.id)
                             .and(dependency::Column::PredecessorId.is_in(remove)),
                     )
-                    .exec(&txn)
+                    .exec(txn)
                     .await?;
             }
             if !add.is_empty() {
@@ -92,7 +91,7 @@ impl Mutation {
                     successor_id: sea_orm::ActiveValue::Set(model.id),
                     ..Default::default()
                 }))
-                .exec(&txn)
+                .exec(txn)
                 .await?;
             }
         }
@@ -113,7 +112,7 @@ impl Mutation {
                             .eq(model.id)
                             .and(dependency::Column::SuccessorId.is_in(remove)),
                     )
-                    .exec(&txn)
+                    .exec(txn)
                     .await?;
             }
             if !add.is_empty() {
@@ -122,7 +121,7 @@ impl Mutation {
                     predecessor_id: sea_orm::ActiveValue::Set(model.id),
                     ..Default::default()
                 }))
-                .exec(&txn)
+                .exec(txn)
                 .await?;
             }
         }
@@ -140,7 +139,7 @@ impl Mutation {
                 task::Entity::update_many()
                     .col_expr(task::Column::ParentId, Expr::value(Value::Int(None)))
                     .filter(task::Column::Id.is_in(remove))
-                    .exec(&txn)
+                    .exec(txn)
                     .await?;
             }
             if !add.is_empty() {
@@ -150,23 +149,22 @@ impl Mutation {
                         Expr::value(Value::Int(Some(model.id))),
                     )
                     .filter(task::Column::Id.is_in(add))
-                    .exec(&txn)
+                    .exec(txn)
                     .await?;
             }
         }
 
         // TODO: before committing, check if we now have predecessor or parent cycles!
-        txn.commit().await?;
         Ok(model)
     }
 
     async fn task_delete(ctx: &Context, task_id: i32) -> FieldResult<bool> {
-        let db = ctx.db().await?;
+        let txn = ctx.txn().await?;
         let am = task::ActiveModel {
             id: sea_orm::ActiveValue::Set(task_id),
             ..Default::default()
         };
-        let res = am.delete(db).await?;
+        let res = am.delete(txn).await?;
         Ok(res.rows_affected > 0)
     }
 }

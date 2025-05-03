@@ -30,11 +30,11 @@ where
     let ctx = ctx
         .upgrade()
         .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-    let db = ctx.db().await?;
+    let txn = ctx.txn().await?;
     let tasks: Vec<ET::Model> = ET::find()
         .filter(col.is_in(values.to_vec()))
         .order_by_asc(col)
-        .all(db)
+        .all(txn)
         .await?;
     Ok(tasks
         .into_iter()
