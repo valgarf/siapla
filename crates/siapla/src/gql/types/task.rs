@@ -7,13 +7,12 @@ use juniper::{FieldResult, GraphQLEnum, Nullable, graphql_object};
 use sea_orm::ActiveValue;
 use strum::{EnumString, IntoStaticStr};
 
-use super::{
-    common::{nullable_to_av, opt_to_av},
-    context::Context,
-};
 use crate::{
     entity::{dependency, task},
-    gql::common::resolve_many_to_many,
+    gql::{
+        common::{nullable_to_av, opt_to_av, resolve_many_to_many},
+        context::Context,
+    },
 };
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString)]

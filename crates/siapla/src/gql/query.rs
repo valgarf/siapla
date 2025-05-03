@@ -6,7 +6,6 @@ use super::{
 };
 use juniper::{FieldResult, graphql_object};
 use sea_orm::*;
-use tracing::warn;
 
 #[derive(Default)]
 pub struct Query;

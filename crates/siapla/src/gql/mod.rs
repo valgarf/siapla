@@ -1,11 +1,13 @@
 pub mod common;
 pub mod context;
 pub mod dataloader;
-pub mod holiday;
 pub mod mutation;
 pub mod query;
 pub mod subscription;
-pub mod task;
+mod types;
+
+pub use types::holiday;
+pub use types::task;
 
 use juniper::*;
 

@@ -7,8 +7,10 @@ use sea_orm::{
 };
 use tokio::sync::OnceCell;
 
-use super::context::Context;
-use crate::entity::{holiday, holiday_entry};
+use crate::{
+    entity::{holiday, holiday_entry},
+    gql::context::Context,
+};
 
 use siapla_open_holidays_api::apis::{configuration::Configuration, holidays_api, regional_api};
 //
