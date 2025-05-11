@@ -3,7 +3,7 @@
       display:inline-grid;
       grid-template-columns: repeat(auto-fill, 200px);
       grid-auto-columns: 200px;
-      grid-auto-rows: 180px;
+      grid-auto-rows: 250px;
       gap: 10px 10px;
       place-items: stretch;
       width:90%;
