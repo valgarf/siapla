@@ -35,6 +35,13 @@ export class ResourceDialogData implements DialogData {
   }
 }
 
+export class NewResourceDialogData implements DialogData {
+  constructor() {}
+  valid(): boolean {
+    return true;
+  }
+}
+
 export class DialogLayer {
   dialogs: DialogData[];
   idx: number;

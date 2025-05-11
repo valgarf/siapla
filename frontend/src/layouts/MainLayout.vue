@@ -87,6 +87,10 @@ const pages: PageLinkProps[] = [
   {
     title: "Tasks",
     link: "/tasks"
+  },
+  {
+    title: "Resources",
+    link: "/resources"
   }
 
 ]

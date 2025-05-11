@@ -3,7 +3,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
 import type { ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
-import { ResourceDialogData, TaskDialogData, useDialogStore } from './dialog';
+import { ResourceDialogData, useDialogStore } from './dialog';
 
 export interface Availability {
   mo: number;
@@ -79,14 +79,14 @@ function convertQueryResult(query: ResourcesQuery) {
   return resources;
 }
 
-function resourceToObj(task: Ref<ResourceInput>): ResourceSaveInput {
+function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
   const result: ResourceSaveInput = {
-    dbId: task.value.dbId ?? null,
-    name: task.value.name,
-    timezone: task.value.timezone,
-    added: task.value.added.toISOString(),
-    removed: task.value.removed?.toISOString(),
-    holidayId: task.value.holidayId ?? null,
+    dbId: resource.value.dbId ?? null,
+    name: resource.value.name,
+    timezone: resource.value.timezone,
+    added: resource.value.added.toISOString(),
+    removed: resource.value.removed?.toISOString(),
+    holidayId: resource.value.holidayId ?? null,
     availability: [],
   };
   return result;
@@ -118,7 +118,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
         resource.value.dbId = dbId;
         await queryGetAll.refetch();
         // TODO: generic error handling?
-        dialog.replaceDialog(new TaskDialogData(dbId));
+        dialog.replaceDialog(new ResourceDialogData(dbId));
       } else {
         resource.value.dbId = dbId;
         await queryGetAll.refetch();
@@ -167,5 +167,5 @@ export const useResourceStore = defineStore('resourceStore', () => {
 });
 
 if (import.meta.hot) {
-  import.meta.hot.accept(acceptHMRUpdate(useTaskStore, import.meta.hot));
+  import.meta.hot.accept(acceptHMRUpdate(useResourceStore, import.meta.hot));
 }
