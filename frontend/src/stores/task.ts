@@ -3,7 +3,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
 import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
-import { useTaskDialogStore } from './task_dialog';
+import { TaskDialogData, useDialogStore } from './dialog';
 
 export interface Task {
   dbId: number;
@@ -137,17 +137,17 @@ export const useTaskStore = defineStore('taskStore', () => {
   });
 
   async function save_task(task: Ref<TaskInput>) {
-    const dialog = useTaskDialogStore();
+    const dialog = useDialogStore();
     const resp = await mut_save_task.mutate({ task: task_to_obj(task) });
     const dbId = resp?.data?.taskSave.dbId;
     if (dbId != null) {
       if (task.value.dbId == null) {
         // a little hacky
+        // TODO: necessary?
         task.value.dbId = dbId;
         await query_get_all.refetch();
         // TODO: generic error handling?
-        dialog.pop_task_dialog();
-        dialog.push_task_dialog(dbId);
+        dialog.replaceDialog(new TaskDialogData(dbId));
       } else {
         task.value.dbId = dbId;
         await query_get_all.refetch();
@@ -157,12 +157,17 @@ export const useTaskStore = defineStore('taskStore', () => {
   }
 
   async function delete_task(taskId: number, pop: boolean = true) {
-    const dialog = useTaskDialogStore();
+    const dialog = useDialogStore();
     const resp = await mut_delete_task.mutate({ taskId: taskId });
     const result = resp?.data?.taskDelete;
     if (result) {
-      if (pop) {
-        dialog.pop_task_dialog();
+      // TODO: a 'filter' that removes all corresponding dialogs would be better
+      if (
+        pop &&
+        dialog.activeDialog instanceof TaskDialogData &&
+        dialog.activeDialog.taskId == taskId
+      ) {
+        dialog.popDialog();
       }
       await query_get_all.refetch();
     }

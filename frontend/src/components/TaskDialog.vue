@@ -1,111 +1,96 @@
 <template>
-    <q-dialog ref="dialogRef" @hide="taskDialogStore.reset_task_dialog()"
-        :model-value="taskDialogStore.active_task_dialog !== null">
-        <q-card class="q-dialog-plugin card-size">
-            <q-card-section>
-                <div class="row items-center">
-                    <q-btn v-if="taskDialogStore.prev_task_dialog != null" flat round icon="arrow_back"
-                        @click="taskDialogStore.pop_task_dialog()" />
-                    <q-breadcrumbs class="col">
-                        <q-breadcrumbs-el disable label="Task" />
-                        <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
-                            @click="!edit && taskDialogStore.push_task_dialog(p.dbId)" />
-                        <q-breadcrumbs-el :label="local_task.title" />
-                    </q-breadcrumbs>
-                    <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary"
-                        :disable="taskStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "Save"
-                            : null }}
-                    </q-btn>
-                    <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
-                        :disable="taskStore.saving" class="q-ma-xs"></q-btn>
-                    <q-btn flat @click="taskDialogStore.reset_task_dialog()" icon="close"></q-btn>
-                </div>
-            </q-card-section>
-            <q-card-section>
-                <q-input v-if="edit" outlined placeholder="Title" class="text-h5" v-model="local_task.title" />
-                <div v-else class="text-h5">{{ local_task.title }}</div>
+    <DialogLayout :dialogLayer="dialogLayer">
+        <template #toolbar>
+            <q-breadcrumbs class="col">
+                <q-breadcrumbs-el disable label="Task" />
+                <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
+                    @click="!edit && dialogStore.pushDialog(new TaskDialogData(p.dbId))" />
+                <q-breadcrumbs-el :label="local_task.title" />
+            </q-breadcrumbs>
+            <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
+                :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "Save"
+                    : null }}
+            </q-btn>
+            <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
+                :disable="taskStore.saving" class="q-ma-xs"></q-btn>
+        </template>
+        <q-card-section>
+            <q-input v-if="edit" outlined placeholder="Title" class="text-h5" v-model="local_task.title" />
+            <div v-else class="text-h5">{{ local_task.title }}</div>
 
-            </q-card-section>
+        </q-card-section>
 
-            <q-card-section class="q-pt-none">
-                <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
-                <q-markdown v-else :src="local_task.description" />
-            </q-card-section>
+        <q-card-section class="q-pt-none">
+            <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
+            <q-markdown v-else :src="local_task.description" />
+        </q-card-section>
 
-            <q-card-section>
-                <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="secondary"
-                    text-color="secondary" color="white" :options="[
-                        { label: 'Requirement', value: TaskDesignation.Requirement },
-                        { label: 'Task', value: TaskDesignation.Task },
-                        { label: 'Group', value: TaskDesignation.Group },
-                        { label: 'Milestone', value: TaskDesignation.Milestone }
-                    ]" />
-                <q-chip v-else color="secondary" text-color="white" class="q-pa-md">{{
-                    local_task.designation }}</q-chip>
-            </q-card-section>
+        <q-card-section>
+            <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="secondary"
+                text-color="secondary" color="white" :options="[
+                    { label: 'Requirement', value: TaskDesignation.Requirement },
+                    { label: 'Task', value: TaskDesignation.Task },
+                    { label: 'Group', value: TaskDesignation.Group },
+                    { label: 'Milestone', value: TaskDesignation.Milestone }
+                ]" />
+            <q-chip v-else color="secondary" text-color="white" class="q-pa-md">{{
+                local_task.designation }}</q-chip>
+        </q-card-section>
 
-            <q-card-section
-                v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
-                <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
-                    :edit="edit" />
-            </q-card-section>
-            <q-card-section
-                v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)">
-                <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
-                    :edit="edit" />
-            </q-card-section>
-            <q-card-section v-show="edit">
-                <q-select filled v-model="parent" :options="possibleParents" use-chips stack-label label="parent" />
-            </q-card-section>
-            <q-card-section
-                v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)">
-                <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren"
-                    :edit="edit" />
-            </q-card-section>
-            <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
-                <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
-                <div v-else class="row items-baseline">
-                    <div class="text-subtitle2 q-pr-md">Start:</div>
-                    <div>{{ format_datetime(local_task.earliestStart) }}</div>
-                </div>
-            </q-card-section>
-            <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
-                <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
-                <div v-else class="row items-baseline">
-                    <div class="text-subtitle2 q-pr-md">Schedule:</div>
-                    <div>{{ format_datetime(local_task.scheduleTarget) }}</div>
-                </div>
-            </q-card-section>
-            <q-card-section v-show="local_task.designation == TaskDesignation.Task">
-                <q-input v-if="edit" label="effort (days)" stack-label type="number"
-                    v-model.number="local_task.effort" />
-                <div v-else class="row items-baseline">
-                    <div class="text-subtitle2 q-pr-md">Effort:</div>
-                    <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
-                </div>
-            </q-card-section>
-            <q-card-section v-show="effective_requirements.length > 0">
-                <div class="col">
-                    <div class="text-subtitle2">Requirements</div>
-                    <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
-                </div>
-            </q-card-section>
-            <q-card-section v-show="effective_milestones.length > 0">
-                <div class="col">
-                    <div class="text-subtitle2">Milestones</div>
-                    <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
-                </div>
-            </q-card-section>
-        </q-card>
-    </q-dialog>
+        <q-card-section
+            v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
+            <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
+                :edit="edit" />
+        </q-card-section>
+        <q-card-section
+            v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)">
+            <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
+                :edit="edit" />
+        </q-card-section>
+        <q-card-section v-show="edit">
+            <q-select filled v-model="parent" :options="possibleParents" use-chips stack-label label="parent" />
+        </q-card-section>
+        <q-card-section
+            v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)">
+            <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren" :edit="edit" />
+        </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
+            <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Start:</div>
+                <div>{{ format_datetime(local_task.earliestStart) }}</div>
+            </div>
+        </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
+            <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Schedule:</div>
+                <div>{{ format_datetime(local_task.scheduleTarget) }}</div>
+            </div>
+        </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
+            <q-input v-if="edit" label="effort (days)" stack-label type="number" v-model.number="local_task.effort" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Effort:</div>
+                <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
+            </div>
+        </q-card-section>
+        <q-card-section v-show="effective_requirements.length > 0">
+            <div class="col">
+                <div class="text-subtitle2">Requirements</div>
+                <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
+            </div>
+        </q-card-section>
+        <q-card-section v-show="effective_milestones.length > 0">
+            <div class="col">
+                <div class="text-subtitle2">Milestones</div>
+                <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
+            </div>
+        </q-card-section>
+
+    </DialogLayout>
 </template>
 
-<style lang="scss" scoped>
-.card-size {
-    max-width: max(600px, 80%);
-    width: min(100vw, 960px);
-}
-</style>
 
 <script setup lang="ts">
 import { Dialog } from 'quasar'
@@ -117,19 +102,27 @@ import EditableTaskList from './EditableTaskList.vue';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import TaskChip from './TaskChip.vue';
-import { useTaskDialogStore } from 'src/stores/task_dialog';
+import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
+import DialogLayout from './DialogLayout.vue';
 
 const taskStore = useTaskStore();
-const taskDialogStore = useTaskDialogStore();
-
+const dialogStore = useDialogStore();
 
 const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null };
 const local_task = ref<TaskInput>(local_task_default)
 const edit = ref(local_task.value.dbId == null)
 
+
+interface Props {
+    dialogLayer: number;
+    task: TaskInput;
+};
+
+const props = defineProps<Props>();
+
 watchEffect(() => {
     // task changed
-    local_task.value = { ...local_task_default, ...taskDialogStore.active_task_dialog }
+    local_task.value = { ...local_task_default, ...props.task }
     edit.value = local_task.value.dbId == null
 })
 
@@ -245,7 +238,7 @@ async function save() {
 async function deleteTask() {
     const taskId = local_task.value.dbId
     if (taskId == null) {
-        taskDialogStore.pop_task_dialog()
+        dialogStore.popDialog()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {

@@ -13,17 +13,17 @@
 
 <script setup lang="ts">
 import type { Task } from 'src/stores/task';
-import { useTaskDialogStore } from 'src/stores/task_dialog';
+import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
 
 interface Props {
     task: Task;
 };
 
 const props = withDefaults(defineProps<Props>(), {});
-const taskDialogStore = useTaskDialogStore();
+const dialogStore = useDialogStore();
 // details dialog
 function showDetails() {
-    taskDialogStore.push_task_dialog(props.task.dbId)
+    dialogStore.pushDialog(new TaskDialogData(props.task.dbId))
 }
 
 </script>

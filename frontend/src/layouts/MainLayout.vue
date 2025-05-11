@@ -29,14 +29,14 @@
       <router-view />
     </q-page-container>
   </q-layout>
-  <TaskDialog />
+  <DialogHandler />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
 import EssentialLink, { type EssentialLinkProps } from 'components/EssentialLink.vue';
 import PageLink, { type PageLinkProps } from 'components/PageLink.vue';
-import TaskDialog from 'src/components/TaskDialog.vue';
+import DialogHandler from 'components/DialogHandler.vue';
 
 const linksList: EssentialLinkProps[] = [
   {
