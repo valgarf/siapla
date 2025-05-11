@@ -1,15 +1,15 @@
 <template>
-    <q-dialog ref="dialogRef" @hide="taskStore.reset_task_dialog()"
-        :model-value="taskStore.active_task_dialog !== null">
+    <q-dialog ref="dialogRef" @hide="taskDialogStore.reset_task_dialog()"
+        :model-value="taskDialogStore.active_task_dialog !== null">
         <q-card class="q-dialog-plugin card-size">
             <q-card-section>
                 <div class="row items-center">
-                    <q-btn v-if="taskStore.prev_task_dialog != null" flat round icon="arrow_back"
-                        @click="taskStore.pop_task_dialog()" />
+                    <q-btn v-if="taskDialogStore.prev_task_dialog != null" flat round icon="arrow_back"
+                        @click="taskDialogStore.pop_task_dialog()" />
                     <q-breadcrumbs class="col">
                         <q-breadcrumbs-el disable label="Task" />
                         <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
-                            @click="!edit && taskStore.push_task_dialog(p.dbId)" />
+                            @click="!edit && taskDialogStore.push_task_dialog(p.dbId)" />
                         <q-breadcrumbs-el :label="local_task.title" />
                     </q-breadcrumbs>
                     <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary"
@@ -18,7 +18,7 @@
                     </q-btn>
                     <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                         :disable="taskStore.saving" class="q-ma-xs"></q-btn>
-                    <q-btn flat @click="taskStore.reset_task_dialog()" icon="close"></q-btn>
+                    <q-btn flat @click="taskDialogStore.reset_task_dialog()" icon="close"></q-btn>
                 </div>
             </q-card-section>
             <q-card-section>
@@ -117,8 +117,10 @@ import EditableTaskList from './EditableTaskList.vue';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import TaskChip from './TaskChip.vue';
+import { useTaskDialogStore } from 'src/stores/task_dialog';
 
 const taskStore = useTaskStore();
+const taskDialogStore = useTaskDialogStore();
 
 
 const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null };
@@ -127,7 +129,7 @@ const edit = ref(local_task.value.dbId == null)
 
 watchEffect(() => {
     // task changed
-    local_task.value = { ...local_task_default, ...taskStore.active_task_dialog }
+    local_task.value = { ...local_task_default, ...taskDialogStore.active_task_dialog }
     edit.value = local_task.value.dbId == null
 })
 
@@ -243,7 +245,7 @@ async function save() {
 async function deleteTask() {
     const taskId = local_task.value.dbId
     if (taskId == null) {
-        taskStore.pop_task_dialog()
+        taskDialogStore.pop_task_dialog()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {

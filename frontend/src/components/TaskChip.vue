@@ -1,10 +1,11 @@
 <template>
     <q-chip color="primary" text-color="white" :clickable="clickable" @click="clickable && showDetails()">{{ task.title
-        }}</q-chip>
+    }}</q-chip>
 </template>
 
 <script setup lang="ts">
-import { useTaskStore, type Task } from 'src/stores/task';
+import type { Task } from 'src/stores/task';
+import { useTaskDialogStore } from 'src/stores/task_dialog';
 
 interface Props {
     task: Task;
@@ -12,10 +13,10 @@ interface Props {
 };
 
 const props = withDefaults(defineProps<Props>(), { clickable: true });
-const taskStore = useTaskStore();
+const taskDialogStore = useTaskDialogStore();
 // details dialog
 function showDetails() {
-    taskStore.push_task_dialog(props.task.dbId)
+    taskDialogStore.push_task_dialog(props.task.dbId)
 }
 
 </script>

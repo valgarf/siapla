@@ -22,9 +22,11 @@
 import { computed } from 'vue';
 import TaskCard from './TaskCard.vue';
 import { useTaskStore } from 'src/stores/task';
+import { useTaskDialogStore } from 'src/stores/task_dialog';
 
 
 const taskStore = useTaskStore();
+const taskDialogStore = useTaskDialogStore();
 
 const tasks = computed(() => {
   const result = [...taskStore.tasks];
@@ -41,7 +43,7 @@ withDefaults(defineProps<Props>(), {
 
 // details dialog
 function showDetailsNew() {
-  taskStore.push_new_task_dialog()
+  taskDialogStore.push_new_task_dialog()
 }
 
 </script>

@@ -2,7 +2,8 @@ import { graphql } from 'src/gql';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
 import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
-import { computed, ref, type Ref } from 'vue';
+import { computed, type Ref } from 'vue';
+import { useTaskDialogStore } from './task_dialog';
 
 export interface Task {
   dbId: number;
@@ -136,6 +137,7 @@ export const useTaskStore = defineStore('taskStore', () => {
   });
 
   async function save_task(task: Ref<TaskInput>) {
+    const dialog = useTaskDialogStore();
     const resp = await mut_save_task.mutate({ task: task_to_obj(task) });
     const dbId = resp?.data?.taskSave.dbId;
     if (dbId != null) {
@@ -144,8 +146,8 @@ export const useTaskStore = defineStore('taskStore', () => {
         task.value.dbId = dbId;
         await query_get_all.refetch();
         // TODO: generic error handling?
-        pop_task_dialog();
-        push_task_dialog(dbId);
+        dialog.pop_task_dialog();
+        dialog.push_task_dialog(dbId);
       } else {
         task.value.dbId = dbId;
         await query_get_all.refetch();
@@ -155,11 +157,12 @@ export const useTaskStore = defineStore('taskStore', () => {
   }
 
   async function delete_task(taskId: number, pop: boolean = true) {
+    const dialog = useTaskDialogStore();
     const resp = await mut_delete_task.mutate({ taskId: taskId });
     const result = resp?.data?.taskDelete;
     if (result) {
       if (pop) {
-        pop_task_dialog();
+        dialog.pop_task_dialog();
       }
       await query_get_all.refetch();
     }
@@ -167,61 +170,6 @@ export const useTaskStore = defineStore('taskStore', () => {
     // TODO: generic error handling?
   }
   const tasks = computed(() => Array.from(task_map.value?.values() || []));
-
-  // the store's state
-  const task_dialog_history: Ref<number[]> = ref([]);
-  const new_task: Ref<boolean> = ref(false);
-
-  function push_task_dialog(taskId: number) {
-    const task = task_map.value?.get(taskId);
-    if (task != null) {
-      task_dialog_history.value.push(taskId);
-    }
-  }
-  function push_new_task_dialog() {
-    new_task.value = true;
-  }
-  function pop_task_dialog() {
-    if (new_task.value) {
-      new_task.value = false;
-    } else {
-      task_dialog_history.value.pop();
-    }
-  }
-  function reset_task_dialog(taskId?: number) {
-    new_task.value = false;
-    task_dialog_history.value = [];
-    if (taskId != null) {
-      push_task_dialog(taskId);
-    }
-  }
-  const active_task_dialog = computed(() => {
-    if (new_task.value) {
-      return {};
-    }
-    if (task_dialog_history.value.length > 0) {
-      const taskId = task_dialog_history.value[task_dialog_history.value.length - 1];
-      if (taskId == null) {
-        return null;
-      }
-      return task_map.value?.get(taskId);
-    }
-    return null;
-  });
-  const prev_task_dialog = computed(() => {
-    if (new_task.value) {
-      if (task_dialog_history.value.length > 0) {
-        return task_dialog_history.value[task_dialog_history.value.length - 1];
-      }
-    } else if (task_dialog_history.value.length > 1) {
-      const taskId = task_dialog_history.value[task_dialog_history.value.length - 2];
-      if (taskId == null) {
-        return null;
-      }
-      return task_map.value?.get(taskId);
-    }
-    return null;
-  });
 
   return {
     gql: {
@@ -241,12 +189,6 @@ export const useTaskStore = defineStore('taskStore', () => {
     },
     save_task,
     delete_task,
-    push_task_dialog,
-    push_new_task_dialog,
-    pop_task_dialog,
-    reset_task_dialog,
-    active_task_dialog,
-    prev_task_dialog,
   };
 });
 
