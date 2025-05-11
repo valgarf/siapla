@@ -60,7 +60,7 @@ const TASK_DELETE_MUTATION = graphql(`
   }
 `);
 
-function convert_query_result(query: TasksQuery) {
+function convertQueryResult(query: TasksQuery) {
   const tasks: Map<number, Task> = new Map(
     query.tasks.map((t) => {
       return [
@@ -103,7 +103,7 @@ function convert_query_result(query: TasksQuery) {
   return tasks;
 }
 
-function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
+function taskToObj(task: Ref<TaskInput>): TaskSaveInput {
   const { parent, children, predecessors, successors, earliestStart, scheduleTarget, ...fields } =
     task.value;
   const predecessor_ids = predecessors?.map((t) => t.dbId) || [];
@@ -123,42 +123,42 @@ function task_to_obj(task: Ref<TaskInput>): TaskSaveInput {
 
 // actual store
 export const useTaskStore = defineStore('taskStore', () => {
-  const query_get_all = useQuery(TASK_QUERY);
-  const mut_save_task = useMutation(TASK_SAVE_MUTATION);
-  const mut_delete_task = useMutation(TASK_DELETE_MUTATION);
+  const queryGetAll = useQuery(TASK_QUERY);
+  const mutSaveTask = useMutation(TASK_SAVE_MUTATION);
+  const mutDeleteTask = useMutation(TASK_DELETE_MUTATION);
 
-  const apollo_objs = [query_get_all, mut_save_task, mut_delete_task];
+  const apollo_objs = [queryGetAll, mutSaveTask, mutDeleteTask];
   const task_map = computed(() => {
-    if (query_get_all.result.value == null) {
+    if (queryGetAll.result.value == null) {
       return null;
     } else {
-      return convert_query_result(query_get_all.result.value);
+      return convertQueryResult(queryGetAll.result.value);
     }
   });
 
-  async function save_task(task: Ref<TaskInput>) {
+  async function saveTask(task: Ref<TaskInput>) {
     const dialog = useDialogStore();
-    const resp = await mut_save_task.mutate({ task: task_to_obj(task) });
+    const resp = await mutSaveTask.mutate({ task: taskToObj(task) });
     const dbId = resp?.data?.taskSave.dbId;
     if (dbId != null) {
       if (task.value.dbId == null) {
         // a little hacky
         // TODO: necessary?
         task.value.dbId = dbId;
-        await query_get_all.refetch();
+        await queryGetAll.refetch();
         // TODO: generic error handling?
         dialog.replaceDialog(new TaskDialogData(dbId));
       } else {
         task.value.dbId = dbId;
-        await query_get_all.refetch();
+        await queryGetAll.refetch();
         // TODO: generic error handling?
       }
     }
   }
 
-  async function delete_task(taskId: number, pop: boolean = true) {
+  async function deleteTask(taskId: number, pop: boolean = true) {
     const dialog = useDialogStore();
-    const resp = await mut_delete_task.mutate({ taskId: taskId });
+    const resp = await mutDeleteTask.mutate({ taskId: taskId });
     const result = resp?.data?.taskDelete;
     if (result) {
       // TODO: a 'filter' that removes all corresponding dialogs would be better
@@ -169,7 +169,7 @@ export const useTaskStore = defineStore('taskStore', () => {
       ) {
         dialog.popDialog();
       }
-      await query_get_all.refetch();
+      await queryGetAll.refetch();
     }
     return result;
     // TODO: generic error handling?
@@ -178,22 +178,22 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   return {
     gql: {
-      query_get_all,
-      mut_save_task,
+      queryGetAll,
+      mutSaveTask,
     },
-    loading: query_get_all.loading,
-    saving: mut_save_task.loading,
-    deleting: mut_delete_task.loading,
+    loading: queryGetAll.loading,
+    saving: mutSaveTask.loading,
+    deleting: mutDeleteTask.loading,
     tasks,
-    top_level_tasks: computed(() => tasks.value.filter((v) => v.parent == null)),
-    leaf_tasks: computed(() => tasks.value.filter((v) => v.children.length == 0)),
+    topLevelTasks: computed(() => tasks.value.filter((v) => v.parent == null)),
+    leafTasks: computed(() => tasks.value.filter((v) => v.children.length == 0)),
     // TODO: generic GQL error messages as notifications?
-    apollo_errors: computed(() => apollo_objs.map((obj) => obj.error).filter((err) => err != null)),
+    apolloErrors: computed(() => apollo_objs.map((obj) => obj.error).filter((err) => err != null)),
     task: (dbId: number): Task | undefined => {
       return task_map.value?.get(dbId);
     },
-    save_task,
-    delete_task,
+    saveTask,
+    deleteTask,
   };
 });
 

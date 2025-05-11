@@ -7,7 +7,7 @@
       </li>
     </ul>
     <p v-if="taskStore.loading">Loading GQL...</p>
-    <p v-else-if="taskStore.apollo_errors">Error: {{ taskStore.apollo_errors }}</p>
+    <p v-else-if="taskStore.apolloErrors">Error: {{ taskStore.apolloErrors }}</p>
     <div v-else>
       <ul>
         <li v-for="t in taskStore.tasks" :key="t.dbId">

@@ -1,3 +1,36 @@
+type Availability {
+  dbId: Int!
+  duration: Int!
+  resource: Resource!
+  weekday: Weekday!
+}
+
+input AvailabilityInput {
+  duration: Int!
+  weekday: Weekday!
+}
+
+type Country {
+  isocode: String!
+  name: String!
+  regions: [Region!]!
+}
+
+"""
+Date in the proleptic Gregorian calendar (without time zone).
+
+Represents a description of the date (as used for birthdays, for example).
+It cannot represent an instant on the time-line.
+
+[`Date` scalar][1] compliant.
+
+See also [`chrono::NaiveDate`][2] for details.
+
+[1]: https://graphql-scalars.dev/docs/scalars/date
+[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
+"""
+scalar Date
+
 """
 Combined date and time (with time zone) in [RFC 3339][0] format.
 
@@ -14,15 +47,67 @@ See also [`chrono::DateTime`][2] for details.
 """
 scalar DateTime
 
+type Holiday {
+  dbId: Int!
+  entries(from: Date!, until: Date!): [HolidayEntry!]!
+  externalId: String!
+  name: String!
+}
+
+type HolidayEntry {
+  date: Date!
+  dbId: Int!
+  holiday: Holiday!
+  name: String
+}
+
 type Mutation {
   new: Mutation!
+  resourceDelete(resourceId: Int!): Boolean!
+  resourceSave(resource: ResourceSaveInput!): Resource!
   taskDelete(taskId: Int!): Boolean!
   taskSave(task: TaskSaveInput!): Task!
 }
 
 type Query {
+  countries: [Country!]!
+  country(isocode: String!): Country
+  getFromOpenHolidays(isocode: String!): Holiday
   helloWorld: String!
+  region(isocode: String!): Region
+  resources: [Resource!]!
   tasks: [Task!]!
+}
+
+type Region {
+  countryName: String!
+  holiday: Holiday!
+  isocode: String!
+  name: String!
+  regionName: String!
+}
+
+type Resource {
+  added: DateTime!
+  availability: [Availability!]!
+  dbId: Int!
+  holiday: Holiday
+  name: String!
+  removed: DateTime
+  timezone: String!
+  vacation: [Vacation!]!
+}
+
+input ResourceSaveInput {
+  added: DateTime!
+  addedVacations: [VacationInput!]
+  availability: [AvailabilityInput!]
+  dbId: Int
+  holidayId: Int
+  name: String!
+  removed: DateTime
+  removedVacations: [Int!]
+  timezone: String!
 }
 
 type Subscription {
@@ -62,4 +147,25 @@ input TaskSaveInput {
   scheduleTarget: DateTime
   successors: [Int!]
   title: String!
+}
+
+type Vacation {
+  dbId: Int!
+  from: DateTime!
+  until: DateTime!
+}
+
+input VacationInput {
+  from: DateTime!
+  until: DateTime!
+}
+
+enum Weekday {
+  FRIDAY
+  MONDAY
+  SATURDAY
+  SUNDAY
+  THURSDAY
+  TUESDAY
+  WEDNESDAY
 }

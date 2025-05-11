@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 
 import { useTaskStore } from './task';
+import { useResourceStore } from './resource';
 
 export interface DialogData {
   valid(): boolean;
@@ -25,13 +26,12 @@ export class NewTaskDialogData implements DialogData {
 }
 
 export class ResourceDialogData implements DialogData {
-  resource_id: number;
-  constructor(resource_id: number) {
-    this.resource_id = resource_id;
+  resourceId: number;
+  constructor(resourceId: number) {
+    this.resourceId = resourceId;
   }
   valid(): boolean {
-    return true;
-    // return useTaskStore().task(this.task_id) != null;
+    return useResourceStore().resource(this.resourceId) != null;
   }
 }
 

@@ -232,7 +232,7 @@ async function toggleEdit() {
 
 
 async function save() {
-    await taskStore.save_task(local_task);
+    await taskStore.saveTask(local_task);
 }
 
 async function deleteTask() {
@@ -254,7 +254,7 @@ async function deleteTask() {
     } catch {
         return
     }
-    await taskStore.delete_task(taskId, true);
+    await taskStore.deleteTask(taskId, true);
 }
 
 </script>
