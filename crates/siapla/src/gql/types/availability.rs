@@ -1,11 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter::zip,
-};
+use std::{collections::HashSet, iter::zip};
 
 use crate::{
     entity::{availability, resource},
-    gql::{common::opt_to_av, context::Context},
+    gql::context::Context,
 };
 use anyhow::anyhow;
 use juniper::{GraphQLEnum, graphql_object};

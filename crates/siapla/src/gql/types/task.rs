@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::FromStr};
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools as _};
-use juniper::{FieldResult, GraphQLEnum, Nullable, graphql_object};
+use juniper::{GraphQLEnum, Nullable, graphql_object};
 use sea_orm::{ActiveModelTrait as _, ActiveValue, EntityTrait as _, prelude::*};
 use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
@@ -56,7 +56,7 @@ impl task::Model {
         Ok(TaskDesignation::from_str(&self.designation)?)
     }
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
-        let result = resolve_many_to_many!(
+        resolve_many_to_many!(
             ctx,
             dependency::Entity,
             dependency::Column::SuccessorId,
@@ -64,11 +64,10 @@ impl task::Model {
             |l: dependency::Model| l.predecessor_id,
             task::Entity,
             task::Column::Id
-        );
-        Ok(result?)
+        )
     }
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
-        let result = resolve_many_to_many!(
+        resolve_many_to_many!(
             ctx,
             dependency::Entity,
             dependency::Column::PredecessorId,
@@ -76,12 +75,11 @@ impl task::Model {
             |l: dependency::Model| l.successor_id,
             task::Entity,
             task::Column::Id
-        );
-        Ok(result?)
+        )
     }
     pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
         const CIDX: usize = task::Column::ParentId as usize;
-        Ok(ctx.load_by_col::<task::Entity, CIDX>(self.id).await?)
+        ctx.load_by_col::<task::Entity, CIDX>(self.id).await
     }
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<Self>> {
         match self.parent_id {
@@ -260,7 +258,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         update_successors(ctx, &model, successors).await?;
     }
 
-    if let Some(mut children) = children {
+    if let Some(children) = children {
         update_children(ctx, &model, children).await?;
     }
 

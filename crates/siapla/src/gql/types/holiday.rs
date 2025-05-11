@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::OnceLock};
 
 use anyhow::anyhow;
-use juniper::{FieldResult, graphql_object};
+use juniper::graphql_object;
 use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseTransaction, EntityTrait, Order, QueryFilter, QueryOrder,
 };

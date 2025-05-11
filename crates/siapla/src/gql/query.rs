@@ -1,10 +1,10 @@
-use crate::entity::{holiday, task};
+use crate::entity::{holiday, resource, task};
 
 use super::{
     context::Context,
     holiday::{Country, GQLHoliday, Region},
 };
-use juniper::{FieldResult, graphql_object};
+use juniper::graphql_object;
 use sea_orm::*;
 
 #[derive(Default)]
@@ -25,6 +25,14 @@ impl Query {
     async fn tasks(ctx: &Context) -> anyhow::Result<Vec<task::Model>> {
         let res = task::Entity::find()
             .order_by_asc(task::Column::Title)
+            .all(ctx.txn().await?)
+            .await?;
+        Ok(res)
+    }
+
+    async fn resources(ctx: &Context) -> anyhow::Result<Vec<resource::Model>> {
+        let res = resource::Entity::find()
+            .order_by_asc(resource::Column::Name)
             .all(ctx.txn().await?)
             .await?;
         Ok(res)

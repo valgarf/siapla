@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use juniper::{FieldResult, Nullable, graphql_object};
+use juniper::{Nullable, graphql_object};
 use sea_orm::{ActiveModelTrait as _, ActiveValue};
 
 use crate::{
@@ -87,8 +87,8 @@ pub async fn resource_save(
     mut resource: ResourceSaveInput,
 ) -> anyhow::Result<resource::Model> {
     let availability = resource.availability.take();
-    let added_vacations = resource.added_vacations.take();
-    let removed_vacations = resource.removed_vacations.take();
+    let _added_vacations = resource.added_vacations.take();
+    let _removed_vacations = resource.removed_vacations.take();
     let am = resource::ActiveModel::from(resource);
     let txn = ctx.txn().await?;
     let model = if am.id.is_set() {

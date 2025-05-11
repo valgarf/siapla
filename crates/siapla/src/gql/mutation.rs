@@ -1,12 +1,7 @@
-use std::collections::HashSet;
+use juniper::graphql_object;
+use sea_orm::ActiveModelTrait;
 
-use juniper::{FieldResult, graphql_object};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
-use tracing::trace;
-
-use sea_orm::prelude::*;
-
-use crate::entity::{dependency, resource, task};
+use crate::entity::{resource, task};
 
 use super::{
     context::Context,
@@ -45,7 +40,7 @@ impl Mutation {
         resource_save(ctx, resource).await
     }
 
-    async fn reource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
+    async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let am = resource::ActiveModel {
             id: sea_orm::ActiveValue::Set(resource_id),
