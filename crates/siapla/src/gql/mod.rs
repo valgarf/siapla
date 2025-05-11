@@ -6,8 +6,7 @@ pub mod query;
 pub mod subscription;
 mod types;
 
-pub use types::holiday;
-pub use types::task;
+pub use types::{availability, holiday, resource, task, vacation};
 
 use juniper::*;
 

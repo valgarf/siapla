@@ -6,9 +6,13 @@ use tracing::trace;
 
 use sea_orm::prelude::*;
 
-use crate::entity::{dependency, task};
+use crate::entity::{dependency, resource, task};
 
-use super::{context::Context, task::TaskSaveInput};
+use super::{
+    context::Context,
+    resource::{ResourceSaveInput, resource_save},
+    task::{TaskSaveInput, task_save},
+};
 
 #[derive(Default)]
 pub struct Mutation {}
@@ -20,125 +24,31 @@ impl Mutation {
         Default::default()
     }
 
-    async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> FieldResult<task::Model> {
-        let predecessors = task.predecessors.take();
-        let successors = task.successors.take();
-        let children = task.children.take();
-        let am = task::ActiveModel::from(task);
-        let txn = ctx.txn().await?;
-        let model = if am.id.is_set() {
-            am.update(txn).await?
-        } else {
-            am.insert(txn).await?
-        };
-
-        if let Some(mut predecessors) = predecessors {
-            let existing: HashSet<i32> = model
-                .predecessors(ctx)
-                .await?
-                .iter()
-                .map(|el| el.id)
-                .collect();
-            let target: HashSet<i32> = HashSet::from_iter(predecessors.drain(..));
-            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-            trace!(
-                "PREDECESSORS: existing={:?}, target={:?}, remove={:?}, add={:?}",
-                existing, target, remove, add
-            );
-            if !remove.is_empty() {
-                dependency::Entity::delete_many()
-                    .filter(
-                        dependency::Column::SuccessorId
-                            .eq(model.id)
-                            .and(dependency::Column::PredecessorId.is_in(remove)),
-                    )
-                    .exec(txn)
-                    .await?;
-            }
-            if !add.is_empty() {
-                dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
-                    predecessor_id: sea_orm::ActiveValue::Set(i),
-                    successor_id: sea_orm::ActiveValue::Set(model.id),
-                    ..Default::default()
-                }))
-                .exec(txn)
-                .await?;
-            }
-        }
-
-        if let Some(mut successors) = successors {
-            let existing: HashSet<i32> = model
-                .successors(ctx)
-                .await?
-                .iter()
-                .map(|el| el.id)
-                .collect();
-            let target: HashSet<i32> = HashSet::from_iter(successors.drain(..));
-            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-            trace!(
-                "SUCCESSORS: existing={:?}, target={:?}, remove={:?}, add={:?}",
-                existing, target, remove, add
-            );
-            if !remove.is_empty() {
-                dependency::Entity::delete_many()
-                    .filter(
-                        dependency::Column::PredecessorId
-                            .eq(model.id)
-                            .and(dependency::Column::SuccessorId.is_in(remove)),
-                    )
-                    .exec(txn)
-                    .await?;
-            }
-            if !add.is_empty() {
-                dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
-                    successor_id: sea_orm::ActiveValue::Set(i),
-                    predecessor_id: sea_orm::ActiveValue::Set(model.id),
-                    ..Default::default()
-                }))
-                .exec(txn)
-                .await?;
-            }
-        }
-
-        if let Some(mut children) = children {
-            let existing: HashSet<i32> =
-                model.children(ctx).await?.iter().map(|el| el.id).collect();
-            let target: HashSet<i32> = HashSet::from_iter(children.drain(..));
-            let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-            let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-            trace!(
-                "CHILDREN: existing={:?}, target={:?}, remove={:?}, add={:?}",
-                existing, target, remove, add
-            );
-            if !remove.is_empty() {
-                task::Entity::update_many()
-                    .col_expr(task::Column::ParentId, Expr::value(Value::Int(None)))
-                    .filter(task::Column::Id.is_in(remove))
-                    .exec(txn)
-                    .await?;
-            }
-            if !add.is_empty() {
-                task::Entity::update_many()
-                    .col_expr(
-                        task::Column::ParentId,
-                        Expr::value(Value::Int(Some(model.id))),
-                    )
-                    .filter(task::Column::Id.is_in(add))
-                    .exec(txn)
-                    .await?;
-            }
-        }
-
-        // TODO: before committing, check if we now have predecessor or parent cycles!
-        Ok(model)
+    async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<task::Model> {
+        task_save(ctx, task).await
     }
 
-    async fn task_delete(ctx: &Context, task_id: i32) -> FieldResult<bool> {
+    async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let am = task::ActiveModel {
             id: sea_orm::ActiveValue::Set(task_id),
+            ..Default::default()
+        };
+        let res = am.delete(txn).await?;
+        Ok(res.rows_affected > 0)
+    }
+
+    async fn resource_save(
+        ctx: &Context,
+        resource: ResourceSaveInput,
+    ) -> anyhow::Result<resource::Model> {
+        resource_save(ctx, resource).await
+    }
+
+    async fn reource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
+        let txn = ctx.txn().await?;
+        let am = resource::ActiveModel {
+            id: sea_orm::ActiveValue::Set(resource_id),
             ..Default::default()
         };
         let res = am.delete(txn).await?;

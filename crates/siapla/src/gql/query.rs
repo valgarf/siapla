@@ -13,7 +13,7 @@ pub struct Query;
 #[graphql_object]
 #[graphql(context = Context)]
 impl Query {
-    async fn hello_world() -> FieldResult<String> {
+    async fn hello_world() -> anyhow::Result<String> {
         // let tasks: Vec<task::Model> = task::Entity::find()
         //     .filter(task::Column::Title.contains("test"))
         //     .order_by_asc(task::Column::Title)
@@ -22,7 +22,7 @@ impl Query {
         Ok("Hello World from Juniper!".to_owned())
     }
 
-    async fn tasks(ctx: &Context) -> FieldResult<Vec<task::Model>> {
+    async fn tasks(ctx: &Context) -> anyhow::Result<Vec<task::Model>> {
         let res = task::Entity::find()
             .order_by_asc(task::Column::Title)
             .all(ctx.txn().await?)
@@ -71,7 +71,7 @@ impl Query {
     async fn get_from_open_holidays(
         ctx: &Context,
         isocode: String,
-    ) -> FieldResult<Option<GQLHoliday>> {
+    ) -> anyhow::Result<Option<GQLHoliday>> {
         let txn = ctx.txn().await?;
         let result = holiday::Model::get_from_open_holidays(txn, isocode).await?;
 

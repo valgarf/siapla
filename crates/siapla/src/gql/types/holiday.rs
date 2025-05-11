@@ -97,13 +97,13 @@ pub struct GQLHoliday {
 #[graphql_object]
 #[graphql(name = "Holiday")]
 impl GQLHoliday {
-    async fn db_id(&self, ctx: &Context) -> FieldResult<&i32> {
+    async fn db_id(&self, ctx: &Context) -> anyhow::Result<&i32> {
         Ok(&self.get_model(ctx).await?.id)
     }
     fn external_id(&self) -> &str {
         &self.isocode
     }
-    async fn name(&self, ctx: &Context) -> FieldResult<&str> {
+    async fn name(&self, ctx: &Context) -> anyhow::Result<&str> {
         Ok(&self.get_model(ctx).await?.name)
     }
     async fn entries(

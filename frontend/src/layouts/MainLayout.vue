@@ -5,7 +5,7 @@
         <q-btn flat dense round icon="menu" aria-label="Menu" @click="toggleLeftDrawer" />
 
         <q-toolbar-title>
-          Quasar App
+          SIAPLA
         </q-toolbar-title>
 
         <div>Quasar v{{ $q.version }}</div>
