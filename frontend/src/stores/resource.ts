@@ -65,25 +65,45 @@ const RESOURCE_DELETE_MUTATION = graphql(`
   }
 `);
 
+// Maps Weekday enum values to their short codes
+type WeekdayMap = Record<Weekday, keyof Availability>;
+const weekdayMap: WeekdayMap = {
+  [Weekday.Monday]: 'mo',
+  [Weekday.Tuesday]: 'tu',
+  [Weekday.Wednesday]: 'we',
+  [Weekday.Thursday]: 'th',
+  [Weekday.Friday]: 'fr',
+  [Weekday.Saturday]: 'sa',
+  [Weekday.Sunday]: 'su'
+};
+
+// Create reverse mapping from short codes to Weekday enum
+const reverseWeekdayMap = Object.entries(weekdayMap).reduce((acc, [weekday, shortCode]) => {
+  acc[shortCode] = weekday as Weekday;
+  return acc;
+}, {} as Record<keyof Availability, Weekday>);
+
+export const defaultAvailability: Availability = {
+  mo: 8, // default 8 hours Monday-Friday
+  tu: 8,
+  we: 8,
+  th: 8,
+  fr: 8,
+  sa: 0, // default 0 hours Saturday and Sunday
+  su: 0
+};
+
 function convertQueryResult(query: ResourcesQuery) {
   const resources: Map<number, Resource> = new Map(
     query.resources.map((r) => {
+      // Override with values from the backend if they exist
       const availability = r.availability?.reduce((acc: Availability, item) => {
-        const weekdayMap: Record<string, keyof Availability> = {
-          'Monday': 'mo',
-          'Tuesday': 'tu',
-          'Wednesday': 'we',
-          'Thursday': 'th',
-          'Friday': 'fr',
-          'Saturday': 'sa',
-          'Sunday': 'su'
-        };
         const weekday = weekdayMap[item.weekday];
         if (weekday) {
-          acc[weekday] = item.duration;
+          acc[weekday] = item.duration / 3600; // Convert seconds to hours
         }
         return acc;
-      }, {} as Availability) || null;
+      }, { ...defaultAvailability }) || defaultAvailability; // Fallback to defaults if availability is null/undefined
       
       return [
         r.dbId,
@@ -111,25 +131,17 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
     removed: resource.value.removed?.toISOString(),
     holidayId: resource.value.holidayId ?? null,
     availability: Object.entries(resource.value.availability).map(([key, value]) => {
-      const weekdayMap = {
-        'mo': Weekday.Monday,
-        'tu': Weekday.Tuesday,
-        'we': Weekday.Wednesday,
-        'th': Weekday.Thursday,
-        'fr': Weekday.Friday,
-        'sa': Weekday.Saturday,
-        'su': Weekday.Sunday
-      } as const;
-      const weekday = weekdayMap[key as keyof typeof weekdayMap];
+      const weekday = reverseWeekdayMap[key as keyof Availability];
       if (!weekday) {
         throw new Error(`Invalid weekday key: ${key}`);
       }
       return {
         weekday,
-        duration: value
+        duration: value * 3600
       };
     }),
   };
+  console.log(result);
   return result;
 }
 

@@ -59,7 +59,7 @@
 <script setup lang="ts">
 import { Dialog } from 'quasar'
 import { ref, watchEffect } from 'vue';
-import { type Availability, type ResourceInput, useResourceStore } from 'src/stores/resource';
+import { type Availability, type ResourceInput, useResourceStore, defaultAvailability } from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import { useDialogStore } from 'src/stores/dialog';
@@ -68,20 +68,14 @@ import DialogLayout from './DialogLayout.vue';
 const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
 
-const local_resource_default = { 
+const local_resource_default: ResourceInput = { 
     name: "", 
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, 
     added: new Date(),
-    availability: {
-        mo: 8,
-        tu: 8,
-        we: 8,
-        th: 8,
-        fr: 8,
-        sa: 0,
-        su: 0
-    } as Availability 
-};
+    availability: { ...defaultAvailability },
+    removed: null,
+    holidayId: null
+ };
 const local_resource = ref<ResourceInput>(local_resource_default)
 const edit = ref(local_resource.value.dbId == null)
 

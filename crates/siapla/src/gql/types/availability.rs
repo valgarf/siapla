@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
 use strum::{EnumString, IntoStaticStr};
-use tracing::trace;
+use tracing::{trace};
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Weekday {
@@ -51,7 +51,7 @@ impl availability::Model {
     }
 }
 
-#[derive(juniper::GraphQLInputObject)]
+#[derive(juniper::GraphQLInputObject, Debug)]
 pub struct AvailabilityInput {
     weekday: Weekday,
     duration: i32,
@@ -63,7 +63,7 @@ impl From<&AvailabilityInput> for crate::entity::availability::ActiveModel {
             id: ActiveValue::NotSet,
             resource_id: ActiveValue::NotSet,
             weekday: ActiveValue::Set(value.weekday.into()),
-            duration: ActiveValue::Set(value.duration.into()),
+            duration: ActiveValue::Set(Decimal::from(value.duration) / Decimal::from(3600)),
         }
     }
 }
@@ -82,7 +82,7 @@ pub async fn update_availability(
     let target: HashSet<Weekday> = availability.iter().map(|a| a.weekday).collect();
     let remove: HashSet<Weekday> = existing.difference(&target).cloned().collect();
     let add: HashSet<Weekday> = target.difference(&existing).cloned().collect();
-    let update: HashSet<Weekday> = target.difference(&existing).cloned().collect();
+    let update: HashSet<Weekday> = target.intersection(&existing).cloned().collect();
     trace!(
         "availability: existing={:?}, target={:?}, remove={:?}, add={:?}, update={:?}",
         existing, target, remove, add, update
@@ -139,7 +139,7 @@ pub async fn update_availability(
             return Err(anyhow!("Internal error trying to update the availability."));
         }
         let update_models: Vec<availability::ActiveModel> = zip(existing_models, update_models)
-            .filter(|(e, u)| e.duration != u.duration.into())
+            .filter(|(e, u)| e.duration != Decimal::from(u.duration) / Decimal::from(3600))
             .map(|(e, u)| {
                 let mut am: availability::ActiveModel = u.into();
                 am.resource_id = ActiveValue::Set(model.id);
