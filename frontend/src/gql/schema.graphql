@@ -48,10 +48,12 @@ See also [`chrono::DateTime`][2] for details.
 scalar DateTime
 
 type Holiday {
+  country: Country
   dbId: Int!
   entries(from: Date!, until: Date!): [HolidayEntry!]!
   externalId: String!
   name: String!
+  region: Region
 }
 
 type HolidayEntry {
@@ -80,6 +82,7 @@ type Query {
 }
 
 type Region {
+  country: Country!
   countryName: String!
   holiday: Holiday!
   isocode: String!

@@ -15,14 +15,26 @@ export interface Availability {
   sa: number;
   su: number;
 }
+export interface Holiday {
+  dbId: number;
+  name: string;
+  country: {
+    name: string;
+    isocode: string;
+  } | null;
+  region: {
+    name: string;
+    isocode: string;
+  } | null;
+}
+
 export interface Resource {
   dbId: number;
   name: string;
   timezone: string;
   added: Date;
   removed: Date | null;
-  holidayId: number | null;
-  holidayName: string | null;
+  holiday?: Holiday | null;
   availability: Availability | null;
 }
 
@@ -44,6 +56,14 @@ const RESOURCE_QUERY = graphql(`
       holiday {
         dbId
         name
+        country {
+          name
+          isocode
+        }
+        region {
+          name
+          isocode
+        }
       }
       availability {
         weekday
@@ -117,6 +137,12 @@ function convertQueryResult(query: ResourcesQuery) {
           removed: r.removed == null ? null : new Date(r.removed),
           holidayId: r.holiday?.dbId ?? null,
           holidayName: r.holiday?.name ?? null,
+          holiday: r.holiday ? {
+            dbId: r.holiday.dbId,
+            name: r.holiday.name,
+            country: r.holiday.country ?? null,
+            region: r.holiday.region ?? null
+          } : null,
           availability,
         },
       ];
@@ -132,7 +158,7 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
     timezone: resource.value.timezone,
     added: resource.value.added.toISOString(),
     removed: resource.value.removed?.toISOString(),
-    holidayId: resource.value.holidayId ?? null,
+    holidayId: resource.value.holiday?.dbId ?? null,
     availability: Object.entries(resource.value.availability).map(([key, value]) => {
       const weekday = reverseWeekdayMap[key as keyof Availability];
       if (!weekday) {

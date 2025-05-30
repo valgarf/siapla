@@ -84,6 +84,13 @@ impl Region {
             model: Default::default(),
         }
     }
+    
+    fn country(&self) -> Country {
+        Country {
+            isocode: self.isocode[0..2].to_string(),
+            name: self.country_name.clone()
+        }
+    }
 }
 
 pub struct GQLHoliday {
@@ -102,6 +109,37 @@ impl GQLHoliday {
     }
     async fn name(&self, ctx: &Context) -> anyhow::Result<&str> {
         Ok(&self.get_model(ctx).await?.name)
+    }
+    
+    async fn country(&self, _ctx: &Context) -> Option<Country> {
+        // If the isocode is 2 characters, it's a country code
+        if self.isocode.len() >= 2 {
+            let countries = countries();
+            let isocode = &self.isocode[0..2];
+            countries.get(isocode).map(|name| Country {
+                isocode: isocode.to_string(),
+                name: name.clone(),
+            })
+        } else {
+            None
+        }
+    }
+    
+    async fn region(&self, _ctx: &Context) -> Option<Region> {
+        // If the isocode is in format "XX-XXX" it's a region code
+        if self.isocode.chars().nth(2) == Some('-') {
+            let country_code = &self.isocode[0..2];
+            let countries = countries();
+            countries.get(country_code).and_then(|country_name| self.model.get().and_then(|model| 
+            model.name.clone().strip_prefix(&(country_name.clone()+" - ")).map(|region_name|    
+            Region {
+                isocode: self.isocode.clone(),
+                country_name: country_name.clone(),
+                region_name: region_name.to_string(),
+            })))
+        } else {
+            None
+        }
     }
     async fn entries(
         &self,

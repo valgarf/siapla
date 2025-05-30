@@ -32,57 +32,30 @@
         <q-card-section>
             <div class="text-subtitle2 q-pb-sm">Holiday Calendar</div>
             <div v-if="edit" class="q-gutter-y-md">
-                <q-select
-                    v-model="selectedCountry"
-                    :options="countries"
-                    option-label="name"
-                    option-value="isocode"
-                    label="Country"
-                    outlined
-                    dense
-                    emit-value
-                    map-options
-                    clearable
-                    class="q-mb-md"
-                />
-                <q-select
-                    v-if="regions.length > 0"
-                    v-model="selectedRegion"
-                    :options="regions"
-                    option-label="name"
-                    option-value="isocode"
-                    label="Region"
-                    outlined
-                    dense
-                    emit-value
-                    map-options
-                    clearable
-                    class="q-mb-md"
-                />
+                <q-select v-model="selectedCountry" :options="countries" option-label="name" option-value="isocode"
+                    label="Country" outlined dense emit-value map-options clearable class="q-mb-md" />
+                <q-select v-if="regions.length > 0" v-model="selectedRegion" :options="regions" option-label="name"
+                    option-value="isocode" label="Region" outlined dense emit-value map-options clearable
+                    class="q-mb-md" />
             </div>
             <div v-else class="row items-baseline">
-                <div>{{ local_resource.holidayName || '<No holiday calendar selected>' }}</div>
+                <div>{{ local_resource.holiday?.name || '<No holiday calendar selected>' }}</div>
             </div>
         </q-card-section>
 
         <q-card-section>
             <div class="text-subtitle2 q-pb-sm">Working Hours per day:</div>
             <div v-if="edit" class="row q-col-gutter-md">
-                <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']" :key="day+'-edit'" class="col-12 col-sm-6">
-                    <q-input 
-                        :label="day" 
-                        type="number" 
-                        min="0" 
-                        max="24" 
-                        step="0.5"
+                <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']"
+                    :key="day + '-edit'" class="col-12 col-sm-6">
+                    <q-input :label="day" type="number" min="0" max="24" step="0.5"
                         v-model.number="local_resource.availability[day.toLowerCase().substring(0, 2) as keyof Availability]"
-                        dense
-                        outlined
-                    />
+                        dense outlined />
                 </div>
             </div>
             <div v-else>
-                <div v-for="([days, hours], index) in groupedWorkingHours" :key="index" class="row items-center q-mb-xs">
+                <div v-for="([days, hours], index) in groupedWorkingHours" :key="index"
+                    class="row items-center q-mb-xs">
                     <div class="col-4 text-body2">
                         {{ formatDayRange(days) }}
                     </div>
@@ -110,48 +83,47 @@ const dialogStore = useDialogStore();
 
 const groupedWorkingHours = computed(() => {
     if (!local_resource.value) return [];
-    
+
     const days: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const result: Array<[string[], number]> = [];
-    
+
     // Initialize with the first day
     let currentHours = local_resource.value.availability?.mo || 0;
     let currentGroup: string[] = [days[0] as string];
-    
+
     // Process each day in order
     for (const day of days.slice(1)) {
         const dayKey = day.toLowerCase().substring(0, 2) as keyof Availability;
         const dayHours = local_resource.value.availability?.[dayKey] || 0;
-        
+
         // If hours match the current group, add to group
         if (Math.abs(dayHours - currentHours) < 0.01) {
             currentGroup.push(day);
         } else {
             // Add the current group to the result
             result.push([[...currentGroup], currentHours]);
-            
+
             // Start a new group
             currentHours = dayHours;
             currentGroup = [day];
         }
     }
-    
+
     if (currentGroup.length > 0) {
         result.push([currentGroup, currentHours]);
     }
-    
+
     return result;
 })
 
-const local_resource_default: ResourceInput = { 
-    name: "", 
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, 
+const local_resource_default: ResourceInput = {
+    name: "",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     added: new Date(),
     availability: { ...defaultAvailability },
     removed: null,
-    holidayId: null,
-    holidayName: null
- };
+    holiday: null,
+};
 
 function formatDayRange(days: string[]): string {
     if (!days || days.length === 0) return '';
@@ -177,13 +149,16 @@ const { result: countriesResult } = useQuery(gql`
   }
 `)
 
-const countries = computed(() => countriesResult.value?.countries || []);
+const countries = computed(() => {
+    const countriesList = countriesResult.value?.countries || [];
+    return [...countriesList].sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+});
 
 const regionsVariables = computed(() => {
-    return {isocode: selectedCountry.value}
+    return { isocode: selectedCountry.value }
 })
 
-const { result: regionsResult, loading: regionsLoading, error: regionsError } = useQuery(gql`
+const { result: regionsResult, loading: regionsLoading, error: regionsError, onResult: onRegionsResult } = useQuery(gql`
     query GetRegions($isocode: String!) {
       country(isocode: $isocode) {
         regions {
@@ -193,18 +168,21 @@ const { result: regionsResult, loading: regionsLoading, error: regionsError } = 
       }
     }
   `, regionsVariables,
-  { enabled: computed(() => selectedCountry.value != null) }
+    { enabled: computed(() => selectedCountry.value != null) }
 )
 
-const regions = computed(() => regionsResult.value?.country?.regions || []);
+const regions = computed(() => {
+    const regionsList = selectedCountry.value != null ? regionsResult.value?.country?.regions || [] : [];
+    return [...regionsList].sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+});
 
 // Compute the current ISO code based on selected region or country
 const currentIsoCode = computed(() => {
     if (selectedRegion.value) {
         return selectedRegion.value
-     }
+    }
     if (!regionsError.value && !regionsLoading.value && regions.value.length == 0) {
-     return selectedCountry.value
+        return selectedCountry.value
     }
     return null
 })
@@ -215,23 +193,33 @@ const { result: holidayResult } = useQuery(gql`
     getFromOpenHolidays(isocode: $isocode) {
       dbId
       name
+      country {
+        name
+        isocode
+      }
+      region {
+        name
+        isocode
+      }
     }
   }
-`, 
-computed(() => { return {isocode: currentIsoCode.value } }),
-{ enabled: computed(() => !!currentIsoCode.value) }
-);
+`,
+    computed(() => { return { isocode: currentIsoCode.value } }),
+    { enabled: computed(() => !!currentIsoCode.value) }
+)
 
 // Compute the holiday ID from the query result
-const holidayId = computed(() => holidayResult.value?.getFromOpenHolidays?.dbId || null);
+watch(() => holidayResult.value?.getFromOpenHolidays, (holiday) => {
+    local_resource.value.holiday = holiday || null;
+})
 
-// Update the local resource when holiday ID changes
-watch(holidayId, (newId) => {
-  if (newId !== undefined) {
-    local_resource.value.holidayId = newId;
-  }
-});
-
+onRegionsResult((result) => {
+    if (selectedRegion.value != null && !result.loading && !result.error && !result.data?.country?.regions.some((r: { isocode: string }) => r.isocode == selectedRegion.value)) {
+        // console.log("resetting selectedRegion.value", selectedRegion.value)
+        // console.log(selectedCountry.value, result)
+        selectedRegion.value = null;
+    }
+})
 // holiday logic end
 
 interface Props {
@@ -247,6 +235,17 @@ watchEffect(() => {
     edit.value = local_resource.value.dbId == null
 })
 
+watchEffect(() => {
+    if (local_resource.value.holiday) {
+        selectedCountry.value = local_resource.value.holiday.country?.isocode ?? null
+        selectedRegion.value = local_resource.value.holiday.region?.isocode ?? null
+    }
+})
+
+watchEffect(() => {
+    console.log("local_resource", local_resource.value)
+})
+
 // actions
 
 async function toggleEdit() {
@@ -258,7 +257,6 @@ async function toggleEdit() {
         edit.value = true
     }
 }
-
 
 async function save() {
     await resourceStore.saveResource(local_resource);
