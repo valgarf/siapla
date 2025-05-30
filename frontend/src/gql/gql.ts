@@ -14,6 +14,8 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+    "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": typeof types.GetCountriesDocument,
+    "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": typeof types.GetRegionsDocument,
     "\n  query resources {\n    resources {\n      dbId\n      name\n      timezone\n      added\n      removed\n      holiday {\n        dbId\n      }\n      availability {\n        weekday\n        duration\n      }\n    }\n  }\n": typeof types.ResourcesDocument,
     "\n  mutation resource_save($resource: ResourceSaveInput!) {\n    resourceSave(resource: $resource) {\n      dbId\n    }\n  }\n": typeof types.Resource_SaveDocument,
     "\n  mutation resource_delete($resourceId: Int!) {\n    resourceDelete(resourceId: $resourceId)\n  }\n": typeof types.Resource_DeleteDocument,
@@ -22,6 +24,8 @@ type Documents = {
     "\n  mutation task_delete($taskId: Int!) {\n    taskDelete(taskId: $taskId)\n  }\n": typeof types.Task_DeleteDocument,
 };
 const documents: Documents = {
+    "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": types.GetCountriesDocument,
+    "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": types.GetRegionsDocument,
     "\n  query resources {\n    resources {\n      dbId\n      name\n      timezone\n      added\n      removed\n      holiday {\n        dbId\n      }\n      availability {\n        weekday\n        duration\n      }\n    }\n  }\n": types.ResourcesDocument,
     "\n  mutation resource_save($resource: ResourceSaveInput!) {\n    resourceSave(resource: $resource) {\n      dbId\n    }\n  }\n": types.Resource_SaveDocument,
     "\n  mutation resource_delete($resourceId: Int!) {\n    resourceDelete(resourceId: $resourceId)\n  }\n": types.Resource_DeleteDocument,
@@ -44,6 +48,14 @@ const documents: Documents = {
  */
 export function graphql(source: string): unknown;
 
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n"): (typeof documents)["\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  "): (typeof documents)["\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  "];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

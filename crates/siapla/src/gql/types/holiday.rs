@@ -43,10 +43,7 @@ impl Country {
         Ok(subdivisions
             .into_iter()
             .map(|sd| Region {
-                isocode: sd
-                    .iso_code
-                    .flatten()
-                    .expect("Subdivision should have an iso code"),
+                isocode: sd.code,
                 country_name: self.name.clone(),
                 region_name: sd
                     .name

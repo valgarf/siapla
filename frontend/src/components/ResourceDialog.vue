@@ -30,6 +30,43 @@
         </q-card-section>
 
         <q-card-section>
+            <div class="text-subtitle2 q-pb-sm">Holiday Calendar</div>
+            <div v-if="edit" class="q-gutter-y-md">
+                <q-select
+                    v-model="selectedCountry"
+                    :options="countries"
+                    option-label="name"
+                    option-value="isocode"
+                    label="Country"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    clearable
+                    class="q-mb-md"
+                />
+                <q-select
+                    v-if="regions.length > 0"
+                    v-model="selectedRegion"
+                    :options="regions"
+                    option-label="name"
+                    option-value="isocode"
+                    label="Region"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    clearable
+                    class="q-mb-md"
+                />
+            </div>
+            <div v-else-if="local_resource.holidayId" class="row items-baseline">
+                <div>{{ selectedCountry || 'Loading...' }}</div>
+                <div>{{ selectedRegion || 'Loading...' }}</div>
+            </div>
+        </q-card-section>
+
+        <q-card-section>
             <div class="text-subtitle2 q-pb-sm">Working Hours per day:</div>
             <div v-if="edit" class="row q-col-gutter-md">
                 <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']" :key="day+'-edit'" class="col-12 col-sm-6">
@@ -60,12 +97,14 @@
 
 <script setup lang="ts">
 import { Dialog } from 'quasar'
-import { ref, watchEffect, computed } from 'vue';
+import { ref, watch, watchEffect, computed } from 'vue';
 import { type Availability, type ResourceInput, useResourceStore, defaultAvailability } from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import { useDialogStore } from 'src/stores/dialog';
 import DialogLayout from './DialogLayout.vue';
+import { useQuery } from '@vue/apollo-composable';
+import gql from 'graphql-tag';
 
 const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
@@ -125,6 +164,75 @@ function formatDayRange(days: string[]): string {
 const local_resource = ref<ResourceInput>(local_resource_default)
 const edit = ref(local_resource.value.dbId == null)
 
+// Holiday selection state
+const selectedCountry = ref<string | null>(null);
+const selectedRegion = ref<string | null>(null);
+
+const { result: countriesResult } = useQuery(gql`
+  query GetCountries {
+    countries {
+      isocode
+      name
+    }
+  }
+`)
+
+const countries = computed(() => countriesResult.value?.countries || []);
+
+const regionsVariables = computed(() => {
+    return {isocode: selectedCountry.value}
+})
+
+const { result: regionsResult, loading: regionsLoading, error: regionsError } = useQuery(gql`
+    query GetRegions($isocode: String!) {
+      country(isocode: $isocode) {
+        regions {
+          name
+          isocode
+        }
+      }
+    }
+  `, regionsVariables,
+  { enabled: computed(() => selectedCountry.value != null) }
+)
+
+const regions = computed(() => regionsResult.value?.country?.regions || []);
+
+// Compute the current ISO code based on selected region or country
+const currentIsoCode = computed(() => {
+    if (selectedRegion.value) {
+        return selectedRegion.value
+     }
+    if (!regionsError.value && !regionsLoading.value && regions.value.length == 0) {
+     return selectedCountry.value
+    }
+    return null
+})
+
+// Query for holiday information
+const { result: holidayResult } = useQuery(gql`
+  query GetHoliday($isocode: String!) {
+    getFromOpenHolidays(isocode: $isocode) {
+      dbId
+      name
+    }
+  }
+`, 
+computed(() => { return {isocode: currentIsoCode.value } }),
+{ enabled: computed(() => !!currentIsoCode.value) }
+);
+
+// Compute the holiday ID from the query result
+const holidayId = computed(() => holidayResult.value?.getFromOpenHolidays?.dbId || null);
+
+// Update the local resource when holiday ID changes
+watch(holidayId, (newId) => {
+  if (newId !== undefined) {
+    local_resource.value.holidayId = newId;
+  }
+});
+
+// holiday logic end
 
 interface Props {
     dialogLayer: number;

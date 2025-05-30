@@ -141,7 +141,7 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
       };
     }),
   };
-  console.log(result);
+  console.log("Storing resource:", result);
   return result;
 }
 
