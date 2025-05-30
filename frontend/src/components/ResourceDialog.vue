@@ -46,9 +46,11 @@
                 </div>
             </div>
             <div v-else>
-                <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']" :key="day+'-show'" class="row items-center q-mb-xs">
-                    <div class="col-4 text-body2">{{ day }}:</div>
-                    <div class="col-2">{{ local_resource.availability?.[day.toLowerCase().substring(0, 2) as keyof Availability] || 0 }}h</div>
+                <div v-for="([days, hours], index) in groupedWorkingHours" :key="index" class="row items-center q-mb-xs">
+                    <div class="col-4 text-body2">
+                        {{ formatDayRange(days) }}
+                    </div>
+                    <div class="col-2">{{ hours }}h</div>
                 </div>
             </div>
         </q-card-section>
@@ -58,7 +60,7 @@
 
 <script setup lang="ts">
 import { Dialog } from 'quasar'
-import { ref, watchEffect } from 'vue';
+import { ref, watchEffect, computed } from 'vue';
 import { type Availability, type ResourceInput, useResourceStore, defaultAvailability } from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
@@ -68,6 +70,41 @@ import DialogLayout from './DialogLayout.vue';
 const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
 
+const groupedWorkingHours = computed(() => {
+    if (!local_resource.value) return [];
+    
+    const days: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const result: Array<[string[], number]> = [];
+    
+    // Initialize with the first day
+    let currentHours = local_resource.value.availability?.mo || 0;
+    let currentGroup: string[] = [days[0] as string];
+    
+    // Process each day in order
+    for (const day of days.slice(1)) {
+        const dayKey = day.toLowerCase().substring(0, 2) as keyof Availability;
+        const dayHours = local_resource.value.availability?.[dayKey] || 0;
+        
+        // If hours match the current group, add to group
+        if (Math.abs(dayHours - currentHours) < 0.01) {
+            currentGroup.push(day);
+        } else {
+            // Add the current group to the result
+            result.push([[...currentGroup], currentHours]);
+            
+            // Start a new group
+            currentHours = dayHours;
+            currentGroup = [day];
+        }
+    }
+    
+    if (currentGroup.length > 0) {
+        result.push([currentGroup, currentHours]);
+    }
+    
+    return result;
+})
+
 const local_resource_default: ResourceInput = { 
     name: "", 
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, 
@@ -76,6 +113,15 @@ const local_resource_default: ResourceInput = {
     removed: null,
     holidayId: null
  };
+
+function formatDayRange(days: string[]): string {
+    if (!days || days.length === 0) return '';
+    if (days.length === 1) return days[0] || '';
+    const first = days[0] || '';
+    const last = days[days.length - 1] || '';
+    return `${first} - ${last}`;
+}
+
 const local_resource = ref<ResourceInput>(local_resource_default)
 const edit = ref(local_resource.value.dbId == null)
 
