@@ -1,6 +1,7 @@
 import { graphql } from 'src/gql';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
+import { Weekday } from 'src/gql/graphql';
 import type { ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
 import { ResourceDialogData, useDialogStore } from './dialog';
@@ -28,6 +29,7 @@ export interface ResourceInput extends Partial<Resource> {
   name: string;
   timezone: string;
   added: Date;
+  availability: Availability;
 }
 
 const RESOURCE_QUERY = graphql(`
@@ -40,6 +42,10 @@ const RESOURCE_QUERY = graphql(`
       removed
       holiday {
         dbId
+      }
+      availability {
+        weekday
+        duration
       }
     }
   }
@@ -62,6 +68,23 @@ const RESOURCE_DELETE_MUTATION = graphql(`
 function convertQueryResult(query: ResourcesQuery) {
   const resources: Map<number, Resource> = new Map(
     query.resources.map((r) => {
+      const availability = r.availability?.reduce((acc: Availability, item) => {
+        const weekdayMap: Record<string, keyof Availability> = {
+          'Monday': 'mo',
+          'Tuesday': 'tu',
+          'Wednesday': 'we',
+          'Thursday': 'th',
+          'Friday': 'fr',
+          'Saturday': 'sa',
+          'Sunday': 'su'
+        };
+        const weekday = weekdayMap[item.weekday];
+        if (weekday) {
+          acc[weekday] = item.duration;
+        }
+        return acc;
+      }, {} as Availability) || null;
+      
       return [
         r.dbId,
         {
@@ -71,7 +94,7 @@ function convertQueryResult(query: ResourcesQuery) {
           added: new Date(r.added),
           removed: r.removed == null ? null : new Date(r.removed),
           holidayId: r.holiday?.dbId ?? null,
-          availability: null,
+          availability,
         },
       ];
     }),
@@ -87,7 +110,25 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
     added: resource.value.added.toISOString(),
     removed: resource.value.removed?.toISOString(),
     holidayId: resource.value.holidayId ?? null,
-    availability: [],
+    availability: Object.entries(resource.value.availability).map(([key, value]) => {
+      const weekdayMap = {
+        'mo': Weekday.Monday,
+        'tu': Weekday.Tuesday,
+        'we': Weekday.Wednesday,
+        'th': Weekday.Thursday,
+        'fr': Weekday.Friday,
+        'sa': Weekday.Saturday,
+        'su': Weekday.Sunday
+      } as const;
+      const weekday = weekdayMap[key as keyof typeof weekdayMap];
+      if (!weekday) {
+        throw new Error(`Invalid weekday key: ${key}`);
+      }
+      return {
+        weekday,
+        duration: value
+      };
+    }),
   };
   return result;
 }

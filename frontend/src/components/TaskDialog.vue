@@ -8,7 +8,7 @@
                 <q-breadcrumbs-el :label="local_task.title" />
             </q-breadcrumbs>
             <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
-                :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "Save"
+                :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
                     : null }}
             </q-btn>
             <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
