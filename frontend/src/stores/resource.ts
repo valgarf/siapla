@@ -22,6 +22,7 @@ export interface Resource {
   added: Date;
   removed: Date | null;
   holidayId: number | null;
+  holidayName: string | null;
   availability: Availability | null;
 }
 
@@ -42,6 +43,7 @@ const RESOURCE_QUERY = graphql(`
       removed
       holiday {
         dbId
+        name
       }
       availability {
         weekday
@@ -114,6 +116,7 @@ function convertQueryResult(query: ResourcesQuery) {
           added: new Date(r.added),
           removed: r.removed == null ? null : new Date(r.removed),
           holidayId: r.holiday?.dbId ?? null,
+          holidayName: r.holiday?.name ?? null,
           availability,
         },
       ];

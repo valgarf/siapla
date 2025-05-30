@@ -60,9 +60,8 @@
                     class="q-mb-md"
                 />
             </div>
-            <div v-else-if="local_resource.holidayId" class="row items-baseline">
-                <div>{{ selectedCountry || 'Loading...' }}</div>
-                <div>{{ selectedRegion || 'Loading...' }}</div>
+            <div v-else class="row items-baseline">
+                <div>{{ local_resource.holidayName || '<No holiday calendar selected>' }}</div>
             </div>
         </q-card-section>
 
@@ -150,7 +149,8 @@ const local_resource_default: ResourceInput = {
     added: new Date(),
     availability: { ...defaultAvailability },
     removed: null,
-    holidayId: null
+    holidayId: null,
+    holidayName: null
  };
 
 function formatDayRange(days: string[]): string {
