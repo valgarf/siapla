@@ -63,6 +63,24 @@
                 </div>
             </div>
         </q-card-section>
+
+        <q-card-section>
+            <div class="text-subtitle2 q-pb-sm">Vacations</div>
+            <div v-if="edit" class="q-gutter-y-md">
+                <div v-for="(vacation, index) in local_resource.vacations" :key="index+'-vacation-edit'" class="row items-center q-gutter-sm">
+                    <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
+                    <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
+                    <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
+                </div>
+                <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
+            </div>
+            <div v-else>
+                <div v-for="(vacation, index) in local_resource.vacations" :key="index+'-vacation-show'" class="q-py-xs">
+                    {{ format_datetime(vacation.from) }} - {{ format_datetime(vacation.until) }}
+                </div>
+                <div v-if="local_resource.vacations.length == 0">No vacations scheduled</div>
+            </div>
+        </q-card-section>
     </DialogLayout>
 </template>
 
@@ -70,7 +88,7 @@
 <script setup lang="ts">
 import { Dialog } from 'quasar'
 import { ref, watch, watchEffect, computed } from 'vue';
-import { type Availability, type ResourceInput, useResourceStore, defaultAvailability } from 'src/stores/resource';
+import { type Availability, type ResourceInput, useResourceStore, defaultAvailability} from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import { useDialogStore } from 'src/stores/dialog';
@@ -123,6 +141,9 @@ const local_resource_default: ResourceInput = {
     availability: { ...defaultAvailability },
     removed: null,
     holiday: null,
+    vacations: [],
+    addedVacations: [],
+    removedVacations: []
 };
 
 function formatDayRange(days: string[]): string {
@@ -134,6 +155,7 @@ function formatDayRange(days: string[]): string {
 }
 
 const local_resource = ref<ResourceInput>(local_resource_default)
+
 const edit = ref(local_resource.value.dbId == null)
 
 // Holiday selection state
@@ -256,6 +278,36 @@ async function toggleEdit() {
     else {
         edit.value = true
     }
+}
+
+function addVacation() {
+    const newVacation = { 
+        dbId: null,
+        from: new Date(),
+        until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    };
+    local_resource.value.vacations.push(newVacation);
+    // Also add to addedVacations for tracking
+    local_resource.value.addedVacations.push({ 
+        from: newVacation.from,
+        until: newVacation.until 
+    });
+}
+
+function removeVacation(index: number) {
+    const vacation = local_resource.value.vacations[index];
+    if (vacation?.dbId) {
+        local_resource.value.removedVacations.push(vacation.dbId);
+    } else if (vacation != null) {
+        // If it's a newly added vacation that wasn't saved yet, remove it from addedVacations
+        const addedIndex = local_resource.value.addedVacations.findIndex(
+            v => v.from === vacation.from && v.until === vacation.until
+        );
+        if (addedIndex !== -1) {
+            local_resource.value.addedVacations.splice(addedIndex, 1);
+        }
+    }
+    local_resource.value.vacations.splice(index, 1);
 }
 
 async function save() {

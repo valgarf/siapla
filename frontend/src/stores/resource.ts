@@ -28,6 +28,12 @@ export interface Holiday {
   } | null;
 }
 
+export interface Vacation {
+  dbId: number | null;
+  from: Date;
+  until: Date;
+}
+
 export interface Resource {
   dbId: number;
   name: string;
@@ -36,6 +42,7 @@ export interface Resource {
   removed: Date | null;
   holiday?: Holiday | null;
   availability: Availability | null;
+  vacations: Vacation[];
 }
 
 export interface ResourceInput extends Partial<Resource> {
@@ -43,6 +50,9 @@ export interface ResourceInput extends Partial<Resource> {
   timezone: string;
   added: Date;
   availability: Availability;
+  addedVacations: Array<{ from: Date; until: Date }>;
+  removedVacations: number[];
+  vacations: Vacation[];
 }
 
 const RESOURCE_QUERY = graphql(`
@@ -53,6 +63,11 @@ const RESOURCE_QUERY = graphql(`
       timezone
       added
       removed
+      vacation {
+        dbId
+        from
+        until
+      }
       holiday {
         dbId
         name
@@ -144,6 +159,11 @@ function convertQueryResult(query: ResourcesQuery) {
             region: r.holiday.region ?? null
           } : null,
           availability,
+          vacations: r.vacation ? r.vacation.map(v => ({
+            dbId: v.dbId,
+            from: new Date(v.from),
+            until:new Date( v.until)
+          })) : []
         },
       ];
     }),
@@ -169,6 +189,11 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
         duration: value * 3600
       };
     }),
+    addedVacations: (resource.value.addedVacations || []).map(v => ({
+      from: new Date(v.from).toISOString(),
+      until: new Date(v.until).toISOString()
+    })),
+    removedVacations: resource.value.removedVacations || [],
   };
   console.log("Storing resource:", result);
   return result;
