@@ -58,14 +58,14 @@
             <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
             <div v-else class="row items-baseline">
                 <div class="text-subtitle2 q-pr-md">Start:</div>
-                <div>{{ format_datetime(local_task.earliestStart) }}</div>
+                <div>{{ formatDatetime(local_task.earliestStart) }}</div>
             </div>
         </q-card-section>
         <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
             <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
             <div v-else class="row items-baseline">
                 <div class="text-subtitle2 q-pr-md">Schedule:</div>
-                <div>{{ format_datetime(local_task.scheduleTarget) }}</div>
+                <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
             </div>
         </q-card-section>
         <q-card-section v-show="local_task.designation == TaskDesignation.Task">
@@ -100,7 +100,7 @@ import { type TaskInput, useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import EditableTaskList from './EditableTaskList.vue';
 import DateTimeInput from './DateTimeInput.vue';
-import { format_datetime } from 'src/common/datetime'
+import { formatDatetime } from 'src/common/datetime'
 import TaskChip from './TaskChip.vue';
 import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
 import DialogLayout from './DialogLayout.vue';

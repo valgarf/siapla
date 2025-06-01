@@ -10,22 +10,22 @@
                 :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
         </template>
         <q-card-section>
-            <q-input v-if="edit" outlined placeholder="Name" class="text-h5" v-model="local_resource.name" />
-            <div v-else class="text-h5">{{ local_resource.name }}</div>
+            <q-input v-if="edit" outlined placeholder="Name" class="text-h5" v-model="localResource.name" />
+            <div v-else class="text-h5">{{ localResource.name }}</div>
         </q-card-section>
 
         <q-card-section>
-            <DateTimeInput v-if="edit" label="Added" v-model="local_resource.added" />
+            <DateTimeInput v-if="edit" label="Added" v-model="localResource.added" />
             <div v-else class="row items-baseline">
                 <div class="text-subtitle2 q-pr-md">Added:</div>
-                <div>{{ format_datetime(local_resource.added) }}</div>
+                <div>{{ formatDatetime(localResource.added) }}</div>
             </div>
         </q-card-section>
         <q-card-section>
-            <DateTimeInput v-if="edit" label="Removed" v-model="local_resource.removed" />
+            <DateTimeInput v-if="edit" label="Removed" v-model="localResource.removed" />
             <div v-else class="row items-baseline">
                 <div class="text-subtitle2 q-pr-md">Removed:</div>
-                <div>{{ format_datetime(local_resource.removed) }}</div>
+                <div>{{ formatDatetime(localResource.removed) }}</div>
             </div>
         </q-card-section>
 
@@ -39,7 +39,7 @@
                     class="q-mb-md" />
             </div>
             <div v-else class="row items-baseline">
-                <div>{{ local_resource.holiday?.name || '<No holiday calendar selected>' }}</div>
+                <div>{{ localResource.holiday?.name || '<No holiday calendar selected>' }}</div>
             </div>
         </q-card-section>
 
@@ -49,7 +49,7 @@
                 <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']"
                     :key="day + '-edit'" class="col-12 col-sm-6">
                     <q-input :label="day" type="number" min="0" max="24" step="0.5"
-                        v-model.number="local_resource.availability[day.toLowerCase().substring(0, 2) as keyof Availability]"
+                        v-model.number="localResource.availability[day.toLowerCase().substring(0, 2) as keyof Availability]"
                         dense outlined />
                 </div>
             </div>
@@ -67,7 +67,7 @@
         <q-card-section>
             <div class="text-subtitle2 q-pb-sm">Vacations</div>
             <div v-if="edit" class="q-gutter-y-md">
-                <div v-for="(vacation, index) in local_resource.vacations" :key="index+'-vacation-edit'" class="row items-center q-gutter-sm">
+                <div v-for="(vacation, index) in localResource.vacations" :key="index+'-vacation-edit'" class="row items-center q-gutter-sm">
                     <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
                     <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
                     <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
@@ -75,10 +75,10 @@
                 <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
             </div>
             <div v-else>
-                <div v-for="(vacation, index) in local_resource.vacations" :key="index+'-vacation-show'" class="q-py-xs">
-                    {{ format_datetime(vacation.from) }} - {{ format_datetime(vacation.until) }}
+                <div v-for="(vacation, index) in localResource.vacations" :key="index+'-vacation-show'" class="q-py-xs">
+                    {{ formatDatetime(vacation.from) }} - {{ formatDatetime(vacation.until) }}
                 </div>
-                <div v-if="local_resource.vacations.length == 0">No vacations scheduled</div>
+                <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
             </div>
         </q-card-section>
     </DialogLayout>
@@ -90,7 +90,7 @@ import { Dialog } from 'quasar'
 import { ref, watch, watchEffect, computed } from 'vue';
 import { type Availability, type ResourceInput, useResourceStore, defaultAvailability, type Vacation} from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
-import { format_datetime } from 'src/common/datetime'
+import { formatDatetime as formatDatetime } from 'src/common/datetime'
 import { useDialogStore } from 'src/stores/dialog';
 import DialogLayout from './DialogLayout.vue';
 import { useQuery } from '@vue/apollo-composable';
@@ -100,19 +100,19 @@ const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
 
 const groupedWorkingHours = computed(() => {
-    if (!local_resource.value) return [];
+    if (!localResource.value) return [];
 
     const days: string[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const result: Array<[string[], number]> = [];
 
     // Initialize with the first day
-    let currentHours = local_resource.value.availability?.mo || 0;
+    let currentHours = localResource.value.availability?.mo || 0;
     let currentGroup: string[] = [days[0] as string];
 
     // Process each day in order
     for (const day of days.slice(1)) {
         const dayKey = day.toLowerCase().substring(0, 2) as keyof Availability;
-        const dayHours = local_resource.value.availability?.[dayKey] || 0;
+        const dayHours = localResource.value.availability?.[dayKey] || 0;
 
         // If hours match the current group, add to group
         if (Math.abs(dayHours - currentHours) < 0.01) {
@@ -134,7 +134,7 @@ const groupedWorkingHours = computed(() => {
     return result;
 })
 
-const local_resource_default: ResourceInput = {
+const localResourceDefault: ResourceInput = {
     name: "",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     added: new Date(),
@@ -154,9 +154,9 @@ function formatDayRange(days: string[]): string {
     return `${first} - ${last}`;
 }
 
-const local_resource = ref<ResourceInput>(local_resource_default)
+const localResource = ref<ResourceInput>(localResourceDefault)
 
-const edit = ref(local_resource.value.dbId == null)
+const edit = ref(localResource.value.dbId == null)
 
 // Holiday selection state
 const selectedCountry = ref<string | null>(null);
@@ -232,7 +232,7 @@ const { result: holidayResult } = useQuery(gql`
 
 // Compute the holiday ID from the query result
 watch(() => holidayResult.value?.getFromOpenHolidays, (holiday) => {
-    local_resource.value.holiday = holiday || null;
+    localResource.value.holiday = holiday || null;
 })
 
 onRegionsResult((result) => {
@@ -253,17 +253,17 @@ const props = defineProps<Props>();
 let originalVacations: Vacation[] = [];
 watchEffect(() => {
     // resource changed
-    local_resource.value = { ...local_resource_default, ...props.resource }
-    edit.value = local_resource.value.dbId == null
+    localResource.value = { ...localResourceDefault, ...props.resource }
+    edit.value = localResource.value.dbId == null
     originalVacations = [...props.resource.vacations?.map(v => ({ ...v })) || []];
     console.assert(originalVacations.every(v => v.dbId != null), "assertion failed: all vacations should have a dbId")
     
 })
 
 watchEffect(() => {
-    if (local_resource.value.holiday) {
-        selectedCountry.value = local_resource.value.holiday.country?.isocode ?? null
-        selectedRegion.value = local_resource.value.holiday.region?.isocode ?? null
+    if (localResource.value.holiday) {
+        selectedCountry.value = localResource.value.holiday.country?.isocode ?? null
+        selectedRegion.value = localResource.value.holiday.region?.isocode ?? null
     }
 })
 
@@ -290,28 +290,28 @@ function addVacation() {
         from: now,
         until: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
     };
-    local_resource.value.vacations.push(newVacation);
+    localResource.value.vacations.push(newVacation);
 }
 
 function removeVacation(index: number) {
-    local_resource.value.vacations.splice(index, 1);
+    localResource.value.vacations.splice(index, 1);
 }
 
 async function save() {
-    let addedVacations = local_resource.value.vacations.filter(v => !originalVacations.some(v2 => v2.dbId == v.dbId)).map(v => ({ from: v.from, until: v.until }));
-    let removedVacations: number[] = originalVacations.filter(v => !local_resource.value.vacations.some(v2 => v2.dbId == v.dbId && v.dbId != null)).map(v => v.dbId as number);
-    const modifiedVacations = local_resource.value.vacations.filter(v => originalVacations.some(v2 => v2.dbId == v.dbId && v.dbId != null && (v2.from != v.from || v2.until != v.until)));
+    let addedVacations = localResource.value.vacations.filter(v => !originalVacations.some(v2 => v2.dbId == v.dbId)).map(v => ({ from: v.from, until: v.until }));
+    let removedVacations: number[] = originalVacations.filter(v => !localResource.value.vacations.some(v2 => v2.dbId == v.dbId && v.dbId != null)).map(v => v.dbId as number);
+    const modifiedVacations = localResource.value.vacations.filter(v => originalVacations.some(v2 => v2.dbId == v.dbId && v.dbId != null && (v2.from != v.from || v2.until != v.until)));
     addedVacations = [...addedVacations, ...modifiedVacations.map(v => ({ from: v.from, until: v.until }))];
     removedVacations = [...removedVacations, ...modifiedVacations.map(v => v.dbId as number)];
-    local_resource.value.addedVacations = addedVacations
-    local_resource.value.removedVacations = removedVacations
-    local_resource.value.vacations = [];
-    await resourceStore.saveResource(local_resource);
-    originalVacations = [...local_resource.value.vacations.map(v => ({ ...v }))];
+    localResource.value.addedVacations = addedVacations
+    localResource.value.removedVacations = removedVacations
+    localResource.value.vacations = [];
+    await resourceStore.saveResource(localResource);
+    originalVacations = [...localResource.value.vacations.map(v => ({ ...v }))];
 }
 
 async function deleteResource() {
-    const resourceId = local_resource.value.dbId
+    const resourceId = localResource.value.dbId
     if (resourceId == null) {
         dialogStore.popDialog()
         return
