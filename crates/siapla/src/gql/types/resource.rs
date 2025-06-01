@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 
 use juniper::{Nullable, graphql_object};
 use sea_orm::{ActiveModelTrait as _, ActiveValue};
+use sea_orm::prelude::*;
 
 use crate::{
     entity::{availability, holiday, resource, vacation},
@@ -87,8 +88,8 @@ pub async fn resource_save(
     mut resource: ResourceSaveInput,
 ) -> anyhow::Result<resource::Model> {
     let availability = resource.availability.take();
-    let _added_vacations = resource.added_vacations.take();
-    let _removed_vacations = resource.removed_vacations.take();
+    let added_vacations = resource.added_vacations.take().unwrap_or_default();
+    let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
     let am = resource::ActiveModel::from(resource);
     let txn = ctx.txn().await?;
     let model = if am.id.is_set() {
@@ -96,6 +97,21 @@ pub async fn resource_save(
     } else {
         am.insert(txn).await?
     };
+
+    // Handle adding new vacations
+    for vacation_input in added_vacations {
+        let mut vacation_am = crate::entity::vacation::ActiveModel::from(vacation_input);
+        vacation_am.resource_id = ActiveValue::Set(model.id);
+        vacation_am.insert(txn).await?;
+    }
+
+    // Handle removing vacations
+    if !removed_vacations.is_empty() {
+        vacation::Entity::delete_many()
+            .filter(vacation::Column::Id.is_in(removed_vacations))
+            .exec(txn)
+            .await?;
+    }
 
     if let Some(availability) = availability {
         update_availability(ctx, &model, availability).await?;

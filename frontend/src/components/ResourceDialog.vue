@@ -88,7 +88,7 @@
 <script setup lang="ts">
 import { Dialog } from 'quasar'
 import { ref, watch, watchEffect, computed } from 'vue';
-import { type Availability, type ResourceInput, useResourceStore, defaultAvailability} from 'src/stores/resource';
+import { type Availability, type ResourceInput, useResourceStore, defaultAvailability, type Vacation} from 'src/stores/resource';
 import DateTimeInput from './DateTimeInput.vue';
 import { format_datetime } from 'src/common/datetime'
 import { useDialogStore } from 'src/stores/dialog';
@@ -250,11 +250,14 @@ interface Props {
 };
 
 const props = defineProps<Props>();
-
+let originalVacations: Vacation[] = [];
 watchEffect(() => {
     // resource changed
     local_resource.value = { ...local_resource_default, ...props.resource }
     edit.value = local_resource.value.dbId == null
+    originalVacations = [...props.resource.vacations?.map(v => ({ ...v })) || []];
+    console.assert(originalVacations.every(v => v.dbId != null), "assertion failed: all vacations should have a dbId")
+    
 })
 
 watchEffect(() => {
@@ -262,10 +265,6 @@ watchEffect(() => {
         selectedCountry.value = local_resource.value.holiday.country?.isocode ?? null
         selectedRegion.value = local_resource.value.holiday.region?.isocode ?? null
     }
-})
-
-watchEffect(() => {
-    console.log("local_resource", local_resource.value)
 })
 
 // actions
@@ -281,37 +280,34 @@ async function toggleEdit() {
 }
 
 function addVacation() {
+    const now = new Date()
+    now.setHours(0)
+    now.setMinutes(0)
+    now.setSeconds(0)
+    now.setMilliseconds(0)
     const newVacation = { 
         dbId: null,
-        from: new Date(),
-        until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        from: now,
+        until: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
     };
     local_resource.value.vacations.push(newVacation);
-    // Also add to addedVacations for tracking
-    local_resource.value.addedVacations.push({ 
-        from: newVacation.from,
-        until: newVacation.until 
-    });
 }
 
 function removeVacation(index: number) {
-    const vacation = local_resource.value.vacations[index];
-    if (vacation?.dbId) {
-        local_resource.value.removedVacations.push(vacation.dbId);
-    } else if (vacation != null) {
-        // If it's a newly added vacation that wasn't saved yet, remove it from addedVacations
-        const addedIndex = local_resource.value.addedVacations.findIndex(
-            v => v.from === vacation.from && v.until === vacation.until
-        );
-        if (addedIndex !== -1) {
-            local_resource.value.addedVacations.splice(addedIndex, 1);
-        }
-    }
     local_resource.value.vacations.splice(index, 1);
 }
 
 async function save() {
+    let addedVacations = local_resource.value.vacations.filter(v => !originalVacations.some(v2 => v2.dbId == v.dbId)).map(v => ({ from: v.from, until: v.until }));
+    let removedVacations: number[] = originalVacations.filter(v => !local_resource.value.vacations.some(v2 => v2.dbId == v.dbId && v.dbId != null)).map(v => v.dbId as number);
+    const modifiedVacations = local_resource.value.vacations.filter(v => originalVacations.some(v2 => v2.dbId == v.dbId && v.dbId != null && (v2.from != v.from || v2.until != v.until)));
+    addedVacations = [...addedVacations, ...modifiedVacations.map(v => ({ from: v.from, until: v.until }))];
+    removedVacations = [...removedVacations, ...modifiedVacations.map(v => v.dbId as number)];
+    local_resource.value.addedVacations = addedVacations
+    local_resource.value.removedVacations = removedVacations
+    local_resource.value.vacations = [];
     await resourceStore.saveResource(local_resource);
+    originalVacations = [...local_resource.value.vacations.map(v => ({ ...v }))];
 }
 
 async function deleteResource() {
