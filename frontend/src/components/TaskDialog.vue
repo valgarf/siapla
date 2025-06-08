@@ -37,6 +37,44 @@
                 local_task.designation }}</q-chip>
         </q-card-section>
 
+        <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
+            <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Start:</div>
+                <div>{{ formatDatetime(local_task.earliestStart) }}</div>
+            </div>
+        </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
+            <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Schedule:</div>
+                <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
+            </div>
+        </q-card-section>
+
+        <q-card-section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)">
+            <div class="q-gutter-y-sm">
+                <div v-for="(option, idx) in local_task.resourceAlternatives ?? []" :key="idx" class="row items-center q-gutter-sm">
+                    <div class="col">
+                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}`" :possible="allResources" :edit="edit" class="full-width" />
+                        <div class="row q-gutter-sm q-mt-xs items-center">
+                            <q-checkbox v-model="option.optional" :disable="!edit" label="Optional" />
+                            <q-input v-model.number="option.speed" :disable="!edit" type="number" min="0" step="0.1" label="Speed" dense style="max-width: 120px;" />
+                        </div>
+                    </div>
+                    <q-btn flat round v-show="edit" icon="remove" color="negative" @click="removeResourceSlot(idx)" />
+                </div>
+                <q-btn flat v-show="edit" icon="add" color="primary" label="Add Resource Constraint" @click="addResourceSlot" />
+            </div>
+        </q-card-section>
+
+        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
+            <q-input v-if="edit" label="effort (days)" stack-label type="number" v-model.number="local_task.effort" />
+            <div v-else class="row items-baseline">
+                <div class="text-subtitle2 q-pr-md">Effort:</div>
+                <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
+            </div>
+        </q-card-section>
         <q-card-section
             v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
             <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
@@ -54,27 +92,6 @@
             v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)">
             <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren" :edit="edit" />
         </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
-            <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Start:</div>
-                <div>{{ formatDatetime(local_task.earliestStart) }}</div>
-            </div>
-        </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
-            <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Schedule:</div>
-                <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
-            </div>
-        </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
-            <q-input v-if="edit" label="effort (days)" stack-label type="number" v-model.number="local_task.effort" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Effort:</div>
-                <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
-            </div>
-        </q-card-section>
         <q-card-section v-show="effective_requirements.length > 0">
             <div class="col">
                 <div class="text-subtitle2">Requirements</div>
@@ -88,27 +105,31 @@
             </div>
         </q-card-section>
 
+        
     </DialogLayout>
 </template>
 
 
 <script setup lang="ts">
-import { Dialog } from 'quasar'
-import MarkdownEditor from './MarkdownEditor.vue';
-import { computed, ref, watchEffect } from 'vue';
-import { type TaskInput, useTaskStore, type Task } from 'src/stores/task';
+import { Dialog } from 'quasar';
+import { formatDatetime } from 'src/common/datetime';
 import { TaskDesignation } from 'src/gql/graphql';
-import EditableTaskList from './EditableTaskList.vue';
-import DateTimeInput from './DateTimeInput.vue';
-import { formatDatetime } from 'src/common/datetime'
-import TaskChip from './TaskChip.vue';
 import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
+import { useResourceStore } from 'src/stores/resource';
+import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
+import { computed, ref, watchEffect } from 'vue';
+import DateTimeInput from './DateTimeInput.vue';
 import DialogLayout from './DialogLayout.vue';
+import EditableResourceList from './EditableResourceList.vue';
+import EditableTaskList from './EditableTaskList.vue';
+import MarkdownEditor from './MarkdownEditor.vue';
+import TaskChip from './TaskChip.vue';
 
 const taskStore = useTaskStore();
 const dialogStore = useDialogStore();
+const resourceStore = useResourceStore();
 
-const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null };
+const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceAlternatives: [] };
 const local_task = ref<TaskInput>(local_task_default)
 const edit = ref(local_task.value.dbId == null)
 
@@ -255,6 +276,17 @@ async function deleteTask() {
         return
     }
     await taskStore.deleteTask(taskId, true);
+}
+
+const allResources = computed(() => resourceStore.resources);
+
+function addResourceSlot() {
+    if (!local_task.value.resourceAlternatives) local_task.value.resourceAlternatives = [];
+    local_task.value.resourceAlternatives.push({ resources: [], optional: false, speed: 1 });
+}
+function removeResourceSlot(idx: number) {
+    if (!local_task.value.resourceAlternatives) return;
+    local_task.value.resourceAlternatives.splice(idx, 1);
 }
 
 </script>

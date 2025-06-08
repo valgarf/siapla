@@ -1,9 +1,10 @@
-import { graphql } from 'src/gql';
-import { defineStore, acceptHMRUpdate } from 'pinia';
 import { useMutation, useQuery } from '@vue/apollo-composable';
+import { acceptHMRUpdate, defineStore } from 'pinia';
+import { graphql } from 'src/gql';
 import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
 import { TaskDialogData, useDialogStore } from './dialog';
+import type { Resource } from './resource';
 
 export interface Task {
   dbId: number;
@@ -19,10 +20,17 @@ export interface Task {
   designation: TaskDesignation;
 }
 
+export interface ResourceOption {
+  resources: Resource[];
+  optional: boolean;
+  speed: number;
+}
+
 export interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
   designation: TaskDesignation;
+  resourceAlternatives: ResourceOption[];
 }
 
 const TASK_QUERY = graphql(`
