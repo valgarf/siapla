@@ -49,7 +49,6 @@ pub enum Relation {
     AllocatedResource,
     Availability,
     Holiday,
-    ResourceConstraint,
     ResourceConstraintEntry,
     Vacation,
 }
@@ -77,7 +76,6 @@ impl RelationTrait for Relation {
                 .from(Column::HolidayId)
                 .to(super::holiday::Column::Id)
                 .into(),
-            Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
             Self::ResourceConstraintEntry => {
                 Entity::has_many(super::resource_constraint_entry::Entity).into()
             }
@@ -101,12 +99,6 @@ impl Related<super::availability::Entity> for Entity {
 impl Related<super::holiday::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Holiday.def()
-    }
-}
-
-impl Related<super::resource_constraint::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ResourceConstraint.def()
     }
 }
 

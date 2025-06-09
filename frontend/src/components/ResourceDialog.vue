@@ -86,15 +86,15 @@
 
 
 <script setup lang="ts">
-import { Dialog } from 'quasar'
-import { ref, watch, watchEffect, computed } from 'vue';
-import { type Availability, type ResourceInput, useResourceStore, defaultAvailability, type Vacation} from 'src/stores/resource';
-import DateTimeInput from './DateTimeInput.vue';
-import { formatDatetime as formatDatetime } from 'src/common/datetime'
-import { useDialogStore } from 'src/stores/dialog';
-import DialogLayout from './DialogLayout.vue';
 import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
+import { Dialog } from 'quasar';
+import { formatDatetime } from 'src/common/datetime';
+import { useDialogStore } from 'src/stores/dialog';
+import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
+import { computed, ref, watch, watchEffect } from 'vue';
+import DateTimeInput from './DateTimeInput.vue';
+import DialogLayout from './DialogLayout.vue';
 
 const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
@@ -134,10 +134,12 @@ const groupedWorkingHours = computed(() => {
     return result;
 })
 
+const current_date = new Date()
+current_date.setHours(0, 0, 0, 0);
 const localResourceDefault: ResourceInput = {
     name: "",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    added: new Date(),
+    added: current_date,
     availability: { ...defaultAvailability },
     removed: null,
     holiday: null,

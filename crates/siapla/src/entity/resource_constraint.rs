@@ -44,8 +44,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Resource,
     ResourceConstraintEntry,
+    Task,
 }
 
 impl ColumnTrait for Column {
@@ -64,26 +64,26 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Resource => Entity::belongs_to(super::resource::Entity)
-                .from(Column::TaskId)
-                .to(super::resource::Column::Id)
-                .into(),
             Self::ResourceConstraintEntry => {
                 Entity::has_many(super::resource_constraint_entry::Entity).into()
             }
+            Self::Task => Entity::belongs_to(super::task::Entity)
+                .from(Column::TaskId)
+                .to(super::task::Column::Id)
+                .into(),
         }
-    }
-}
-
-impl Related<super::resource::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Resource.def()
     }
 }
 
 impl Related<super::resource_constraint_entry::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ResourceConstraintEntry.def()
+    }
+}
+
+impl Related<super::task::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Task.def()
     }
 }
 

@@ -5,6 +5,7 @@ import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql
 import { computed, type Ref } from 'vue';
 import { TaskDialogData, useDialogStore } from './dialog';
 import type { Resource } from './resource';
+import { useResourceStore } from './resource';
 
 export interface Task {
   dbId: number;
@@ -20,7 +21,7 @@ export interface Task {
   designation: TaskDesignation;
 }
 
-export interface ResourceOption {
+export interface ResourceConstraint {
   resources: Resource[];
   optional: boolean;
   speed: number;
@@ -30,7 +31,7 @@ export interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
   designation: TaskDesignation;
-  resourceAlternatives: ResourceOption[];
+  resourceConstraints: ResourceConstraint[];
 }
 
 const TASK_QUERY = graphql(`
@@ -50,6 +51,15 @@ const TASK_QUERY = graphql(`
       scheduleTarget
       effort
       designation
+      resourceConstraints {
+        optional
+        speed
+        entries {
+          resource {
+            dbId
+          }
+        }
+      }
     }
   }
 `);
@@ -69,6 +79,7 @@ const TASK_DELETE_MUTATION = graphql(`
 `);
 
 function convertQueryResult(query: TasksQuery) {
+  const resourceStore = useResourceStore();
   const tasks: Map<number, Task> = new Map(
     query.tasks.map((t) => {
       return [
@@ -85,6 +96,11 @@ function convertQueryResult(query: TasksQuery) {
           earliestStart: t.earliestStart == null ? null : new Date(t.earliestStart),
           scheduleTarget: t.scheduleTarget == null ? null : new Date(t.scheduleTarget),
           effort: t.effort ?? null,
+          resourceConstraints: (t.resourceConstraints ?? []).map(rc => ({
+            resources: (rc.entries ?? []).map(e => resourceStore.resource(e.resource.dbId)),
+            optional: rc.optional,
+            speed: rc.speed,
+          })),
         },
       ];
     }),
@@ -125,6 +141,11 @@ function taskToObj(task: Ref<TaskInput>): TaskSaveInput {
     parentId: parent?.dbId || null,
     earliestStart: earliestStart == null ? null : earliestStart.toISOString(),
     scheduleTarget: scheduleTarget == null ? null : scheduleTarget.toISOString(),
+    resourceConstraints: (task.value.resourceConstraints ?? []).map(opt => ({
+      optional: opt.optional,
+      speed: opt.speed,
+      entries: (opt.resources ?? []).map(r => ({ resourceId: r.dbId })),
+    })),
   };
   return result;
 }
@@ -143,7 +164,7 @@ export const useTaskStore = defineStore('taskStore', () => {
       return convertQueryResult(queryGetAll.result.value);
     }
   });
-
+ 
   async function saveTask(task: Ref<TaskInput>) {
     const dialog = useDialogStore();
     const resp = await mutSaveTask.mutate({ task: taskToObj(task) });

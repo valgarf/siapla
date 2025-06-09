@@ -194,9 +194,9 @@ impl MigrationTrait for Migration {
                     .col(float(ResourceConstraint::Speed))
                     .foreign_key(
                         ForeignKey::create()
-                            .name("FK_ResourceConstraint_Resource")
+                            .name("FK_ResourceConstraint_Task")
                             .from(ResourceConstraint::Table, ResourceConstraint::TaskId)
-                            .to(Resource::Table, Resource::Id)
+                            .to(Task::Table, Task::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )

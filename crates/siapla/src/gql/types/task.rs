@@ -307,6 +307,7 @@ async fn update_resource_constraint_entries(
     if !remove.is_empty() {
         resource_constraint_entry::Entity::delete_many()
             .filter(resource_constraint_entry::Column::ResourceId.is_in(remove))
+            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(model.id))
             .exec(txn)
             .await?;
     }

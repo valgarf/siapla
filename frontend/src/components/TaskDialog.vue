@@ -54,12 +54,18 @@
 
         <q-card-section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)">
             <div class="q-gutter-y-sm">
-                <div v-for="(option, idx) in local_task.resourceAlternatives ?? []" :key="idx" class="row items-center q-gutter-sm">
+                <div v-for="(option, idx) in local_task.resourceConstraints ?? []" :key="idx" class="row items-center q-gutter-sm">
                     <div class="col">
                         <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}`" :possible="allResources" :edit="edit" class="full-width" />
-                        <div class="row q-gutter-sm q-mt-xs items-center">
-                            <q-checkbox v-model="option.optional" :disable="!edit" label="Optional" />
-                            <q-input v-model.number="option.speed" :disable="!edit" type="number" min="0" step="0.1" label="Speed" dense style="max-width: 120px;" />
+                        <div class="row q-gutter-sm items-center">
+                            <q-checkbox v-if="edit" v-model="option.optional"  label="Optional" />
+                            <div v-else class="q-ml-md text-subtitle2">
+                                {{ option.optional ? "Optional" : "Required"  }}
+                            </div>
+                            <q-input v-if="edit" v-model.number="option.speed"  type="number" min="0" step="0.1" label="Speed" dense style="max-width: 120px;" />
+                            <div v-else class="q-ml-lg text-subtitle2">
+                                Speed: {{ option.speed.toFixed(2) }}
+                            </div>
                         </div>
                     </div>
                     <q-btn flat round v-show="edit" icon="remove" color="negative" @click="removeResourceSlot(idx)" />
@@ -129,7 +135,7 @@ const taskStore = useTaskStore();
 const dialogStore = useDialogStore();
 const resourceStore = useResourceStore();
 
-const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceAlternatives: [] };
+const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [] };
 const local_task = ref<TaskInput>(local_task_default)
 const edit = ref(local_task.value.dbId == null)
 
@@ -281,12 +287,12 @@ async function deleteTask() {
 const allResources = computed(() => resourceStore.resources);
 
 function addResourceSlot() {
-    if (!local_task.value.resourceAlternatives) local_task.value.resourceAlternatives = [];
-    local_task.value.resourceAlternatives.push({ resources: [], optional: false, speed: 1 });
+    if (!local_task.value.resourceConstraints) local_task.value.resourceConstraints = [];
+    local_task.value.resourceConstraints.push({ resources: [], optional: false, speed: 1 });
 }
 function removeResourceSlot(idx: number) {
-    if (!local_task.value.resourceAlternatives) return;
-    local_task.value.resourceAlternatives.splice(idx, 1);
+    if (!local_task.value.resourceConstraints) return;
+    local_task.value.resourceConstraints.splice(idx, 1);
 }
 
 </script>
