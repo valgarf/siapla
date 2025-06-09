@@ -101,6 +101,28 @@ type Resource {
   vacation: [Vacation!]!
 }
 
+type ResourceConstraint {
+  entries: [ResourceConstraintEntry!]!
+  id: Int!
+  optional: Boolean!
+  speed: Float!
+}
+
+type ResourceConstraintEntry {
+  id: Int!
+  resource: Resource!
+}
+
+input ResourceConstraintEntryInput {
+  resourceId: Int!
+}
+
+input ResourceConstraintInput {
+  entries: [ResourceConstraintEntryInput!]!
+  optional: Boolean!
+  speed: Float!
+}
+
 input ResourceSaveInput {
   added: DateTime!
   addedVacations: [VacationInput!]
@@ -126,6 +148,7 @@ type Task {
   effort: Float
   parent: Task
   predecessors: [Task!]!
+  resourceConstraints: [ResourceConstraint!]!
   scheduleTarget: DateTime
   successors: [Task!]!
   title: String!
@@ -147,6 +170,7 @@ input TaskSaveInput {
   effort: Float
   parentId: Int
   predecessors: [Int!]
+  resourceConstraints: [ResourceConstraintInput!]
   scheduleTarget: DateTime
   successors: [Int!]
   title: String!

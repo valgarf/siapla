@@ -190,6 +190,8 @@ impl MigrationTrait for Migration {
                     .col(pk_auto(ResourceConstraint::Id))
                     .col(integer(ResourceConstraint::TaskId))
                     .col(string(ResourceConstraint::Type))
+                    .col(boolean(ResourceConstraint::Optional))
+                    .col(float(ResourceConstraint::Speed))
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_ResourceConstraint_Resource")
@@ -209,7 +211,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(pk_auto(ResourceConstraintEntry::Id))
                     .col(integer(ResourceConstraintEntry::ResourceConstraintId))
-                    .col(string(ResourceConstraintEntry::ResourceId))
+                    .col(integer(ResourceConstraintEntry::ResourceId))
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_ResourceConstraintEntry_ResourceConstraint")
@@ -442,6 +444,8 @@ enum ResourceConstraint {
     Id,
     TaskId,
     Type,
+    Optional,
+    Speed
 }
 
 #[derive(DeriveIden)]

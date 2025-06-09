@@ -16,7 +16,7 @@ impl EntityName for Entity {
 pub struct Model {
     pub id: i32,
     pub resource_constraint_id: i32,
-    pub resource_id: String,
+    pub resource_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -50,7 +50,7 @@ impl ColumnTrait for Column {
         match self {
             Self::Id => ColumnType::Integer.def(),
             Self::ResourceConstraintId => ColumnType::Integer.def(),
-            Self::ResourceId => ColumnType::String(StringLen::None).def(),
+            Self::ResourceId => ColumnType::Integer.def(),
         }
     }
 }

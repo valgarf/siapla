@@ -166,6 +166,30 @@ export type Resource = {
   vacation: Array<Vacation>;
 };
 
+export type ResourceConstraint = {
+  __typename?: 'ResourceConstraint';
+  entries: Array<ResourceConstraintEntry>;
+  id: Scalars['Int']['output'];
+  optional: Scalars['Boolean']['output'];
+  speed: Scalars['Float']['output'];
+};
+
+export type ResourceConstraintEntry = {
+  __typename?: 'ResourceConstraintEntry';
+  id: Scalars['Int']['output'];
+  resource: Resource;
+};
+
+export type ResourceConstraintEntryInput = {
+  resourceId: Scalars['Int']['input'];
+};
+
+export type ResourceConstraintInput = {
+  entries: Array<ResourceConstraintEntryInput>;
+  optional: Scalars['Boolean']['input'];
+  speed: Scalars['Float']['input'];
+};
+
 export type ResourceSaveInput = {
   added: Scalars['DateTime']['input'];
   addedVacations?: InputMaybe<Array<VacationInput>>;
@@ -193,6 +217,7 @@ export type Task = {
   effort?: Maybe<Scalars['Float']['output']>;
   parent?: Maybe<Task>;
   predecessors: Array<Task>;
+  resourceConstraints: Array<ResourceConstraint>;
   scheduleTarget?: Maybe<Scalars['DateTime']['output']>;
   successors: Array<Task>;
   title: Scalars['String']['output'];
@@ -214,6 +239,7 @@ export type TaskSaveInput = {
   effort?: InputMaybe<Scalars['Float']['input']>;
   parentId?: InputMaybe<Scalars['Int']['input']>;
   predecessors?: InputMaybe<Array<Scalars['Int']['input']>>;
+  resourceConstraints?: InputMaybe<Array<ResourceConstraintInput>>;
   scheduleTarget?: InputMaybe<Scalars['DateTime']['input']>;
   successors?: InputMaybe<Array<Scalars['Int']['input']>>;
   title: Scalars['String']['input'];

@@ -4,12 +4,12 @@ use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use itertools::{Either, Itertools as _};
 use juniper::{GraphQLEnum, Nullable, graphql_object};
-use sea_orm::{ActiveModelTrait as _, ActiveValue, EntityTrait as _, prelude::*};
+use sea_orm::{prelude::*, ActiveValue, QueryOrder as _};
 use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
 use crate::{
-    entity::{dependency, task},
+    entity::{dependency, resource, resource_constraint, resource_constraint_entry, task},
     gql::{
         common::{nullable_to_av, opt_to_av, resolve_many_to_many},
         context::Context,
@@ -90,6 +90,59 @@ impl task::Model {
             }
         }
     }
+    async fn resource_constraints(&self, ctx: &Context) -> anyhow::Result<Vec<resource_constraint::Model>> {
+        let constraints = resource_constraint::Entity::find()
+            .filter(resource_constraint::Column::TaskId.eq(self.id))
+            .all(ctx.txn().await?)
+            .await?;
+        Ok(constraints)
+    }
+}
+
+#[graphql_object]
+#[graphql(name = "ResourceConstraint")]
+impl resource_constraint::Model {
+    fn id(&self) -> i32 {
+        self.id
+    }
+    fn optional(&self) -> bool {
+        self.optional
+    }
+    fn speed(&self) -> f64 {
+        self.speed as f64
+    }
+    async fn entries(&self, ctx: &Context) -> anyhow::Result<Vec<resource_constraint_entry::Model>> {
+        let entries = resource_constraint_entry::Entity::find()
+            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(self.id))
+            .all(ctx.txn().await?)
+            .await?;
+        Ok(entries)
+    }
+}
+
+#[graphql_object]
+#[graphql(name = "ResourceConstraintEntry")]
+impl resource_constraint_entry::Model {
+    fn id(&self) -> i32 {
+        self.id
+    }
+    async fn resource(&self, ctx: &Context) -> anyhow::Result<resource::Model> {
+        const CIDX: usize = resource::Column::Id as usize;
+        let result = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
+        result.ok_or(anyhow!("Resource not found"))
+    }
+}
+
+#[derive(juniper::GraphQLInputObject, Clone)]
+pub struct ResourceConstraintEntryInput {
+    pub resource_id: i32,
+}
+
+#[derive(juniper::GraphQLInputObject, Clone)]
+pub struct ResourceConstraintInput {
+    pub optional: bool,
+    pub speed: f64,
+    pub entries: Vec<ResourceConstraintEntryInput>,
 }
 
 #[derive(juniper::GraphQLInputObject)]
@@ -105,6 +158,7 @@ pub struct TaskSaveInput {
     pub predecessors: Option<Vec<i32>>,
     pub successors: Option<Vec<i32>>,
     pub children: Option<Vec<i32>>,
+    pub resource_constraints: Option<Vec<ResourceConstraintInput>>,
 }
 
 impl From<TaskSaveInput> for crate::entity::task::ActiveModel {
@@ -238,10 +292,119 @@ async fn update_children(
     Ok(())
 }
 
+async fn update_resource_constraint_entries(
+    ctx: &Context,
+    model: &resource_constraint::Model,
+    new_entries: &[ResourceConstraintEntryInput],
+) -> anyhow::Result<()> {
+    let txn = ctx.txn().await?;
+    use std::collections::HashSet;
+    let existing: HashSet<i32> = model.entries(ctx).await?.iter().map(|el| el.resource_id).collect();
+    let target: HashSet<i32> = new_entries.iter().map(|el| el.resource_id).collect();
+    let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
+    let add: HashSet<i32> = target.difference(&existing).cloned().collect();
+    // Delete entries not in new_ids
+    if !remove.is_empty() {
+        resource_constraint_entry::Entity::delete_many()
+            .filter(resource_constraint_entry::Column::ResourceId.is_in(remove))
+            .exec(txn)
+            .await?;
+    }
+    if !add.is_empty() {
+        resource_constraint_entry::Entity::insert_many(
+            add.into_iter()
+                    .map(|rid| (resource_constraint_entry::ActiveModel{
+                        id: ActiveValue::NotSet,
+                        resource_constraint_id: ActiveValue::Set(model.id),
+                        resource_id: ActiveValue::Set(rid),
+                    }))
+                    .collect::<Vec<_>>()
+             )
+            .exec(txn)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn update_resource_constraints(
+    ctx: &Context,
+    model: &task::Model,
+    constraints: &[ResourceConstraintInput],
+) -> anyhow::Result<()> {
+    let txn = ctx.txn().await?;
+    // Fetch old constraints (assume order is preserved)
+    let old = resource_constraint::Entity::find()
+        .filter(resource_constraint::Column::TaskId.eq(model.id))
+        .order_by(resource_constraint::Column::Id, sea_orm::Order::Asc)
+        .all(txn)
+        .await?;
+    let old_len = old.len();
+    let new_len = constraints.len();
+    let min_len = old_len.min(new_len);
+
+    // Update existing constraints
+    for (i, c) in constraints.iter().take(min_len).enumerate() {
+        let old_c = &old[i];
+        // update columns, only update if changed
+        let needs_update = old_c.optional != c.optional
+            || old_c.speed != (c.speed as f32)
+            || old_c.r#type != old_c.r#type; // type is not changed by input, but keep for completeness
+        if needs_update {
+            let am = resource_constraint::ActiveModel {
+                id: ActiveValue::Set(old_c.id),
+                task_id: ActiveValue::Set(model.id),
+                r#type: ActiveValue::Set(old_c.r#type.clone()),
+                optional: ActiveValue::Set(c.optional),
+                speed: ActiveValue::Set(c.speed as f32),
+            };
+            am.update(txn).await?;
+        }
+        // update relationships
+        update_resource_constraint_entries(ctx, old_c, &c.entries).await?;
+    }
+    // Add new constraints if new_len > old_len
+    if new_len > old_len {
+        for c in constraints.iter().skip(old_len) {
+            let rc = resource_constraint::ActiveModel {
+                id: ActiveValue::NotSet,
+                task_id: ActiveValue::Set(model.id),
+                r#type: ActiveValue::Set("any".to_string()),
+                optional: ActiveValue::Set(c.optional),
+                speed: ActiveValue::Set(c.speed as f32),
+            };
+            let rc = rc.insert(txn).await?;
+            let entries: Vec<resource_constraint_entry::ActiveModel> = c.entries.iter().map(|entry| resource_constraint_entry::ActiveModel {
+                id: ActiveValue::NotSet,
+                resource_constraint_id: ActiveValue::Set(rc.id),
+                resource_id: ActiveValue::Set(entry.resource_id),
+            }).collect();
+            if !entries.is_empty() {
+                resource_constraint_entry::Entity::insert_many(entries).exec(txn).await?;
+            }
+        }
+    }
+    // Remove old constraints if old_len > new_len
+    if old_len > new_len {
+        let ids_to_remove: Vec<i32> = old.iter().skip(new_len).map(|c| c.id).collect();
+        if !ids_to_remove.is_empty() {
+            resource_constraint_entry::Entity::delete_many()
+                .filter(resource_constraint_entry::Column::ResourceConstraintId.is_in(ids_to_remove.iter().cloned()))
+                .exec(txn)
+                .await?;
+            resource_constraint::Entity::delete_many()
+                .filter(resource_constraint::Column::Id.is_in(ids_to_remove))
+                .exec(txn)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result<task::Model> {
     let predecessors = task.predecessors.take();
     let successors = task.successors.take();
     let children = task.children.take();
+    let resource_constraints = task.resource_constraints.take();
     let am = task::ActiveModel::from(task);
     let txn = ctx.txn().await?;
     let model = if am.id.is_set() {
@@ -253,15 +416,15 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     if let Some(predecessors) = predecessors {
         update_predecessors(ctx, &model, predecessors).await?;
     }
-
     if let Some(successors) = successors {
         update_successors(ctx, &model, successors).await?;
     }
-
     if let Some(children) = children {
         update_children(ctx, &model, children).await?;
     }
-
+    if let Some(constraints) = resource_constraints {
+        update_resource_constraints(&ctx, &model, &constraints).await?;
+    }
     // TODO: before committing, check if we now have predecessor or parent cycles!
     Ok(model)
 }

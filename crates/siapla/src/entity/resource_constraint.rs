@@ -12,11 +12,13 @@ impl EntityName for Entity {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
     pub task_id: i32,
     pub r#type: String,
+    pub optional: bool,
+    pub speed: f32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -24,6 +26,8 @@ pub enum Column {
     Id,
     TaskId,
     Type,
+    Optional,
+    Speed,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -51,6 +55,8 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::TaskId => ColumnType::Integer.def(),
             Self::Type => ColumnType::String(StringLen::None).def(),
+            Self::Optional => ColumnType::Boolean.def(),
+            Self::Speed => ColumnType::Float.def(),
         }
     }
 }
