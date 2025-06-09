@@ -56,7 +56,7 @@
             <div class="q-gutter-y-sm">
                 <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                     <div class="col">
-                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}${(local_task.resourceConstraints || []).length==0 ? ' (indirect)' : ''}`" :possible="allResources" :edit="edit" class="full-width" />
+                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}${(local_task.resourceConstraints || []).length==0 ? ' (inherited)' : ''}`" :possible="allResources" :edit="edit" class="full-width" />
                         <div class="row q-gutter-sm items-center">
                             <q-checkbox v-if="edit" v-model="option.optional"  label="Optional" />
                             <div v-else class="q-ml-md text-subtitle2">
