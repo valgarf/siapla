@@ -19,6 +19,7 @@ export interface Task {
   scheduleTarget: Date | null;
   effort: number | null;
   designation: TaskDesignation;
+  resourceConstraints: ResourceConstraint[];
 }
 
 export interface ResourceConstraint {
@@ -30,8 +31,7 @@ export interface ResourceConstraint {
 export interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
-  designation: TaskDesignation;
-  resourceConstraints: ResourceConstraint[];
+  designation: TaskDesignation;  
 }
 
 const TASK_QUERY = graphql(`
@@ -97,7 +97,7 @@ function convertQueryResult(query: TasksQuery) {
           scheduleTarget: t.scheduleTarget == null ? null : new Date(t.scheduleTarget),
           effort: t.effort ?? null,
           resourceConstraints: (t.resourceConstraints ?? []).map(rc => ({
-            resources: (rc.entries ?? []).map(e => resourceStore.resource(e.resource.dbId)),
+            resources: (rc.entries ?? []).map(e => resourceStore.resource(e.resource.dbId)).filter(r => r != null),
             optional: rc.optional,
             speed: rc.speed,
           })),

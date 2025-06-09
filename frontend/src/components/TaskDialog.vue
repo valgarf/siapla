@@ -54,9 +54,9 @@
 
         <q-card-section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)">
             <div class="q-gutter-y-sm">
-                <div v-for="(option, idx) in local_task.resourceConstraints ?? []" :key="idx" class="row items-center q-gutter-sm">
+                <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                     <div class="col">
-                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}`" :possible="allResources" :edit="edit" class="full-width" />
+                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}${(local_task.resourceConstraints || []).length==0 ? ' (indirect)' : ''}`" :possible="allResources" :edit="edit" class="full-width" />
                         <div class="row q-gutter-sm items-center">
                             <q-checkbox v-if="edit" v-model="option.optional"  label="Optional" />
                             <div v-else class="q-ml-md text-subtitle2">
@@ -176,6 +176,20 @@ const possibleChildren = computed(() => {
         const parent_ids = parents.value.map((p) => p.dbId);
         return !parent_ids.includes(t.dbId) && local_task.value.dbId != t.dbId
     })
+})
+
+const resourceConstraints = computed(() => {
+    {
+        let result =  local_task.value.resourceConstraints ?? []
+        if (!edit.value) {
+            let parent = local_task.value.parent;
+            while (result.length < 1 && parent!=null) {
+                result = parent.resourceConstraints;
+                parent = parent.parent;                
+            }
+        }
+        return result;
+    }
 })
 
 // This is a not so nice workaround to get select to work. 
