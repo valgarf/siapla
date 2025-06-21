@@ -4,6 +4,7 @@ use thiserror::Error;
 
 pub mod entity;
 pub mod gql;
+pub mod scheduling;
 
 #[derive(Error, Debug)]
 pub struct SiaplaError {

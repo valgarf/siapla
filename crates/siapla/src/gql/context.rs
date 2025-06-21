@@ -75,7 +75,7 @@ impl Context {
     ///
     /// Column selection is a little hackish, you have to provide the column as usize.
     /// Usage:
-    /// ```
+    /// ```ignore
     /// const CIDX: usize = task::Column::Id as usize;
     /// ctx.load_by_col::<task::Entity, CIDX>(parent_id).await
     /// ```
