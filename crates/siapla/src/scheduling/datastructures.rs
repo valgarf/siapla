@@ -30,9 +30,9 @@ pub struct Milestone<'a> {
 
 pub struct Project<'a> {
     pub start_date: NaiveDate,
-    pub tasks: Vec<&'a Task<'a>>,
-    pub requirements: Vec<&'a Task<'a>>,
-    pub milestones: Vec<&'a Task<'a>>,
+    pub tasks: Vec<Task<'a>>,
+    pub requirements: Vec<Requirement<'a>>,
+    pub milestones: Vec<Milestone<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,9 +45,9 @@ pub struct Resource {
 
 #[derive(Debug, Clone)]
 pub struct Slot {
-    pub range: super::Interval,
+    pub range: super::Interval<NaiveDateTime>,
     pub extensible: bool,
-    pub intervals: super::Intervals,
+    pub intervals: super::Intervals<NaiveDateTime>,
 }
 
 #[derive(Debug, Clone)]
