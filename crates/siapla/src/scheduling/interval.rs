@@ -596,6 +596,8 @@ mod tests {
     use chrono::NaiveDate;
     use chrono::NaiveDateTime;
 
+    // TODO: tests for intervals other than lcro (currently not used in the code)
+
     fn ndt(date: &str, time: &str) -> NaiveDateTime {
         NaiveDate::parse_from_str(date, "%Y-%m-%d")
             .unwrap()

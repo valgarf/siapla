@@ -1,38 +1,55 @@
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+};
+
 use chrono::{NaiveDate, NaiveDateTime};
+use petgraph::Graph;
+
+// Project base information
+
+pub struct Project {
+    pub start_date: NaiveDate,
+    pub objs: ProjectObjects,
+    pub g: Graph<Node, ()>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProjectObjects {
+    pub tasks: Vec<Rc<RefCell<Task>>>,
+    pub requirements: Vec<Rc<RefCell<Requirement>>>,
+    pub milestones: Vec<Rc<RefCell<Milestone>>>,
+    pub resources: Vec<Rc<RefCell<Resource>>>,
+}
 
 #[derive(Debug, Clone)]
-pub struct Task<'a> {
+pub struct Task {
     pub db_id: i32,
     pub title: String,
     pub effort: f64,
-    pub requirements: Vec<&'a Requirement<'a>>,
-    pub milestones: Vec<&'a Milestone<'a>>,
-    pub predecessor: Vec<&'a Task<'a>>,
-    pub successor: Vec<&'a Task<'a>>,
-    pub constraints: Vec<&'a ResourceConstraint<'a>>,
+    pub constraints: Vec<ResourceConstraint>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Requirement<'a> {
+pub struct Requirement {
     pub db_id: i32,
     pub title: String,
     pub earliest_start: NaiveDateTime,
-    pub tasks: Vec<&'a Task<'a>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Milestone<'a> {
+pub struct Milestone {
     pub db_id: i32,
     pub title: String,
     pub schedule_target: NaiveDateTime,
-    pub tasks: Vec<&'a Task<'a>>,
 }
 
-pub struct Project<'a> {
-    pub start_date: NaiveDate,
-    pub tasks: Vec<Task<'a>>,
-    pub requirements: Vec<Requirement<'a>>,
-    pub milestones: Vec<Milestone<'a>>,
+#[derive(Debug, Clone)]
+pub enum Node {
+    Task(Rc<RefCell<Task>>),
+    Requirement(Rc<RefCell<Requirement>>),
+    Milestone(Rc<RefCell<Milestone>>),
+    Group(),
 }
 
 #[derive(Debug, Clone)]
@@ -51,17 +68,28 @@ pub struct Slot {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResourceConstraint<'a> {
+pub struct ResourceConstraint {
     // Note: all constraints are currently 'any' constraints
     pub db_id: i32,
-    pub task: &'a Task<'a>,
     pub optional: bool,
     pub speed: f64,
-    pub constraints: Vec<ResourceConstraintEntry<'a>>,
+    pub constraints: Vec<ResourceConstraintEntry>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ResourceConstraintEntry<'a> {
+pub struct ResourceConstraintEntry {
     pub db_id: i32,
-    pub resource: &'a Resource,
+    pub resource: Weak<RefCell<Resource>>,
+}
+
+// prioritization
+
+#[derive(Debug, Clone)]
+pub struct MilestonePriority {
+    pub priority: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskPriority {
+    pub priority: f64,
 }

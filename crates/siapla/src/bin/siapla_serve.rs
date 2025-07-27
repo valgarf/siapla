@@ -4,9 +4,12 @@ use axum::{
 };
 use juniper::DefaultScalarValue;
 use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
-use siapla::gql::{
-    Schema,
-    context::{Context, add_context},
+use siapla::{
+    gql::{
+        Schema,
+        context::{Context, add_context},
+    },
+    scheduling::recalculate_loop,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
@@ -37,16 +40,15 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_new("debug").unwrap())
         .init();
 
+    tokio::spawn(recalculate_loop());
+
     let cors = CorsLayer::new()
         .allow_methods(tower_http::cors::Any)
         .allow_headers(tower_http::cors::Any)
         .allow_origin(tower_http::cors::Any);
 
     let app = Router::new()
-        .route(
-            "/graphql",
-            on(MethodFilter::GET.or(MethodFilter::POST), graphql),
-        )
+        .route("/graphql", on(MethodFilter::GET.or(MethodFilter::POST), graphql))
         // .route(
         //     "/subscriptions",
         //     get(ws::<Arc<Schema>>(ConnectionConfig::new(()))),
@@ -63,13 +65,10 @@ async fn main() -> anyhow::Result<()> {
     // .route("/", get(homepage))
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8880));
-    let listener = TcpListener::bind(addr)
-        .await
-        .unwrap_or_else(|e| panic!("failed to listen on {addr}: {e}"));
+    let listener =
+        TcpListener::bind(addr).await.unwrap_or_else(|e| panic!("failed to listen on {addr}: {e}"));
     info!("listening on {addr}");
-    axum::serve(listener, app)
-        .await
-        .unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
+    axum::serve(listener, app).await.unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
 
     Ok(())
 }
