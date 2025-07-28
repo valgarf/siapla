@@ -20,10 +20,12 @@ pub struct ProjectObjects {
     pub requirements: Vec<Rc<RefCell<Requirement>>>,
     pub milestones: Vec<Rc<RefCell<Milestone>>>,
     pub resources: Vec<Rc<RefCell<Resource>>>,
+    pub groups: Vec<Rc<RefCell<Group>>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Task {
+    pub parent: Option<Weak<RefCell<Group>>>,
     pub db_id: i32,
     pub title: String,
     pub effort: f64,
@@ -45,11 +47,18 @@ pub struct Milestone {
 }
 
 #[derive(Debug, Clone)]
+pub struct Group {
+    pub parent: Option<Weak<RefCell<Group>>>,
+    pub db_id: i32,
+    pub constraints: Vec<ResourceConstraint>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Node {
     Task(Rc<RefCell<Task>>),
     Requirement(Rc<RefCell<Requirement>>),
     Milestone(Rc<RefCell<Milestone>>),
-    Group(),
+    Group(Rc<RefCell<Group>>),
 }
 
 #[derive(Debug, Clone)]
@@ -80,16 +89,4 @@ pub struct ResourceConstraint {
 pub struct ResourceConstraintEntry {
     pub db_id: i32,
     pub resource: Weak<RefCell<Resource>>,
-}
-
-// prioritization
-
-#[derive(Debug, Clone)]
-pub struct MilestonePriority {
-    pub priority: f64,
-}
-
-#[derive(Debug, Clone)]
-pub struct TaskPriority {
-    pub priority: f64,
 }
