@@ -178,7 +178,7 @@ pub async fn query_problem(db: &DatabaseConnection) -> Result<Project, anyhow::E
     for ce in db_constraint_entries_vec.into_iter() {
         let (c, _) =
             constraint_map.get_mut(&ce.resource_constraint_id).expect("constraint must exist.");
-        let r = resource_map.get(&ce.resource_constraint_id).expect("resource must exist.");
+        let r = resource_map.get(&ce.resource_id).expect("resource must exist.");
         let entry = ResourceConstraintEntry { db_id: ce.id, resource: Rc::downgrade(r) };
         c.constraints.push(entry);
     }
