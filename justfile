@@ -1,9 +1,12 @@
+set windows-shell := ["nu", "-c"]
+
 default:
     @just --list
 
+
 [positional-arguments]
 migrate *args='':
-    DATABASE_URL="sqlite:./run-data/test.sqlite" sea-orm-cli migrate -d ./crates/siapla-migration "$@"
+    DATABASE_URL="sqlite:./run-data/test.sqlite" sea-orm-cli migrate -d ./crates/siapla-migration {{args}}
 
 generate-entity: (migrate "up")
     DATABASE_URL="sqlite:./run-data/test.sqlite" sea-orm-cli generate entity \
@@ -17,6 +20,9 @@ generate-entity: (migrate "up")
 serve-backend:
     DATABASE_URL="sqlite:./test.sqlite" watchexec -d 1s -o restart -w ../crates cargo run -p siapla --bin siapla-serve
 
+[working-directory("./run-data")]
+serve-backend-once:
+    DATABASE_URL="sqlite:./test.sqlite" cargo run -p siapla --bin siapla-serve
 
 [working-directory("./frontend")]
 serve-frontend:
