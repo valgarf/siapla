@@ -12,7 +12,7 @@ use siapla::{
     scheduling::recalculate_loop,
 };
 use std::{net::SocketAddr, sync::Arc};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, task};
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -40,7 +40,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::try_new("debug").unwrap())
         .init();
 
-    tokio::spawn(recalculate_loop());
+    let local_set = tokio::task::LocalSet::new();
+    local_set.spawn_local(recalculate_loop());
+    // tokio::spawn(recalculate_loop());
 
     let cors = CorsLayer::new()
         .allow_methods(tower_http::cors::Any)
@@ -68,7 +70,12 @@ async fn main() -> anyhow::Result<()> {
     let listener =
         TcpListener::bind(addr).await.unwrap_or_else(|e| panic!("failed to listen on {addr}: {e}"));
     info!("listening on {addr}");
-    axum::serve(listener, app).await.unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
-
+    let jh = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .await
+            .unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
+    });
+    local_set.spawn_local(async move { jh.await });
+    local_set.await;
     Ok(())
 }
