@@ -39,3 +39,4 @@ siapla-open-holidays-api = { path = "../siapla-open-holidays-api" }
 serde_json = "1.0.140"
 petgraph = "0.8.2"
 rand = "0.9.2"
+chrono-tz = "0.10.4"

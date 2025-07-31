@@ -45,12 +45,7 @@ impl Country {
             .map(|sd| Region {
                 isocode: sd.code,
                 country_name: self.name.clone(),
-                region_name: sd
-                    .name
-                    .first()
-                    .expect("API did not return region name")
-                    .text
-                    .clone(),
+                region_name: sd.name.first().expect("API did not return region name").text.clone(),
             })
             .collect())
     }
@@ -79,17 +74,11 @@ impl Region {
         &self.region_name
     }
     fn holiday(&self, _ctx: &Context) -> GQLHoliday {
-        GQLHoliday {
-            isocode: self.isocode.clone(),
-            model: Default::default(),
-        }
+        GQLHoliday { isocode: self.isocode.clone(), model: Default::default() }
     }
-    
+
     fn country(&self) -> Country {
-        Country {
-            isocode: self.isocode[0..2].to_string(),
-            name: self.country_name.clone()
-        }
+        Country { isocode: self.isocode[0..2].to_string(), name: self.country_name.clone() }
     }
 }
 
@@ -110,38 +99,41 @@ impl GQLHoliday {
     async fn name(&self, ctx: &Context) -> anyhow::Result<&str> {
         Ok(&self.get_model(ctx).await?.name)
     }
-    
+
     async fn country(&self, _ctx: &Context) -> Option<Country> {
         // If the isocode is 2 characters, it's a country code
         if self.isocode.len() >= 2 {
             let countries = countries();
             let isocode = &self.isocode[0..2];
-            countries.get(isocode).map(|name| Country {
-                isocode: isocode.to_string(),
-                name: name.clone(),
-            })
+            countries
+                .get(isocode)
+                .map(|name| Country { isocode: isocode.to_string(), name: name.clone() })
         } else {
             None
         }
     }
-    
+
     async fn region(&self, _ctx: &Context) -> Option<Region> {
         // If the isocode is in format "XX-XXX" it's a region code
         if self.isocode.chars().nth(2) == Some('-') {
             let country_code = &self.isocode[0..2];
             let countries = countries();
-            countries.get(country_code).and_then(|country_name| self.model.get().and_then(|model| 
-            model.name.clone().strip_prefix(&(country_name.clone()+" - ")).map(|region_name|    
-            Region {
-                isocode: self.isocode.clone(),
-                country_name: country_name.clone(),
-                region_name: region_name.to_string(),
-            })))
+            countries.get(country_code).and_then(|country_name| {
+                self.model.get().and_then(|model| {
+                    model.name.clone().strip_prefix(&(country_name.clone() + " - ")).map(
+                        |region_name| Region {
+                            isocode: self.isocode.clone(),
+                            country_name: country_name.clone(),
+                            region_name: region_name.to_string(),
+                        },
+                    )
+                })
+            })
         } else {
             None
         }
     }
-    async fn entries(
+    pub async fn entries(
         &self,
         ctx: &Context,
         from: chrono::NaiveDate,
@@ -167,14 +159,9 @@ impl holiday_entry::Model {
     }
     async fn holiday(&self, ctx: &Context) -> anyhow::Result<GQLHoliday> {
         const CIDX: usize = holiday::Column::Id as usize;
-        let model = ctx
-            .load_one_by_col::<holiday::Entity, CIDX>(self.holiday_id)
-            .await
-            .and_then(|r| {
-                r.ok_or(anyhow!(
-                    "Failed to find a holiday with id {}",
-                    self.holiday_id
-                ))
+        let model =
+            ctx.load_one_by_col::<holiday::Entity, CIDX>(self.holiday_id).await.and_then(|r| {
+                r.ok_or(anyhow!("Failed to find a holiday with id {}", self.holiday_id))
             })?;
         Ok(GQLHoliday::from_model(model))
     }
@@ -195,10 +182,7 @@ impl GQLHoliday {
     }
 
     pub fn from_model(model: holiday::Model) -> Self {
-        GQLHoliday {
-            isocode: model.external_id.clone(),
-            model: OnceCell::const_new_with(model),
-        }
+        GQLHoliday { isocode: model.external_id.clone(), model: OnceCell::const_new_with(model) }
     }
 }
 
@@ -215,9 +199,7 @@ impl holiday::Model {
                     self.download_entries(
                         txn,
                         from,
-                        start
-                            .pred_opt()
-                            .ok_or(anyhow!("Not a representable date"))?,
+                        start.pred_opt().ok_or(anyhow!("Not a representable date"))?,
                     )
                     .await?;
                 }
@@ -268,10 +250,8 @@ impl holiday::Model {
         until: chrono::NaiveDate,
     ) -> anyhow::Result<()> {
         // https://openholidaysapi.org/PublicHolidays?countryIsoCode=DE&languageIsoCode=EN&validFrom=2025-01-01&validTo=2025-12-31
-        let config = Configuration {
-            base_path: "https://openholidaysapi.org".into(),
-            ..Default::default()
-        };
+        let config =
+            Configuration { base_path: "https://openholidaysapi.org".into(), ..Default::default() };
         let entries = holidays_api::public_holidays_get(
             &config,
             &self.external_id[0..2],
@@ -284,12 +264,7 @@ impl holiday::Model {
 
         let new_entries = entries.iter().flat_map(|e| {
             let mut result = vec![];
-            if e.nationwide
-                || e.subdivisions
-                    .iter()
-                    .flatten()
-                    .any(|d| d.code == self.external_id)
-            {
+            if e.nationwide || e.subdivisions.iter().flatten().any(|d| d.code == self.external_id) {
                 let mut start = e.start_date;
                 while start <= e.end_date {
                     result.push(holiday_entry::ActiveModel {
@@ -306,9 +281,7 @@ impl holiday::Model {
             result.into_iter()
         });
 
-        holiday_entry::Entity::insert_many(new_entries)
-            .exec(txn)
-            .await?;
+        holiday_entry::Entity::insert_many(new_entries).exec(txn).await?;
         Ok(())
     }
 
@@ -362,10 +335,7 @@ impl holiday::Model {
                 holiday::Entity::find_by_id(id)
                     .one(txn)
                     .await?
-                    .ok_or(anyhow!(
-                        "We just created a holiday with id {}! Where is it?",
-                        id
-                    ))?
+                    .ok_or(anyhow!("We just created a holiday with id {}! Where is it?", id))?
             }
         };
 
@@ -816,12 +786,7 @@ pub fn countries() -> &'static HashMap<String, String> {
             serde_json::from_str(data).expect("Fixed data, parsing errors should be impossible.");
         countries
             .into_iter()
-            .map(|c| {
-                (
-                    c.iso_code,
-                    c.name.first().expect("field exists in data.").text.clone(),
-                )
-            })
+            .map(|c| (c.iso_code, c.name.first().expect("field exists in data.").text.clone()))
             .collect()
     })
 }

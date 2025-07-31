@@ -1,9 +1,17 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cmp::{max, min};
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
-use crate::scheduling::datastructures::*;
+use crate::gql::context::Context;
+use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
+use anymap::any;
+use chrono::{
+    DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday,
+};
+use chrono_tz::Tz;
+use itertools::Itertools;
 use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::Graph;
 use petgraph::algo::toposort;
@@ -12,11 +20,15 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use petgraph::visit::{EdgeRef as _, IntoNodeReferences};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::prelude::Decimal;
+use sea_orm::{ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder};
 
-pub async fn query_problem(db: &DatabaseConnection) -> Result<Project, anyhow::Error> {
+pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     // Query everything: needs to be done first, we cannot haev an await in the rest of the function
-    // TODO: only query tasks not marked as 'done'
+    // TODO: only query tasks not marked as 'done'? (earliest start for following tasks?)
+    // alternatively: on marking milestones as done, check which tasks (and requirements) can be
+    // marked as not relevant anymore?
+    let db = ctx.txn().await?;
     let db_task_vec = task::Entity::find().all(db).await?;
     let db_resource_vec = resource::Entity::find().all(db).await?;
     let db_dependencies_vec = dependency::Entity::find().all(db).await?;
@@ -150,6 +162,7 @@ pub async fn query_problem(db: &DatabaseConnection) -> Result<Project, anyhow::E
             }))
         })
         .collect();
+    // TODO: query last booking's end time for each resource
 
     // add resource constraints
     let resource_map = project_objects
@@ -208,16 +221,209 @@ pub async fn query_problem(db: &DatabaseConnection) -> Result<Project, anyhow::E
         }
     }
 
-    // Query slots?
+    // estimate calculation range
+    let start = project_objects
+        .requirements
+        .iter()
+        .map(|r| r.borrow().earliest_start)
+        .min()
+        .ok_or(anyhow::anyhow!("No requirement to set a start date."))?;
+    let schedule_target = project_objects
+        .milestones
+        .iter()
+        .map(|r| r.borrow().schedule_target)
+        .max()
+        .ok_or(anyhow::anyhow!("No milestone to estimate an end date."))?;
+    let estimated_end = start + (schedule_target - start) * 2;
+    // Query slots
+    query_slots(ctx, &project_objects.resources, start, estimated_end).await?;
     // let slot_models = slot::Entity::find().all(db).await?;
 
     println!("{:?}", Dot::with_config(&g, &[Config::EdgeNoLabel]));
 
     Ok(Project {
-        start_date: chrono::NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        start_date: (start - TimeDelta::days(1)).date(),
+        max_calculation_date: (estimated_end + TimeDelta::days(1)).date(),
         objs: project_objects,
         g: g,
     })
+}
+
+struct _AvailabilityIterator {
+    pub timezone: Tz,
+    pub start: DateTime<Tz>,
+    pub end: DateTime<Tz>,
+    pub durations: HashMap<Weekday, TimeDelta>,
+    pub last_end: Option<DateTime<Tz>>,
+}
+
+pub fn string_to_weekday(s: &str) -> anyhow::Result<Weekday> {
+    match s {
+        "Monday" => Ok(Weekday::Mon),
+        "Tuesday" => Ok(Weekday::Tue),
+        "Wednesday" => Ok(Weekday::Wed),
+        "Thursday" => Ok(Weekday::Thu),
+        "Friday" => Ok(Weekday::Fri),
+        "Saturday" => Ok(Weekday::Sat),
+        "Sunday" => Ok(Weekday::Sun),
+        _ => Err(anyhow::anyhow!("Unknown weekday: {}", s)),
+    }
+}
+
+impl _AvailabilityIterator {
+    pub fn new(
+        timezone: &str,
+        start: NaiveDateTime,
+        end: NaiveDateTime,
+        availabilities: Vec<&availability::Model>,
+    ) -> anyhow::Result<Self> {
+        let tz: Tz = timezone.parse()?;
+        Ok(Self {
+            timezone: tz,
+            start: start.and_utc().with_timezone(&tz),
+            end: end.and_utc().with_timezone(&tz),
+            durations: availabilities
+                .into_iter()
+                .map(|a| -> anyhow::Result<(Weekday, TimeDelta)> {
+                    let mut secs = a.duration * Decimal::new(3600, 0);
+                    secs.rescale(0); // rounding to whole seconds
+                    Ok((string_to_weekday(&a.weekday)?, TimeDelta::seconds(secs.try_into()?)))
+                })
+                .collect::<anyhow::Result<_>>()?,
+            last_end: None,
+        })
+    }
+}
+
+impl Iterator for _AvailabilityIterator {
+    type Item = Interval<NaiveDateTime>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut date =
+            self.last_end.map(|e| e + TimeDelta::days(1)).unwrap_or(self.start).date_naive();
+        loop {
+            if date > self.end.date_naive() {
+                self.last_end = Some(self.end);
+                return None;
+            }
+            if let Some(dur) = self.durations.get(&date.weekday()) {
+                let secs = min(dur.num_seconds() / 2, 12 * 3600);
+                if secs < 0 {
+                    date += TimeDelta::days(1);
+                    continue;
+                }
+                let i_start = max(
+                    NaiveDateTime::new(
+                        date,
+                        NaiveTime::from_num_seconds_from_midnight_opt(12 * 3600 - secs as u32, 0)
+                            .unwrap(),
+                    )
+                    .and_local_timezone(self.timezone.clone())
+                    .latest()
+                    .expect("Cannot determine availability start"),
+                    self.start,
+                );
+                let i_end = min(
+                    NaiveDateTime::new(
+                        date,
+                        NaiveTime::from_num_seconds_from_midnight_opt(12 * 3600 + secs as u32, 0)
+                            .unwrap(),
+                    )
+                    .and_local_timezone(self.timezone.clone())
+                    .earliest()
+                    .expect("Cannot determine availability end"),
+                    self.end,
+                );
+                self.last_end = Some(i_end);
+                return Some(Interval::new_lcro(
+                    i_start.to_utc().naive_local(),
+                    i_end.to_utc().naive_local(),
+                ));
+            } else {
+                date += TimeDelta::days(1);
+            }
+        }
+    }
+}
+pub async fn query_slots(
+    ctx: &Context,
+    resources: &Vec<Rc<RefCell<Resource>>>,
+    start: NaiveDateTime,
+    end: NaiveDateTime,
+) -> anyhow::Result<()> {
+    let resource_ids = resources.iter().map(|r| r.borrow().db_id).collect::<HashSet<_>>();
+    let db_availabilities = availability::Entity::find()
+        .filter(availability::Column::ResourceId.is_in(resource_ids.clone()))
+        .all(ctx.txn().await?)
+        .await?;
+    let db_vacations = vacation::Entity::find()
+        .filter(vacation::Column::ResourceId.is_in(resource_ids))
+        .filter(vacation::Column::From.lt(end))
+        .filter(vacation::Column::Until.gt(start))
+        .order_by(vacation::Column::From, Order::Asc)
+        .all(ctx.txn().await?)
+        .await?;
+    for r in resources {
+        let mut res = r.borrow_mut();
+        let availability_iter = _AvailabilityIterator::new(
+            &res.timezone,
+            start,
+            end,
+            db_availabilities.iter().filter(|a| a.id == res.db_id).collect(),
+        )?;
+        const CIDX: usize = resource::Column::Id as usize;
+        let db_res = ctx
+            .load_one_by_col::<resource::Entity, CIDX>(res.db_id)
+            .await?
+            .expect("Resource must exist");
+        let holiday_intervals = match db_res.holiday(ctx).await? {
+            Some(h) => h
+                .entries(
+                    ctx,
+                    availability_iter.start.date_naive(),
+                    availability_iter.end.date_naive(),
+                )
+                .await?
+                .into_iter()
+                .map(|he| {
+                    let start = NaiveDateTime::new(
+                        he.date,
+                        NaiveTime::from_hms_opt(0, 0, 0).expect("Must be a valid time"),
+                    )
+                    .and_local_timezone(availability_iter.timezone)
+                    .earliest()
+                    .expect("Cannot determine holidays datetime.")
+                    .to_utc()
+                    .naive_local();
+                    let end = start + TimeDelta::hours(24);
+                    Interval::new_lcro(start, end)
+                })
+                .collect(),
+            None => Intervals::new(),
+        };
+        let vacation_intervals: Intervals<NaiveDateTime> = db_vacations
+            .iter()
+            .map(|v| Interval::new_lcro(v.from.naive_local(), v.until.naive_local()))
+            .collect();
+        let availability_intervals: Intervals<NaiveDateTime> = availability_iter.collect();
+        let intervals =
+            availability_intervals.difference(&vacation_intervals).difference(&holiday_intervals);
+        if let Some(last_slot) = res.slots.last_mut()
+            && last_slot.extensible
+            && last_slot.range.end().value().expect("Interval cannot be unbounded") >= start
+            && last_slot.range.start().value().expect("Interval cannot be unbounded") <= start
+        {
+            last_slot.intervals = last_slot.intervals.union(&intervals);
+            last_slot.range = Interval::new(last_slot.range.start(), Bound::Open(end));
+        } else {
+            res.slots.push(Slot {
+                range: Interval::new_lcro(start, end),
+                extensible: true,
+                intervals,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Remove groups from graph by directly connecting all incoming and outgoing node for each group

@@ -10,6 +10,7 @@ use petgraph::Graph;
 
 pub struct Project {
     pub start_date: NaiveDate,
+    pub max_calculation_date: NaiveDate,
     pub objs: ProjectObjects,
     pub g: Graph<Node, ()>,
 }

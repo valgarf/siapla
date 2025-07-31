@@ -301,6 +301,14 @@ impl<T: IntervalValue> Interval<T> {
         Self { start, end }
     }
 
+    pub fn start(&self) -> Bound<T> {
+        self.start.0
+    }
+
+    pub fn end(&self) -> Bound<T> {
+        self.end.0
+    }
+
     pub fn new_closed(start: T, end: T) -> Self {
         Self::new(Bound::Closed(start), Bound::Closed(end))
     }
@@ -548,7 +556,9 @@ impl<T: IntervalValue> Intervals<T> {
                 result.push(d);
             }
             i += 1;
-            j = j.max(k - 1);
+            if j + 1 < k {
+                j = k - 1;
+            }
         }
         Intervals { intervals: result }
     }
@@ -586,6 +596,17 @@ impl<T: IntervalValue> Intervals<T> {
             }
         }
         self.intervals = new_intervals;
+    }
+}
+
+impl<T: IntervalValue> FromIterator<Interval<T>> for Intervals<T> {
+    fn from_iter<I: IntoIterator<Item = Interval<T>>>(iter: I) -> Self {
+        // TODO: this can be optimized
+        let mut result = Self::new();
+        for iv in iter {
+            result.insert(iv);
+        }
+        result
     }
 }
 

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 
 use juniper::{Nullable, graphql_object};
-use sea_orm::{ActiveModelTrait as _, ActiveValue};
 use sea_orm::prelude::*;
+use sea_orm::{ActiveModelTrait as _, ActiveValue};
 
 use crate::{
     entity::{availability, holiday, resource, vacation},
@@ -36,18 +36,14 @@ impl resource::Model {
     fn removed(&self) -> &Option<DateTime<Utc>> {
         &self.removed
     }
-    async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
+    pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
         const CIDX: usize = holiday::Column::Id as usize;
-        let holiday = ctx
-            .load_one_by_col::<holiday::Entity, CIDX>(self.holiday_id)
-            .await?;
+        let holiday = ctx.load_one_by_col::<holiday::Entity, CIDX>(self.holiday_id).await?;
         Ok(holiday.map(GQLHoliday::from_model))
     }
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<availability::Model>> {
         const CIDX: usize = availability::Column::ResourceId as usize;
-        let availability = ctx
-            .load_by_col::<availability::Entity, CIDX>(self.id)
-            .await?;
+        let availability = ctx.load_by_col::<availability::Entity, CIDX>(self.id).await?;
         Ok(availability)
     }
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<vacation::Model>> {
@@ -92,11 +88,7 @@ pub async fn resource_save(
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
     let am = resource::ActiveModel::from(resource);
     let txn = ctx.txn().await?;
-    let model = if am.id.is_set() {
-        am.update(txn).await?
-    } else {
-        am.insert(txn).await?
-    };
+    let model = if am.id.is_set() { am.update(txn).await? } else { am.insert(txn).await? };
 
     // Handle adding new vacations
     for vacation_input in added_vacations {
