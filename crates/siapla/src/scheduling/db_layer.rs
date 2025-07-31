@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::rc::{Rc, Weak};
 
 use crate::gql::context::Context;
@@ -239,7 +240,8 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     query_slots(ctx, &project_objects.resources, start, estimated_end).await?;
     // let slot_models = slot::Entity::find().all(db).await?;
 
-    println!("{:?}", Dot::with_config(&g, &[Config::EdgeNoLabel]));
+    let print_g = g.map(|_, n| PrintNodeName(n), |_, _| PrintEdgeEmpty {});
+    println!("{}", Dot::with_config(&print_g, &[Config::EdgeNoLabel]));
 
     Ok(Project {
         start_date: (start - TimeDelta::days(1)).date(),
@@ -247,6 +249,26 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
         objs: project_objects,
         g: g,
     })
+}
+
+struct PrintNodeName<'a>(&'a Node);
+struct PrintEdgeEmpty;
+
+impl<'a> Display for PrintNodeName<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Node::Task(ref_cell) => write!(f, "{}", ref_cell.borrow().title),
+            Node::Requirement(ref_cell) => write!(f, "R|{}", ref_cell.borrow().title),
+            Node::Milestone(ref_cell) => write!(f, "M|{}", ref_cell.borrow().title),
+            Node::Group(_) => write!(f, "G"),
+        }
+    }
+}
+
+impl Display for PrintEdgeEmpty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
+    }
 }
 
 struct _AvailabilityIterator {
