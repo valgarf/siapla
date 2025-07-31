@@ -1,4 +1,9 @@
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    ops::{Add, Sub},
+};
+
+use itertools::Itertools;
 
 /// Marker trait for a value that can be used in an interval
 pub trait IntervalValue: PartialOrd + Ord + PartialEq + Eq + Copy + Clone {}
@@ -597,6 +602,29 @@ impl<T: IntervalValue> Intervals<T> {
         }
         self.intervals = new_intervals;
     }
+
+    /// Create two new intervals with the given interval removed.
+    pub fn split_remove(&self, interval: Interval<T>) -> (Intervals<T>, Intervals<T>) {
+        // TODO: add tests for this
+        let mut lhs = vec![];
+        let mut rhs = vec![];
+        for iv in &self.intervals {
+            if iv.end < interval.start {
+                lhs.push(iv.clone())
+            } else if iv.start > interval.end {
+                rhs.push(iv.clone());
+            } else {
+                for iv in iv.difference(&interval) {
+                    if iv.start < interval.start {
+                        lhs.push(iv.clone())
+                    } else if iv.end > interval.end {
+                        rhs.push(iv.clone());
+                    }
+                }
+            }
+        }
+        (Intervals { intervals: lhs }, Intervals { intervals: rhs })
+    }
 }
 
 impl<T: IntervalValue> FromIterator<Interval<T>> for Intervals<T> {
@@ -607,6 +635,28 @@ impl<T: IntervalValue> FromIterator<Interval<T>> for Intervals<T> {
             result.insert(iv);
         }
         result
+    }
+}
+
+impl<O, T: IntervalValue + Sub<Output = O>> Interval<T> {
+    /// Length of the interval (i.e. `end-start`), None if start or end are unbounded.
+    pub fn length(&self) -> Option<O> {
+        if let (Some(start), Some(end)) = (self.start.0.value(), self.end.0.value()) {
+            Some(end - start)
+        } else {
+            None
+        }
+    }
+}
+
+impl<O: Add<Output = O> + Default, T: IntervalValue + Sub<Output = O>> Intervals<T> {
+    /// Sum of the lengths of the individual intervals. None if any of them is unbounded.
+    pub fn length(&self) -> Option<O> {
+        let result =
+            self.intervals.iter().map(|iv| iv.length()).try_fold(O::default(), |acc, el| {
+                if let Some(el) = el { Ok(acc + el) } else { Err(()) }
+            });
+        result.ok()
     }
 }
 

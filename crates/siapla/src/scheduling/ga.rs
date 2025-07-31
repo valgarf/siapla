@@ -1,6 +1,13 @@
 use petgraph::{Direction, graph::NodeIndex};
 use rand::{Rng as _, seq::IndexedRandom as _};
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
+use tracing::warn;
+
+use crate::scheduling::{Plan, Slot};
 
 use super::datastructures::{Node, Project, Task};
 
@@ -48,4 +55,34 @@ pub fn generate_random_individual(project: &mut Project) -> Individual {
         }
     }
     Individual { tasks }
+}
+
+pub fn plan_individual(project: &mut Project, individual: &Individual) -> Plan {
+    let mut plan = Plan::default();
+    let mut resource_slots = project
+        .objs
+        .resources
+        .iter()
+        .map(|r| (r.borrow().db_id, r.borrow().slots.clone()))
+        .collect::<HashMap<i32, _>>();
+    for task_gene in &individual.tasks {
+        let task: &Task = &task_gene.task.borrow();
+        match plan_task(project, task, &mut resource_slots) {
+            Ok(assignment) => {
+                plan.assignments.insert(task.db_id, assignment);
+            }
+            Err(reason) => {
+                warn!("Failed planning task {} (id {}): {}", task.title, task.db_id, reason)
+            }
+        }
+    }
+    plan
+}
+
+pub fn plan_task(
+    project: &mut Project,
+    task: &Task,
+    resource_slots: &mut HashMap<i32, Vec<Slot>>,
+) -> Result<HashMap<i32, Slot>, String> {
+    todo!()
 }

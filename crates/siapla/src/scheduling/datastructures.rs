@@ -1,9 +1,10 @@
 use std::{
     cell::RefCell,
+    collections::HashMap,
     rc::{Rc, Weak},
 };
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use petgraph::Graph;
 
 // Project base information
@@ -74,6 +75,7 @@ pub struct Resource {
 pub struct Slot {
     pub range: super::Interval<NaiveDateTime>,
     pub extensible: bool,
+    pub duration: TimeDelta,
     pub intervals: super::Intervals<NaiveDateTime>,
 }
 
@@ -90,4 +92,11 @@ pub struct ResourceConstraint {
 pub struct ResourceConstraintEntry {
     pub db_id: i32,
     pub resource: Weak<RefCell<Resource>>,
+}
+
+// ### resulting plan
+
+#[derive(Debug, Default, Clone)]
+pub struct Plan {
+    pub assignments: HashMap<i32, HashMap<i32, Slot>>, // task_id -> (resource_id -> Slot)
 }

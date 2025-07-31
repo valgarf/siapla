@@ -441,6 +441,7 @@ pub async fn query_slots(
             res.slots.push(Slot {
                 range: Interval::new_lcro(start, end),
                 extensible: true,
+                duration: intervals.length().expect("Intervals cannot be unbounded"),
                 intervals,
             });
         }
