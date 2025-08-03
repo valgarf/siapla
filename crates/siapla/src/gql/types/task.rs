@@ -337,7 +337,16 @@ async fn update_resource_constraints(
     let new_len = constraints.len();
     let min_len = old_len.min(new_len);
 
-    // Update existing constraints
+    // check if new reosurce constraints do not use one resource multiple times
+    // TODO: this restriction could be lifted by making the scheduling algorithm more complex
+    let all_used_resources: HashSet<i32> =
+        constraints.iter().flat_map(|c| c.entries.iter().map(|e| e.resource_id)).collect();
+    let num_entries: usize = constraints.iter().map(|c| c.entries.len()).sum();
+    if num_entries != all_used_resources.len() {
+        return Err(anyhow::anyhow!("Each resource can only be used once!"));
+    }
+
+    // the constraintsare sane, Update existing constraints
     for (i, c) in constraints.iter().take(min_len).enumerate() {
         let old_c = &old[i];
         // update columns, only update if changed

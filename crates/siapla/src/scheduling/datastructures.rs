@@ -10,8 +10,8 @@ use petgraph::Graph;
 // Project base information
 
 pub struct Project {
-    pub start_date: NaiveDate,
-    pub max_calculation_date: NaiveDate,
+    pub start: NaiveDateTime,
+    pub calculation_end: NaiveDateTime,
     pub objs: ProjectObjects,
     pub g: Graph<Node, ()>,
 }

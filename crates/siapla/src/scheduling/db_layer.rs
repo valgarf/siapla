@@ -243,12 +243,7 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     let print_g = g.map(|_, n| PrintNodeName(n), |_, _| PrintEdgeEmpty {});
     println!("{}", Dot::with_config(&print_g, &[Config::EdgeNoLabel]));
 
-    Ok(Project {
-        start_date: (start - TimeDelta::days(1)).date(),
-        max_calculation_date: (estimated_end + TimeDelta::days(1)).date(),
-        objs: project_objects,
-        g: g,
-    })
+    Ok(Project { start, calculation_end: estimated_end, objs: project_objects, g: g })
 }
 
 struct PrintNodeName<'a>(&'a Node);
