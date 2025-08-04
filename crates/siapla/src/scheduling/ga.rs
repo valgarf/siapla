@@ -1,11 +1,15 @@
+use anyhow::anyhow;
 use chrono::{NaiveDateTime, TimeDelta};
 use itertools::Itertools;
-use petgraph::{Direction, graph::NodeIndex};
+use petgraph::{
+    Direction::{self, Incoming},
+    Graph,
+    graph::NodeIndex,
+};
 use rand::{Rng as _, seq::IndexedRandom as _};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    iter::zip,
     rc::{Rc, Weak},
 };
 use tracing::warn;
@@ -99,8 +103,17 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
         .iter()
         .map(|r| (r.borrow().db_id, r.borrow().slots.clone()))
         .collect::<HashMap<i32, _>>();
+    let mut g_finished = project.g.map(
+        |_, n| match n {
+            Node::Task(_) => None,
+            Node::Requirement(ref_cell) => Some(ref_cell.borrow().earliest_start),
+            Node::Milestone(_) => None,
+            Node::Group(_) => panic!("Dependency graph should nothave groups anymore"),
+        },
+        |_, _| (),
+    );
     for task_gene in &individual.tasks {
-        match plan_task(project, task_gene, &mut resource_slots) {
+        match plan_task(project, task_gene, &mut resource_slots, &mut g_finished) {
             Ok(assignment) => {
                 plan.assignments.insert(task_gene.task.borrow().db_id, assignment);
             }
@@ -120,13 +133,13 @@ struct _SlotIterator<'a> {
 }
 
 impl<'a> _SlotIterator<'a> {
-    pub fn new(resource_id: i32, slots: &'a Vec<Slot>, start: NaiveDateTime) -> Self {
+    fn new(resource_id: i32, slots: &'a Vec<Slot>, start: NaiveDateTime) -> Self {
         let mut result = Self { resource_id, slots, current_idx: 0 };
         result.ensure_start(start);
         result
     }
 
-    pub fn ensure_start(&mut self, start: NaiveDateTime) {
+    fn ensure_start(&mut self, start: NaiveDateTime) {
         while let Some(slot) = self.slots.get(self.current_idx)
             && slot.range.end().value().expect("no unbound intervals") <= start
         {
@@ -134,11 +147,11 @@ impl<'a> _SlotIterator<'a> {
         }
     }
 
-    pub fn current(&self) -> Option<&Slot> {
+    fn current(&self) -> Option<&Slot> {
         self.slots.get(self.current_idx)
     }
 
-    pub fn advance(&mut self) {
+    fn advance(&mut self) {
         self.current_idx += 1;
     }
 }
@@ -186,10 +199,11 @@ fn _advance_earliest_slot(slot_iterators: &mut Vec<_SlotIterator>) -> anyhow::Re
 
 fn _slot_intervals(
     project: &Project,
+    task_start: NaiveDateTime,
     slot_iterators: &mut Vec<_SlotIterator>,
 ) -> anyhow::Result<Intervals<NaiveDateTime>> {
     let mut result = Intervals::new();
-    result.insert(Interval::new_lcro(project.start, project.calculation_end));
+    result.insert(Interval::new_lcro(task_start, project.calculation_end));
     for si in slot_iterators.iter() {
         if let Some(slot) = si.current() {
             result = result.intersection(&slot.intervals);
@@ -204,10 +218,30 @@ pub fn plan_task(
     project: &Project,
     task_gene: &TaskGene,
     resource_slots: &mut HashMap<i32, Vec<Slot>>,
+    g_finished: &mut Graph<Option<NaiveDateTime>, ()>,
 ) -> anyhow::Result<HashMap<i32, Slot>> {
     let task = task_gene.task.borrow();
     let res_ids: Vec<_> = task_gene.required_resource_ids.iter().cloned().collect();
-    let task_start: NaiveDateTime = project.start; // TODO: calculate from predecessors.
+    let task_start_opt = match g_finished
+        .neighbors_directed(task_gene.task_nidx, Incoming)
+        .map(|nidx| g_finished.node_weight(nidx).cloned().flatten())
+        .minmax()
+    {
+        itertools::MinMaxResult::NoElements => Some(project.start), // no requirement or previous tasks
+        itertools::MinMaxResult::OneElement(v) => v,
+        itertools::MinMaxResult::MinMax(min, max) => {
+            if min.is_none() {
+                None
+            } else {
+                max
+            }
+        }
+    };
+    let task_start = if let Some(task_start) = task_start_opt {
+        task_start
+    } else {
+        return Err(anyhow!("Failed to determine start timestamp."));
+    };
     let mut slot_iterators: Vec<_SlotIterator> = res_ids
         .into_iter()
         .map(|res_id| {
@@ -219,17 +253,51 @@ pub fn plan_task(
         })
         .collect();
     _ensure_overlapping_slots(&mut slot_iterators)?;
-    let effort = TimeDelta::seconds((task.effort * 24.0 * 3600.0).round() as i64);
+    let effort = TimeDelta::seconds((task.effort * 8.0 * 3600.0).round() as i64);
+    // TODO speed? configure days != 8 hours?
     loop {
-        let intervals = _slot_intervals(project, &mut slot_iterators)?;
+        let intervals = _slot_intervals(project, task_start, &mut slot_iterators)?;
         if intervals.length().expect("No unbounded intervals") >= effort {
-            // TODO create assignment
-            todo!()
+            let mut result: HashMap<i32, Slot> = HashMap::new();
+            let assigned_intervals = _reduce_intervals(intervals, effort);
+            let slot = Slot {
+                range: assigned_intervals.hull().expect("Cannot be empty"),
+                extensible: false,
+                duration: effort,
+                intervals: assigned_intervals,
+            };
+            for si in slot_iterators {
+                result.insert(si.resource_id, slot.clone());
+                // TODO: remove from resource slot!
+            }
+            let nw = g_finished.node_weight_mut(task_gene.task_nidx).expect("Node must exist");
+            *nw = slot.range.end().value();
+            return Ok(result);
         } else {
             _advance_earliest_slot(&mut slot_iterators)?;
         }
     }
-    // TODO speed?
+}
 
-    todo!()
+fn _reduce_intervals(
+    intervals: Intervals<NaiveDateTime>,
+    mut duration: TimeDelta,
+) -> Intervals<NaiveDateTime> {
+    let mut result = Intervals::<NaiveDateTime>::new();
+    for iv in intervals {
+        let iv_length = iv.length().expect("no unbounded intervals");
+        if iv_length < duration {
+            result.insert(iv);
+            duration -= iv_length;
+        } else {
+            let iv_start = iv.start().value().expect("no unbound intervals");
+            result.insert(Interval::new_lcro(iv_start, iv_start + duration));
+            duration -= duration;
+            break;
+        }
+    }
+    if !duration.is_zero() {
+        panic!("Intervals not long enough to reduce!")
+    }
+    result
 }

@@ -4,15 +4,17 @@ mod ga;
 mod interval;
 mod weak_hash_set;
 
-use std::{env, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 pub use datastructures::*;
 pub use db_layer::query_problem;
 pub use interval::{Bound, EndBound, Interval, Intervals, StartBound};
-use sea_orm::Database;
 pub use weak_hash_set::WeakHashSet;
 
-use crate::{gql::context::Context, scheduling::ga::generate_random_individual};
+use crate::{
+    gql::context::Context,
+    scheduling::ga::{generate_random_individual, plan_individual},
+};
 
 pub async fn recalculate_loop() {
     loop {
@@ -27,6 +29,20 @@ pub async fn recalculate_loop() {
                     .map(|t| t.task.borrow().title.clone())
                     .collect::<Vec<_>>();
                 println!("Problem recalculated successfully. Random order: {:?}", &task_order);
+                let plan = plan_individual(&problem, &individual);
+                let tasks = problem
+                    .objs
+                    .tasks
+                    .iter()
+                    .map(|t| (t.borrow().db_id, t))
+                    .collect::<HashMap<i32, _>>();
+                println!("Plan:");
+                for (tid, assignments) in plan.assignments {
+                    let resources: Vec<i32> = assignments.keys().cloned().collect();
+                    let task = tasks[&tid].borrow();
+                    println!(" {} ({}): {:?}", task.title, tid, resources);
+                    println!("    {}", assignments.values().last().unwrap().range);
+                }
                 drop(problem);
             }
         }

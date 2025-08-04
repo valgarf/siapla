@@ -325,7 +325,7 @@ impl Iterator for _AvailabilityIterator {
             }
             if let Some(dur) = self.durations.get(&date.weekday()) {
                 let secs = min(dur.num_seconds() / 2, 12 * 3600);
-                if secs < 0 {
+                if secs <= 0 {
                     date += TimeDelta::days(1);
                     continue;
                 }
@@ -386,7 +386,7 @@ pub async fn query_slots(
             &res.timezone,
             start,
             end,
-            db_availabilities.iter().filter(|a| a.id == res.db_id).collect(),
+            db_availabilities.iter().filter(|a| a.resource_id == res.db_id).collect(),
         )?;
         const CIDX: usize = resource::Column::Id as usize;
         let db_res = ctx

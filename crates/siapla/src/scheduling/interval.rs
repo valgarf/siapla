@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    fmt::Display,
     ops::{Add, Sub},
 };
 
@@ -33,6 +34,13 @@ impl<T: IntervalValue> Bound<T> {
         match self {
             Bound::Open(v) => Bound::Closed(*v),
             v => *v,
+        }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        match self {
+            Bound::Closed(_) => true,
+            _ => false,
         }
     }
 
@@ -386,6 +394,23 @@ impl<T: IntervalValue> Interval<T> {
     }
 }
 
+impl<T: IntervalValue + Display> Display for Interval<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.start.0 {
+            Bound::Open(v) => write!(f, "({}", v)?,
+            Bound::Closed(v) => write!(f, "[{}", v)?,
+            Bound::Unbounded() => write!(f, "(oo",)?,
+        };
+        "-".fmt(f)?;
+        match self.end.0 {
+            Bound::Open(v) => write!(f, "{})", v)?,
+            Bound::Closed(v) => write!(f, "{}]", v)?,
+            Bound::Unbounded() => write!(f, "oo)",)?,
+        };
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Intervals<T: IntervalValue> {
     intervals: Vec<Interval<T>>,
@@ -520,6 +545,16 @@ impl<T: IntervalValue> Intervals<T> {
             merged.push(next);
         }
         Intervals { intervals: merged }
+    }
+
+    pub fn hull(&self) -> Option<Interval<T>> {
+        if let (Some(Interval { start, end: _ }), Some(Interval { start: _, end })) =
+            (self.intervals.first(), self.intervals.last())
+        {
+            Some(Interval { start: *start, end: *end })
+        } else {
+            None
+        }
     }
 
     pub fn intersection(&self, other: &Intervals<T>) -> Intervals<T> {
@@ -657,6 +692,52 @@ impl<O: Add<Output = O> + Default, T: IntervalValue + Sub<Output = O>> Intervals
                 if let Some(el) = el { Ok(acc + el) } else { Err(()) }
             });
         result.ok()
+    }
+}
+
+impl<T: IntervalValue> IntoIterator for Intervals<T> {
+    type Item = Interval<T>;
+
+    type IntoIter = <Vec<Interval<T>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.intervals.into_iter()
+    }
+}
+
+impl<'a, T: IntervalValue> IntoIterator for &'a Intervals<T> {
+    type Item = &'a Interval<T>;
+
+    type IntoIter = <&'a Vec<Interval<T>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.intervals).into_iter()
+    }
+}
+
+impl<'a, T: IntervalValue> IntoIterator for &'a mut Intervals<T> {
+    type Item = &'a mut Interval<T>;
+
+    type IntoIter = <&'a mut Vec<Interval<T>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&mut self.intervals).into_iter()
+    }
+}
+
+impl<T: IntervalValue + Display> Display for Intervals<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        "{".fmt(f)?;
+        let mut is_first = true;
+        for iv in &self.intervals {
+            if !is_first {
+                "|".fmt(f)?;
+            }
+            is_first = false;
+            iv.fmt(f)?;
+        }
+        "}".fmt(f)?;
+        Ok(())
     }
 }
 
