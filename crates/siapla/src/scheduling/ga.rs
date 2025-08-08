@@ -266,9 +266,18 @@ pub fn plan_task(
                 duration: effort,
                 intervals: assigned_intervals,
             };
-            for si in slot_iterators {
+            let mut removal_indices: HashMap<i32, usize> = HashMap::new();
+            for si in &mut slot_iterators {
                 result.insert(si.resource_id, slot.clone());
-                // TODO: remove from resource slot!
+                removal_indices.insert(si.resource_id, si.current_idx);
+            }
+            drop(slot_iterators);
+            for (res_id, idx) in removal_indices {
+                remove_slot(
+                    resource_slots.get_mut(&res_id).expect("Resource must exist"),
+                    idx,
+                    &slot,
+                );
             }
             let nw = g_finished.node_weight_mut(task_gene.task_nidx).expect("Node must exist");
             *nw = slot.range.end().value();
@@ -276,6 +285,37 @@ pub fn plan_task(
         } else {
             _advance_earliest_slot(&mut slot_iterators)?;
         }
+    }
+}
+
+fn remove_slot(slots: &mut Vec<Slot>, idx: usize, slot: &Slot) {
+    let orig_slot = slots.get_mut(idx).expect("Index must exist");
+    let ranges = orig_slot.range.difference(&slot.range);
+    let new_slot = if orig_slot.range.start() == slot.range.start()
+        || orig_slot.range.end() == slot.range.end()
+    {
+        assert!(ranges.len() == 1);
+        if orig_slot.range.end() == slot.range.end() {
+            orig_slot.extensible = false;
+        }
+        None
+    } else {
+        assert!(ranges.len() == 2);
+        let new_range = ranges[1];
+        let new_intervals = orig_slot.intervals.intersection(&new_range.into());
+        orig_slot.extensible = false;
+        Some(Slot {
+            duration: new_intervals.length().expect("No unbound intervals"),
+            extensible: orig_slot.extensible,
+            intervals: new_intervals,
+            range: new_range,
+        })
+    };
+    orig_slot.range = ranges[0];
+    orig_slot.intervals = orig_slot.intervals.intersection(&orig_slot.range.into());
+    orig_slot.duration = orig_slot.intervals.length().expect("No unbound intervals");
+    if let Some(new_slot) = new_slot {
+        slots.insert(idx + 1, new_slot);
     }
 }
 

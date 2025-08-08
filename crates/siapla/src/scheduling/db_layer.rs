@@ -56,7 +56,7 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     let mut g: StableGraph<Node, ()> = StableGraph::new(); // task dependency graph
 
     // Map task models to Task/Requirement/Milestone objects
-    for t in db_task_map.values() {
+    for t in db_task_map.values().sorted_by_key(|t| t.id) {
         let node = if t.designation.as_str() == <&'static str>::from(TaskDesignation::Requirement) {
             let new_ref = Rc::new(RefCell::new(Requirement {
                 db_id: t.id,
@@ -352,6 +352,10 @@ impl Iterator for _AvailabilityIterator {
                     self.end,
                 );
                 self.last_end = Some(i_end);
+                if i_end <= i_start {
+                    date += TimeDelta::days(1);
+                    continue;
+                }
                 return Some(Interval::new_lcro(
                     i_start.to_utc().naive_local(),
                     i_end.to_utc().naive_local(),

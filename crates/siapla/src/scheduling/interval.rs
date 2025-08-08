@@ -725,6 +725,12 @@ impl<'a, T: IntervalValue> IntoIterator for &'a mut Intervals<T> {
     }
 }
 
+impl<T: IntervalValue> From<Interval<T>> for Intervals<T> {
+    fn from(value: Interval<T>) -> Self {
+        Intervals { intervals: vec![value] }
+    }
+}
+
 impl<T: IntervalValue + Display> Display for Intervals<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         "{".fmt(f)?;
