@@ -13,7 +13,10 @@ pub use weak_hash_set::WeakHashSet;
 
 use crate::{
     gql::context::Context,
-    scheduling::ga::{generate_random_individual, plan_individual},
+    scheduling::{
+        db_layer::store_plan,
+        ga::{generate_random_individual, plan_individual},
+    },
 };
 
 pub async fn recalculate_loop() {
@@ -37,11 +40,19 @@ pub async fn recalculate_loop() {
                     .map(|t| (t.borrow().db_id, t))
                     .collect::<HashMap<i32, _>>();
                 println!("Plan:");
-                for (tid, assignments) in plan.assignments {
+                for (tid, assignments) in &plan.assignments {
                     let resources: Vec<i32> = assignments.keys().cloned().collect();
                     let task = tasks[&tid].borrow();
                     println!(" {} ({}): {:?}", task.title, tid, resources);
                     println!("    {}", assignments.values().last().unwrap().range);
+                }
+                match store_plan(&ctx, &problem, &plan).await {
+                    Ok(_) => {
+                        println!("Stored new plan successfully.");
+                    }
+                    Err(err) => {
+                        println!("Error storing plan: {}", err);
+                    }
                 }
                 drop(problem);
             }

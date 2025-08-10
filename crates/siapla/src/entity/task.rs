@@ -76,10 +76,9 @@ impl RelationTrait for Relation {
         match self {
             Self::Allocation => Entity::has_many(super::allocation::Entity).into(),
             Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
-            Self::SelfRef => Entity::belongs_to(Entity)
-                .from(Column::ParentId)
-                .to(Column::Id)
-                .into(),
+            Self::SelfRef => {
+                Entity::belongs_to(Entity).from(Column::ParentId).to(Column::Id).into()
+            }
         }
     }
 }

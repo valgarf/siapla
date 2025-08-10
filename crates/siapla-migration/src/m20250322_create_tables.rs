@@ -277,7 +277,7 @@ impl MigrationTrait for Migration {
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .name("FK_AllocatedResource_Allocation")
+                            .name("FK_AllocatedResource_Resource")
                             .from(AllocatedResource::Table, AllocatedResource::ResourceId)
                             .to(Resource::Table, Resource::Id)
                             .on_delete(ForeignKeyAction::Restrict)
@@ -291,80 +291,29 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(
-                Table::drop()
-                    .table(AllocatedResource::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
+            .drop_table(Table::drop().table(AllocatedResource::Table).if_exists().to_owned())
+            .await?;
+
+        manager.drop_table(Table::drop().table(Allocation::Table).if_exists().to_owned()).await?;
+
+        manager
+            .drop_table(Table::drop().table(ResourceConstraintEntry::Table).if_exists().to_owned())
             .await?;
 
         manager
-            .drop_table(
-                Table::drop()
-                    .table(Allocation::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
+            .drop_table(Table::drop().table(ResourceConstraint::Table).if_exists().to_owned())
             .await?;
 
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(ResourceConstraintEntry::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
+        manager.drop_table(Table::drop().table(Vacation::Table).if_exists().to_owned()).await?;
+        manager.drop_table(Table::drop().table(Availability::Table).if_exists().to_owned()).await?;
+        manager.drop_table(Table::drop().table(Resource::Table).if_exists().to_owned()).await?;
 
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(ResourceConstraint::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
+        manager.drop_table(Table::drop().table(HolidayEntry::Table).if_exists().to_owned()).await?;
+        manager.drop_table(Table::drop().table(Holiday::Table).if_exists().to_owned()).await?;
 
-        manager
-            .drop_table(Table::drop().table(Vacation::Table).if_exists().to_owned())
-            .await?;
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(Availability::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .drop_table(Table::drop().table(Resource::Table).if_exists().to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Dependency::Table).if_exists().to_owned()).await?;
 
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(HolidayEntry::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .drop_table(Table::drop().table(Holiday::Table).if_exists().to_owned())
-            .await?;
-
-        manager
-            .drop_table(
-                Table::drop()
-                    .table(Dependency::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .drop_table(Table::drop().table(Task::Table).if_exists().to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Task::Table).if_exists().to_owned()).await?;
 
         Ok(())
     }
@@ -445,7 +394,7 @@ enum ResourceConstraint {
     TaskId,
     Type,
     Optional,
-    Speed
+    Speed,
 }
 
 #[derive(DeriveIden)]

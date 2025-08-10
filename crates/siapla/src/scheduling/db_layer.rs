@@ -22,7 +22,9 @@ use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use petgraph::visit::{EdgeRef as _, IntoNodeReferences};
 use sea_orm::prelude::Decimal;
-use sea_orm::{ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder,
+};
 
 pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     // Query everything: needs to be done first, we cannot haev an await in the rest of the function
@@ -480,5 +482,37 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
         let (idx1, idx2) = g.edge_endpoints(eidx).expect("Edge should exist");
         red.contains_edge(revmap[idx1.index()], revmap[idx2.index()])
     });
+    Ok(())
+}
+
+pub async fn store_plan(ctx: &Context, problem: &Project, plan: &Plan) -> anyhow::Result<()> {
+    let txn = ctx.txn().await?;
+    allocated_resource::Entity::delete_many().exec(txn).await?;
+    allocation::Entity::delete_many().exec(txn).await?;
+    for (task_id, assignment) in &plan.assignments {
+        let range = assignment
+            .values()
+            .map(|slot| slot.range)
+            .fold(None, |acc, el| match acc {
+                None => Some(el),
+                Some(iv) => Some(iv.union(&el).expect("Should overlap")),
+            })
+            .expect("At least one range must exist");
+        let am = allocation::ActiveModel {
+            id: ActiveValue::NotSet,
+            task_id: ActiveValue::Set(*task_id),
+            start: ActiveValue::Set(range.start().value().expect("No unbound intervals").and_utc()),
+            end: ActiveValue::Set(range.end().value().expect("No unbound intervals").and_utc()),
+        };
+        let db_alloc = am.insert(txn).await?;
+        for (res_id, _) in assignment {
+            let am = allocated_resource::ActiveModel {
+                id: ActiveValue::NotSet,
+                allocation_id: ActiveValue::Set(db_alloc.id),
+                resource_id: ActiveValue::Set(*res_id),
+            };
+            am.insert(txn).await?;
+        }
+    }
     Ok(())
 }
