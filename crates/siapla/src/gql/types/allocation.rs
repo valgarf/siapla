@@ -1,18 +1,12 @@
-use chrono::{DateTime, Utc};
-
-use juniper::{Nullable, graphql_object};
-use sea_orm::prelude::*;
-use sea_orm::{ActiveModelTrait as _, ActiveValue};
-
+use crate::entity::task;
 use crate::gql::common::resolve_many_to_many;
 use crate::{
     entity::{allocated_resource, allocation, resource},
-    gql::{
-        common::{nullable_to_av, opt_to_av},
-        context::Context,
-    },
+    gql::context::Context,
 };
+use chrono::{DateTime, Utc};
 use itertools::Itertools;
+use juniper::graphql_object;
 
 #[graphql_object]
 #[graphql(name = "Allocation")]
@@ -37,14 +31,10 @@ impl allocation::Model {
             resource::Column::Id
         )
     }
-    // pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<availability::Model>> {
-    //     const CIDX: usize = availability::Column::ResourceId as usize;
-    //     let availability = ctx.load_by_col::<availability::Entity, CIDX>(self.id).await?;
-    //     Ok(availability)
-    // }
-    // pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<vacation::Model>> {
-    //     const CIDX: usize = vacation::Column::ResourceId as usize;
-    //     let vacation = ctx.load_by_col::<vacation::Entity, CIDX>(self.id).await?;
-    //     Ok(vacation)
-    // }
+    pub async fn task(&self, ctx: &Context) -> anyhow::Result<task::Model> {
+        const CIDX: usize = task::Column::Id as usize;
+        ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
+            .await
+            .map(|opt_t| opt_t.expect("Task must exist."))
+    }
 }

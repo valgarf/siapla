@@ -6,7 +6,7 @@ pub mod query;
 pub mod subscription;
 mod types;
 
-pub use types::{allocation, availability, holiday, resource, task, vacation};
+pub use types::{allocation, availability, holiday, plan, resource, task, vacation};
 
 use juniper::*;
 

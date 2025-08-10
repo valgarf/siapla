@@ -1,3 +1,11 @@
+type Allocation {
+  dbId: Int!
+  end: DateTime!
+  resources: [Resource!]!
+  start: DateTime!
+  task: Task!
+}
+
 type Availability {
   dbId: Int!
   duration: Int!
@@ -71,9 +79,14 @@ type Mutation {
   taskSave(task: TaskSaveInput!): Task!
 }
 
+type Plan {
+  allocations: [Allocation!]!
+}
+
 type Query {
   countries: [Country!]!
   country(isocode: String!): Country
+  currentPlan: Plan!
   getFromOpenHolidays(isocode: String!): Holiday
   helloWorld: String!
   region(isocode: String!): Region
@@ -140,6 +153,7 @@ type Subscription {
 }
 
 type Task {
+  allocations: [Allocation!]!
   children: [Task!]!
   dbId: Int!
   description: String!
