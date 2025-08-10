@@ -6,16 +6,12 @@ pub mod query;
 pub mod subscription;
 mod types;
 
-pub use types::{availability, holiday, resource, task, vacation};
+pub use types::{allocation, availability, holiday, resource, task, vacation};
 
 use juniper::*;
 
 pub type Schema = RootNode<'static, query::Query, mutation::Mutation, subscription::Subscription>;
 
 pub fn schema() -> Schema {
-    Schema::new(
-        query::Query::new(),
-        mutation::Mutation::new(),
-        subscription::Subscription::new(),
-    )
+    Schema::new(query::Query::new(), mutation::Mutation::new(), subscription::Subscription::new())
 }

@@ -34,20 +34,16 @@ macro_rules! resolve_many_to_many {
                 let results = joins.join_all().await;
                 let (values, mut errors): (Vec<_>, Vec<_>) =
                     results.into_iter().partition_map(|v| match v {
-                        Ok(Some(v)) => Either::Left(v),
-                        Ok(None) => Either::Right(anyhow!(
+                        Ok(Some(v)) => ::itertools::Either::Left(v),
+                        Ok(None) => ::itertools::Either::Right(::anyhow::anyhow!(
                             "Could not resolve link between {} and {}",
                             ::std::any::type_name::<$link_ent>(),
                             ::std::any::type_name::<$target_ent>()
                         )),
-                        Err(e) => Either::Right(e),
+                        Err(e) => ::itertools::Either::Right(e),
                     });
                 let first_error = errors.drain(..).next();
-                if let Some(err) = first_error {
-                    Err(err)
-                } else {
-                    Ok(values)
-                }
+                if let Some(err) = first_error { Err(err) } else { Ok(values) }
             }
         }
     }};

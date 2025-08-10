@@ -9,7 +9,9 @@ use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
 use crate::{
-    entity::{dependency, resource, resource_constraint, resource_constraint_entry, task},
+    entity::{
+        allocation, dependency, resource, resource_constraint, resource_constraint_entry, task,
+    },
     gql::{
         common::{nullable_to_av, opt_to_av, resolve_many_to_many},
         context::Context,
@@ -81,6 +83,7 @@ impl task::Model {
         const CIDX: usize = task::Column::ParentId as usize;
         ctx.load_by_col::<task::Entity, CIDX>(self.id).await
     }
+
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<Self>> {
         match self.parent_id {
             None => Ok(None),
@@ -94,11 +97,13 @@ impl task::Model {
         &self,
         ctx: &Context,
     ) -> anyhow::Result<Vec<resource_constraint::Model>> {
-        let constraints = resource_constraint::Entity::find()
-            .filter(resource_constraint::Column::TaskId.eq(self.id))
-            .all(ctx.txn().await?)
-            .await?;
-        Ok(constraints)
+        const CIDX: usize = resource_constraint::Column::TaskId as usize;
+        ctx.load_by_col::<resource_constraint::Entity, CIDX>(self.id).await
+    }
+
+    async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
+        const CIDX: usize = allocation::Column::TaskId as usize;
+        ctx.load_by_col::<allocation::Entity, CIDX>(self.id).await
     }
 }
 
