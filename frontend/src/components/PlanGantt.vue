@@ -2,34 +2,45 @@
   <div v-for="alloc in planStore.allocations" :key="alloc.dbId">
     {{alloc.task?.title}}:  {{alloc.start}} - {{alloc.end}}
   </div>
-  <GGanttChart
-    :chart-start="chartStart"
-    :chart-end="chartEnd"
-    precision="hour"
-    bar-start="myBeginDate"
-    bar-end="myEndDate"
-    :date-format="false"
-  >
-    <GGanttRow label="My row 1" :bars="row1BarList" />
-    <GGanttRow label="My row 2" :bars="row2BarList" />
-</GGanttChart>
+  <div>{{ planStore.start }}</div>
+  <div>{{ planStore.end }}</div>
+  <div>{{ startDay }}</div>
+  <div>{{ endDay }}</div>
+  <svg>
+    <g v-for="(rid, ridx) in planStore.resource_ids" :key="rid"  :transform="row_y(ridx)">
+      <text x="0" y="0">{{row_title(rid)}}</text>
+    </g>
+  </svg>
 </template>
 
 <script setup lang="ts">
 
-import { GGanttChart, GGanttRow, type GanttBarObject } from '@infectoone/vue-ganttastic';
 import { usePlanStore } from 'src/stores/plan';
-import { type Ref, ref } from 'vue';
-import dayjs from "dayjs"
-import isSameOrAfter from "dayjs/plugin/isSameOrAfter.js"
-import isSameOrBefore from "dayjs/plugin/isSameOrBefore.js"
+import { useResourceStore } from 'src/stores/resource';
+import { computed } from 'vue';
 
-dayjs.extend(isSameOrAfter)
-dayjs.extend(isSameOrBefore)
-
+const DAY_IN_MS = 1000 * 3600 * 24
 const planStore = usePlanStore();
-const chartStart = new Date("2021-07-12 12:00")
-const chartEnd = new Date("2021-07-14 12:00")
+const resourceStore = useResourceStore();
+
+const startDay = computed(() => {
+  const d = planStore.start;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+})
+const endDay = computed(() => {
+  const d = planStore.end;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+})
+
+
+function row_y(idx: number): string {
+  return `translate(0 ${idx * 35 + 50})`
+}
+
+function row_title(rid: number): string {
+  return resourceStore.resource(rid)?.name ?? "<UNNAMED>"
+}
+
 
 interface Props {
   issuesOnly?: boolean;
@@ -40,34 +51,6 @@ withDefaults(defineProps<Props>(), {
 
 
 
-const row1BarList: Ref<GanttBarObject[]> = ref([
-  {
-    myBeginDate: "2021-07-13 13:00",
-    myEndDate: "2021-07-13 19:00",
-    ganttBarConfig: {
-      // each bar must have a nested ganttBarConfig object ...
-      id: "unique-id-1", // ... and a unique "id" property
-      label: "Lorem ipsum dolor"
-    }
-  }
-])
-const row2BarList: Ref<GanttBarObject[]> = ref([
-  {
-    myBeginDate: "2021-07-13 00:00",
-    myEndDate: "2021-07-14 02:00",
-    ganttBarConfig: {
-      id: "another-unique-id-2",
-      hasHandles: true,
-      label: "Hey, look at me",
-      style: {
-        // arbitrary CSS styling for your bar
-        background: "#e09b69",
-        borderRadius: "20px",
-        color: "black"
-      }
-    }
-  }
-])
 
 
 </script>

@@ -65,12 +65,18 @@ export const usePlanStore = defineStore('planStore', () => {
     })
   ))
 
+  const start = computed(() => { return new Date(Math.min(...allocations.value.map((a) => a.start.getTime()))) })
+  const end = computed(() => { return new Date(Math.max(...allocations.value.map((a) => a.end.getTime()))) })
+  const resource_ids = computed(() => { return allocations_by_resource.value.keys() })
   return {
     gql: {
       queryGetAll,
     },
     loading: queryGetAll.loading,
     allocations,
+    start,
+    end,
+    resource_ids,
     // TODO: generic GQL error messages as notifications?
     apolloErrors: computed(() => apollo_objs.map((obj) => obj.error).filter((err) => err != null)),
     allocation: (dbId: number): Allocation | undefined => {
