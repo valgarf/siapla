@@ -4,7 +4,7 @@
     <!-- Top left: empty -->
     <div class="gantt-corner"></div>
     <!-- Top right: header -->
-    <div class="gantt-header">
+  <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd" @mouseleave="onPanEnd">
       <div class="gantt-header-scroll" :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
         <svg :width="timelineWidth" :height="headerHeight">
           <!-- Year/Month row -->
@@ -16,10 +16,15 @@
               <!-- <line v-if="i < months.length - 1" :x1="month.x + month.width" y1="0" :x2="month.x + month.width" :y2="monthRowHeight" stroke="#ccc" stroke-width="1" /> -->
             </template>
           </g>
-          <!-- Day row -->
+          <!-- Day row with weekend highlight -->
           <g>
             <template v-for="(day, i) in days" :key="i">
-              <rect :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fafafa" stroke="#ccc" stroke-width="1" />
+              <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6"
+                :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
+                fill="#fffbe6" stroke="#ccc" stroke-width="1" />
+              <rect v-else
+                :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
+                fill="#fafafa" stroke="#ccc" stroke-width="1" />
               <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{ day.label }}</text>
             </template>
           </g>
@@ -33,7 +38,7 @@
       </div>
     </div>
     <!-- Bottom left: resources -->
-    <div class="gantt-resources" :style="{ height: chartHeight + 'px', width: resourceColWidth + 'px', position: 'relative', overflow: 'hidden' }">
+    <div class="gantt-resources" :style="{ height: chartHeight + 'px', width: resourceColWidth + 'px', position: 'relative', overflow: 'hidden' }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
       <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
         <div v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i" class="gantt-resource-row" :style="{ height: rowHeight + 'px' }">
           <span>{{ resourceStore.resource(rid)?.name ?? '<UNNAMED>' }}</span>
@@ -43,6 +48,14 @@
     <!-- Bottom right: scrollable chart -->
   <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove" @mouseup="onPanEnd" @mouseleave="onPanEnd">
       <svg :width="timelineWidth" :height="chartHeight" :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
+        <!-- Weekend highlight in chart -->
+        <g>
+          <template v-for="(day, i) in days" :key="'w'+i">
+            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6"
+              :x="day.x" y="0" :width="dayWidth" :height="chartHeight"
+              fill="#fffbe6" stroke="none" />
+          </template>
+        </g>
         <!-- Horizontal lines between resources -->
         <g>
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i">
@@ -54,6 +67,22 @@
         <g>
           <template v-for="(day, i) in days" :key="i">
             <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#eee" stroke-width="1" />
+          </template>
+        </g>
+        <!-- Holidays and vacations per resource -->
+        <g>
+          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'hol'+rid">
+            <template v-for="vac in resourceStore.resource(rid)?.vacations ?? []" :key="'vac'+rid+vac.start+vac.end">
+              <rect
+                :x="dateToX(vac.from)"
+                :y="i * rowHeight"
+                :width="dateToX(vac.until) - dateToX(vac.from)"
+                :height="rowHeight"
+                fill="#e0e0e0"
+                opacity="0.7"
+                stroke="none"
+              />
+            </template>
           </template>
         </g>
         <!-- Allocation bars -->
@@ -103,6 +132,7 @@ html, body, #app {
 .gantt-resources,
 .gantt-chart-scroll {
   min-height: 0;
+  line-height: 0;
 }
 .gantt-corner {
   grid-column: 1;
@@ -151,6 +181,13 @@ html, body, #app {
   background: #fafbfc;
   position: relative;
 }
+.gantt-resources,
+.gantt-header,
+.gantt-chart-scroll {
+  cursor: grab;
+}
+.gantt-resources:active,
+.gantt-header:active,
 .gantt-chart-scroll:active {
   cursor: grabbing;
 }
@@ -258,27 +295,40 @@ function onPanStart(e: MouseEvent) {
   panOrigY.value = scrollY.value;
 }
 function onPanMove(e: MouseEvent) {
+  onPanMoveX(e)
+  onPanMoveY(e)
+}
+
+function onPanMoveX(e: MouseEvent) {
   if (!isPanning.value) return;
   const dx = e.clientX - panStartX.value;
-  const dy = e.clientY - panStartY.value;
   let newX = panOrigX.value - dx;
+  if (scrollCell.value) {
+    const rect = scrollCell.value.getBoundingClientRect();
+    const visibleWidth = rect.width;
+    newX = Math.max(0, Math.min(newX, timelineWidth.value - visibleWidth));
+  }
+  scrollX.value = newX;
+}
+
+function onPanMoveY(e: MouseEvent) {
+  if (!isPanning.value) return;
+  const dy = e.clientY - panStartY.value;
   let newY = panOrigY.value - dy;
   if (scrollCell.value) {
     const rect = scrollCell.value.getBoundingClientRect();
     let visibleHeight = rect.height;
-    const visibleWidth = rect.width;
     const viewportHeight = window.innerHeight;
     if (rect.bottom > viewportHeight) {
       visibleHeight -= (rect.bottom - viewportHeight);
     }
-    newX = Math.max(0, Math.min(newX, timelineWidth.value - visibleWidth));
     newY = Math.max(0, Math.min(newY, chartHeight.value - visibleHeight));
-    console.log(scrollCell.value, scrollCell.value.clientWidth, scrollCell.value.clientHeight, visibleHeight)
   }
-  scrollX.value = newX;
   scrollY.value = newY;
 }
+
 function onPanEnd() {
   isPanning.value = false;
 }
+
 </script>
