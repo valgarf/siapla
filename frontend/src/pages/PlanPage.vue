@@ -1,11 +1,9 @@
 <template>
-  <q-page class="row items-center justify-evenly">
+  <q-page>
     <PlanGantt />
   </q-page>
 </template>
 
 <script setup lang="ts">
 import PlanGantt from 'src/components/PlanGantt.vue';
-
-
 </script>

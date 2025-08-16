@@ -67,7 +67,7 @@ export const usePlanStore = defineStore('planStore', () => {
 
   const start = computed(() => { return new Date(Math.min(...allocations.value.map((a) => a.start.getTime()))) })
   const end = computed(() => { return new Date(Math.max(...allocations.value.map((a) => a.end.getTime()))) })
-  const resource_ids = computed(() => { return allocations_by_resource.value.keys() })
+  const resource_ids = computed(() => { return Array.from(allocations_by_resource.value.keys()) })
   return {
     gql: {
       queryGetAll,
