@@ -1,16 +1,19 @@
-
 <template>
+
   <div class="gantt-grid">
     <!-- Top left: empty -->
     <div class="gantt-corner"></div>
     <!-- Top right: header -->
-  <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd" @mouseleave="onPanEnd">
-      <div class="gantt-header-scroll" :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
+    <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
+      @mouseleave="onPanEnd">
+      <div class="gantt-header-scroll"
+        :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
         <svg :width="timelineWidth" :height="headerHeight">
           <!-- Year/Month row -->
           <g>
             <template v-for="(month, i) in months" :key="i">
-              <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#f5f5f5" stroke="#ccc" stroke-width="1" />
+              <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff" stroke="#ccc"
+                stroke-width="1" />
               <text :x="month.x + 4" :y="monthRowHeight - 6" font-size="12" fill="#333">{{ month.label }}</text>
               <!-- Draw vertical bar at the end of each month except the last -->
               <!-- <line v-if="i < months.length - 1" :x1="month.x + month.width" y1="0" :x2="month.x + month.width" :y2="monthRowHeight" stroke="#ccc" stroke-width="1" /> -->
@@ -19,13 +22,12 @@
           <!-- Day row with weekend highlight -->
           <g>
             <template v-for="(day, i) in days" :key="i">
-              <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6"
-                :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
-                fill="#fffbe6" stroke="#ccc" stroke-width="1" />
-              <rect v-else
-                :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
-                fill="#fafafa" stroke="#ccc" stroke-width="1" />
-              <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{ day.label }}</text>
+              <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" :y="monthRowHeight"
+                :width="dayWidth" :height="dayRowHeight" fill="#fff" stroke="#ccc" stroke-width="1" />
+              <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fff"
+                stroke="#ccc" stroke-width="1" />
+              <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{ day.label
+                }}</text>
             </template>
           </g>
           <!-- Vertical lines between days -->
@@ -38,22 +40,36 @@
       </div>
     </div>
     <!-- Bottom left: resources -->
-    <div class="gantt-resources" :style="{ height: chartHeight + 'px', width: resourceColWidth + 'px', position: 'relative', overflow: 'hidden' }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
+    <div class="gantt-resources"
+      :style="{ height: chartHeight + 'px', width: resourceColWidth + 'px', position: 'relative', overflow: 'hidden' }"
+      @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
       <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
-        <div v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i" class="gantt-resource-row" :style="{ height: rowHeight + 'px' }">
+        <div v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i" class="gantt-resource-row"
+          :style="{ height: rowHeight + 'px' }">
           <span>{{ resourceStore.resource(rid)?.name ?? '<UNNAMED>' }}</span>
         </div>
       </div>
     </div>
     <!-- Bottom right: scrollable chart -->
-  <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove" @mouseup="onPanEnd" @mouseleave="onPanEnd">
-      <svg :width="timelineWidth" :height="chartHeight" :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
+    <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove" @mouseup="onPanEnd"
+      @mouseleave="onPanEnd">
+      <svg :width="timelineWidth" :height="chartHeight"
+        :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
         <!-- Weekend highlight in chart -->
         <g>
           <template v-for="(day, i) in days" :key="'w'+i">
-            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6"
-              :x="day.x" y="0" :width="dayWidth" :height="chartHeight"
-              fill="#fffbe6" stroke="none" />
+            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" y="0" :width="dayWidth"
+              :height="chartHeight" fill="#fffbe6" opacity="1" stroke="none" />
+          </template>
+        </g>
+        <!-- Resource availability bars for all non-vacation segments in the visible timeframe -->
+        <g>
+          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'avail'+rid">
+            <template v-for="seg in getAvailabilitySegments(resourceStore.resource(rid))"
+              :key="'seg'+seg.start+seg.end">
+              <rect :x="dateToX(seg.start)" :y="i * rowHeight" :width="dateToX(seg.end) - dateToX(seg.start)"
+                :height="rowHeight" fill="#fff" opacity="0.7" stroke="none" />
+            </template>
           </template>
         </g>
         <!-- Horizontal lines between resources -->
@@ -61,48 +77,34 @@
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i">
             <line :x1="0" :y1="i * rowHeight" :x2="timelineWidth" :y2="i * rowHeight" stroke="#ddd" stroke-width="1" />
           </template>
-          <line :x1="0" :y1="planStore.resource_ids.length * rowHeight" :x2="timelineWidth" :y2="planStore.resource_ids.length * rowHeight" stroke="#ddd" stroke-width="1" />
+          <line :x1="0" :y1="planStore.resource_ids.length * rowHeight" :x2="timelineWidth"
+            :y2="planStore.resource_ids.length * rowHeight" stroke="#ddd" stroke-width="1" />
         </g>
         <!-- Vertical lines between days -->
         <g>
           <template v-for="(day, i) in days" :key="i">
-            <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#eee" stroke-width="1" />
+            <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#ddd" stroke-width="1" />
           </template>
         </g>
-        <!-- Holidays and vacations per resource -->
-        <g>
-          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'hol'+rid">
-            <template v-for="vac in resourceStore.resource(rid)?.vacations ?? []" :key="'vac'+rid+vac.start+vac.end">
-              <rect
-                :x="dateToX(vac.from)"
-                :y="i * rowHeight"
-                :width="dateToX(vac.until) - dateToX(vac.from)"
-                :height="rowHeight"
-                fill="#e0e0e0"
-                opacity="0.7"
-                stroke="none"
-              />
+        <!-- Vacation bars per resource -->
+        <!-- <g>
+          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'vac'+rid">
+            <template v-for="vac in resourceStore.resource(rid)?.vacations ?? []" :key="'vac'+rid+vac.from+vac.until">
+              <rect :x="dateToX(vac.from)" :y="i * rowHeight" :width="dateToX(vac.until) - dateToX(vac.from)"
+                :height="rowHeight" fill="#f3f4f5" opacity="1" stroke="none" />
             </template>
           </template>
-        </g>
+        </g> -->
+
+
         <!-- Allocation bars -->
         <g>
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="rid">
             <template v-for="alloc in planStore.by_resource(rid)" :key="rid+'-'+alloc.dbId">
-              <rect
-                :x="dateToX(alloc.start)"
-                :y="i * rowHeight + barPadding"
-                :width="dateToX(alloc.end) - dateToX(alloc.start)"
-                :height="barHeight"
-                fill="#42a5f5"
-                rx="3"
-              />
-              <text
-                :x="dateToX(alloc.start) + 4"
-                :y="i * rowHeight + barPadding + barHeight/2 + 4"
-                font-size="11"
-                fill="#fff"
-              >{{ alloc.task?.title ?? '' }}</text>
+              <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
+                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5" rx="3" />
+              <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11"
+                fill="#fff">{{ alloc.task?.title ?? '' }}</text>
             </template>
           </template>
         </g>
@@ -112,12 +114,15 @@
 </template>
 
 <style>
-html, body, #app {
+html,
+body,
+#app {
   height: 100vh;
   margin: 0;
   padding: 0;
   overflow: hidden;
 }
+
 .gantt-grid {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -127,6 +132,7 @@ html, body, #app {
   min-height: 0;
   overflow: hidden;
 }
+
 .gantt-corner,
 .gantt-header,
 .gantt-resources,
@@ -134,6 +140,7 @@ html, body, #app {
   min-height: 0;
   line-height: 0;
 }
+
 .gantt-corner {
   grid-column: 1;
   grid-row: 1;
@@ -143,6 +150,7 @@ html, body, #app {
   width: var(--resource-col-width, 160px);
   height: var(--header-height, 50px);
 }
+
 .gantt-header {
   grid-column: 2;
   grid-row: 1;
@@ -151,12 +159,15 @@ html, body, #app {
   position: relative;
   overflow: hidden;
 }
+
 .gantt-header-scroll {
   position: absolute;
   left: 0;
   top: 0;
   will-change: transform;
+  background: #fff;
 }
+
 .gantt-resources {
   grid-column: 1;
   grid-row: 2;
@@ -164,6 +175,7 @@ html, body, #app {
   border-right: 1px solid #ddd;
   z-index: 1;
 }
+
 .gantt-resource-row {
   display: flex;
   align-items: center;
@@ -173,37 +185,115 @@ html, body, #app {
   font-size: 15px;
   color: #333;
 }
+
 .gantt-chart-scroll {
   grid-column: 2;
   grid-row: 2;
   overflow: hidden;
   cursor: grab;
-  background: #fafbfc;
+  background: #f3f4f5;
   position: relative;
 }
+
 .gantt-resources,
 .gantt-header,
 .gantt-chart-scroll {
   cursor: grab;
 }
+
 .gantt-resources:active,
 .gantt-header:active,
 .gantt-chart-scroll:active {
   cursor: grabbing;
 }
-
 </style>
 <script setup lang="ts">
+
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { ref, computed } from 'vue';
+import type { Availability, Resource } from 'src/stores/resource';
+import { start } from 'repl';
+
+// Returns all non-vacation segments for a resource's availability in the visible timeframe
+function getAvailabilitySegments(resource: Resource | undefined): Array<{ start: Date, end: Date }> {
+  if (!resource?.availability) return [];
+  const segments: Array<{ start: Date, end: Date }> = [];
+  let day = new Date(startDay.value.getTime() - 24 * 3600 * 1000)
+  let end = new Date(endDay.value.getTime() + 24 * 3600 * 1000)
+  while (day <= end) {
+    const weekday = getWeekdayShortCode(day);
+    const hours = resource.availability[weekday] ?? 0;
+    if (hours <= 0) {
+      day = new Date(day.getTime() + 24 * 3600 * 1000);
+      continue;
+    }
+    // Center around 12:00
+    const availStartHour = 12 - hours / 2;
+    const availEndHour = 12 + hours / 2;
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(day);
+    dayEnd.setHours(23, 59, 59, 999);
+    // Find vacations overlapping this day
+    const vacations = (resource.vacations ?? []).filter((vac: { from: Date; until: Date }) => {
+      return vac.from <= dayEnd && vac.until >= dayStart;
+    });
+    // Initial segment is the full available period
+    let daySegments = [{
+      start: new Date(day.getFullYear(), day.getMonth(), day.getDate(), availStartHour, 0, 0, 0),
+      end: new Date(day.getFullYear(), day.getMonth(), day.getDate(), availEndHour, 0, 0, 0)
+    }];
+    for (const vac of vacations) {
+      const vacStart = vac.from > dayStart ? vac.from : dayStart;
+      const vacEnd = vac.until < dayEnd ? vac.until : dayEnd;
+      daySegments = daySegments.flatMap(seg => {
+        // No overlap
+        if (seg.end <= vacStart || seg.start >= vacEnd) return [seg];
+        // Overlap: split
+        const result = [];
+        if (seg.start < vacStart) result.push({ start: seg.start, end: new Date(vacStart) });
+        if (seg.end > vacEnd) result.push({ start: new Date(vacEnd), end: seg.end });
+        return result.filter(s => s.end > s.start);
+      });
+    }
+    for (const seg of daySegments) {
+      segments.push(seg);
+    }
+    day = new Date(day.getTime() + 24 * 3600 * 1000);
+  }
+  return segments;
+}
+
+// Helper to get weekday short code from JS Date
+function getWeekdayShortCode(date: Date): keyof Availability {
+  const day = date.getDay();
+  return ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'][day] as keyof Availability;
+}
+
+// Calculate the offset (in px) for the availability bar within the day cell
+function calcAvailabilityBarOffset(availability: Availability | null | undefined, date: Date): number {
+  if (!availability) return 0;
+  const hours = availability[getWeekdayShortCode(date)] ?? 0;
+  // Center around 12:00, so start at 12 - hours/2
+  const startHour = 12 - hours / 2;
+  // Day cell is dayWidth px wide, so offset = (startHour / 24) * dayWidth
+  return (startHour / 24) * dayWidth;
+}
+
+// Calculate the width (in px) for the availability bar within the day cell
+function calcAvailabilityBarWidth(availability: Availability | null | undefined, date: Date): number {
+  if (!availability) return 0;
+  const hours = availability[getWeekdayShortCode(date)] ?? 0;
+  return (hours / 24) * dayWidth;
+}
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
 
 const resourceColWidth = 160;
 const rowHeight = 40;
-const barPadding = 6;
+const barPadding = 8;
 const barHeight = rowHeight - barPadding * 2;
 const dayWidth = 32;
 const monthRowHeight = 28;
@@ -251,7 +341,7 @@ const months = computed(() => {
   while (d <= end) {
     if (d.getMonth() !== curMonth || d.getFullYear() !== curYear) {
       arr.push({
-        label: `${curYear}-${String(curMonth+1).padStart(2,'0')}`,
+        label: `${curYear}-${String(curMonth + 1).padStart(2, '0')}`,
         x: startIdx * dayWidth,
         width: (i - startIdx) * dayWidth,
       });
@@ -263,7 +353,7 @@ const months = computed(() => {
     i++;
   }
   arr.push({
-    label: `${curYear}-${String(curMonth+1).padStart(2,'0')}`,
+    label: `${curYear}-${String(curMonth + 1).padStart(2, '0')}`,
     x: startIdx * dayWidth,
     width: (i - startIdx) * dayWidth,
   });
@@ -275,7 +365,7 @@ const chartHeight = computed(() => Array.from(planStore.resource_ids).length * r
 
 function dateToX(date: string | Date): number {
   const d = parseDate(date);
-  return (d.getTime() - startDay.value.getTime()) / (1000*60*60*24) * dayWidth;
+  return (d.getTime() - startDay.value.getTime()) / (1000 * 60 * 60 * 24) * dayWidth;
 }
 
 const scrollX = ref(0);
@@ -285,7 +375,7 @@ const panStartX = ref(0);
 const panStartY = ref(0);
 const panOrigX = ref(0);
 const panOrigY = ref(0);
-const scrollCell = ref<HTMLElement|null>(null);
+const scrollCell = ref<HTMLElement | null>(null);
 
 function onPanStart(e: MouseEvent) {
   isPanning.value = true;
