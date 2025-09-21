@@ -1,8 +1,8 @@
 import { graphql } from 'src/gql';
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import { useMutation, useQuery } from '@vue/apollo-composable';
+import { useMutation, useQuery, type UseQueryReturn } from '@vue/apollo-composable';
 import { Weekday } from 'src/gql/graphql';
-import type { ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
+import type { CombinedAvailabilityQuery, ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
 import { ResourceDialogData, useDialogStore } from './dialog';
 
@@ -88,6 +88,18 @@ const RESOURCE_QUERY = graphql(`
   }
 `);
 
+const COMBINED_AVAILABILITY_QUERY = graphql(`
+  query combinedAvailability($start: DateTime!, $end: DateTime!) {
+    resources {
+      dbId
+      combinedAvailability(start: $start, end: $end) {
+        start
+        end
+      }
+    }
+  }
+`);
+
 const RESOURCE_SAVE_MUTATION = graphql(`
   mutation resource_save($resource: ResourceSaveInput!) {
     resourceSave(resource: $resource) {
@@ -141,7 +153,7 @@ function convertQueryResult(query: ResourcesQuery) {
         }
         return acc;
       }, { ...defaultAvailability }) || defaultAvailability; // Fallback to defaults if availability is null/undefined
-      
+
       return [
         r.dbId,
         {
@@ -162,7 +174,7 @@ function convertQueryResult(query: ResourcesQuery) {
           vacations: r.vacation ? r.vacation.map(v => ({
             dbId: v.dbId,
             from: new Date(v.from),
-            until:new Date( v.until)
+            until: new Date(v.until)
           })) : []
         },
       ];
@@ -204,6 +216,43 @@ export const useResourceStore = defineStore('resourceStore', () => {
   const queryGetAll = useQuery(RESOURCE_QUERY);
   const mutSaveResource = useMutation(RESOURCE_SAVE_MUTATION);
   const mutDeleteResource = useMutation(RESOURCE_DELETE_MUTATION);
+  // cache for combined availability queries keyed by start_end -> stores the useQuery return object
+  const combinedQueryCache: Map<string, UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }>> = new Map();
+
+  async function refetch(resourceId: number | null) { // eslint-disable-line @typescript-eslint/no-unused-vars
+    // TODO: optimize to only refetch the changed resource?
+    await queryGetAll.refetch();
+    for (const q of combinedQueryCache.values()) {
+      await q.refetch();
+    }
+  }
+  // Fetch combined availability for ALL resources in the given window and cache the query object.
+  // Returns the useQuery return value (not the resolved data) so callers can react to q.result.
+  function fetchCombinedAvailability(start: Date, end: Date): UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }> {
+    const startStr = start.toISOString();
+    const endStr = end.toISOString();
+    const key = `${startStr}_${endStr}`;
+    let q = combinedQueryCache.get(key);
+    if (q != null) {
+      return q;
+    }
+    q = useQuery(COMBINED_AVAILABILITY_QUERY, { start: startStr, end: endStr });
+    combinedQueryCache.set(key, q);
+    return q;
+  }
+
+  // Return a computed list of intervals for the given resource id and window.
+  // If the query hasn't completed or there is no data yet, returns an empty array.
+  function getCombinedAvailability(resourceId: number, start: Date, end: Date): Ref<Array<{ start: Date, end: Date }>> {
+    const q = fetchCombinedAvailability(start, end);
+    return computed(() => {
+      if (!q || !q.result || q.result.value == null) return [] as Array<{ start: Date; end: Date }>;
+      const data = q.result.value;
+      const r = data.resources.find((rr) => rr.dbId === resourceId);
+      if (!r) return [] as Array<{ start: Date; end: Date }>;
+      return r.combinedAvailability.map((it) => ({ start: new Date(it.start), end: new Date(it.end) }));
+    });
+  }
 
   const apollo_objs = [queryGetAll, mutSaveResource, mutDeleteResource];
   const resource_map = computed(() => {
@@ -223,12 +272,12 @@ export const useResourceStore = defineStore('resourceStore', () => {
         // a little hacky
         // TODO: necessary?
         resource.value.dbId = dbId;
-        await queryGetAll.refetch();
+        await refetch(dbId);
         // TODO: generic error handling?
         dialog.replaceDialog(new ResourceDialogData(dbId));
       } else {
         resource.value.dbId = dbId;
-        await queryGetAll.refetch();
+        await refetch(dbId);
         // TODO: generic error handling?
       }
     }
@@ -247,7 +296,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
       ) {
         dialog.popDialog();
       }
-      await queryGetAll.refetch();
+      await refetch(resourceId);
     }
     return result;
     // TODO: generic error handling?
@@ -268,6 +317,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
     resource: (dbId: number): Resource | undefined => {
       return resource_map.value?.get(dbId);
     },
+    getCombinedAvailability,
     saveResource,
     deleteResource,
   };

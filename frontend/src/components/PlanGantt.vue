@@ -65,8 +65,7 @@
         <!-- Resource availability bars for all non-vacation segments in the visible timeframe -->
         <g>
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'avail'+rid">
-            <template v-for="seg in getAvailabilitySegments(resourceStore.resource(rid))"
-              :key="'seg'+seg.start+seg.end">
+            <template v-for="seg in combinedAvailabilityFor(rid)" :key="'seg'+seg.start+seg.end">
               <rect :x="dateToX(seg.start)" :y="i * rowHeight" :width="dateToX(seg.end) - dateToX(seg.start)"
                 :height="rowHeight" fill="#fff" opacity="0.7" stroke="none" />
             </template>
@@ -212,81 +211,6 @@ body,
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { ref, computed } from 'vue';
-import type { Availability, Resource } from 'src/stores/resource';
-import { start } from 'repl';
-
-// Returns all non-vacation segments for a resource's availability in the visible timeframe
-function getAvailabilitySegments(resource: Resource | undefined): Array<{ start: Date, end: Date }> {
-  if (!resource?.availability) return [];
-  const segments: Array<{ start: Date, end: Date }> = [];
-  let day = new Date(startDay.value.getTime() - 24 * 3600 * 1000)
-  let end = new Date(endDay.value.getTime() + 24 * 3600 * 1000)
-  while (day <= end) {
-    const weekday = getWeekdayShortCode(day);
-    const hours = resource.availability[weekday] ?? 0;
-    if (hours <= 0) {
-      day = new Date(day.getTime() + 24 * 3600 * 1000);
-      continue;
-    }
-    // Center around 12:00
-    const availStartHour = 12 - hours / 2;
-    const availEndHour = 12 + hours / 2;
-    const dayStart = new Date(day);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(day);
-    dayEnd.setHours(23, 59, 59, 999);
-    // Find vacations overlapping this day
-    const vacations = (resource.vacations ?? []).filter((vac: { from: Date; until: Date }) => {
-      return vac.from <= dayEnd && vac.until >= dayStart;
-    });
-    // Initial segment is the full available period
-    let daySegments = [{
-      start: new Date(day.getFullYear(), day.getMonth(), day.getDate(), availStartHour, 0, 0, 0),
-      end: new Date(day.getFullYear(), day.getMonth(), day.getDate(), availEndHour, 0, 0, 0)
-    }];
-    for (const vac of vacations) {
-      const vacStart = vac.from > dayStart ? vac.from : dayStart;
-      const vacEnd = vac.until < dayEnd ? vac.until : dayEnd;
-      daySegments = daySegments.flatMap(seg => {
-        // No overlap
-        if (seg.end <= vacStart || seg.start >= vacEnd) return [seg];
-        // Overlap: split
-        const result = [];
-        if (seg.start < vacStart) result.push({ start: seg.start, end: new Date(vacStart) });
-        if (seg.end > vacEnd) result.push({ start: new Date(vacEnd), end: seg.end });
-        return result.filter(s => s.end > s.start);
-      });
-    }
-    for (const seg of daySegments) {
-      segments.push(seg);
-    }
-    day = new Date(day.getTime() + 24 * 3600 * 1000);
-  }
-  return segments;
-}
-
-// Helper to get weekday short code from JS Date
-function getWeekdayShortCode(date: Date): keyof Availability {
-  const day = date.getDay();
-  return ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'][day] as keyof Availability;
-}
-
-// Calculate the offset (in px) for the availability bar within the day cell
-function calcAvailabilityBarOffset(availability: Availability | null | undefined, date: Date): number {
-  if (!availability) return 0;
-  const hours = availability[getWeekdayShortCode(date)] ?? 0;
-  // Center around 12:00, so start at 12 - hours/2
-  const startHour = 12 - hours / 2;
-  // Day cell is dayWidth px wide, so offset = (startHour / 24) * dayWidth
-  return (startHour / 24) * dayWidth;
-}
-
-// Calculate the width (in px) for the availability bar within the day cell
-function calcAvailabilityBarWidth(availability: Availability | null | undefined, date: Date): number {
-  if (!availability) return 0;
-  const hours = availability[getWeekdayShortCode(date)] ?? 0;
-  return (hours / 24) * dayWidth;
-}
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
@@ -419,6 +343,12 @@ function onPanMoveY(e: MouseEvent) {
 
 function onPanEnd() {
   isPanning.value = false;
+}
+
+// Return the unwrapped array from the store's computed Ref for template iteration.
+function combinedAvailabilityFor(rid: number) {
+  const refArr = resourceStore.getCombinedAvailability(rid, startDay.value, endDay.value);
+  return refArr?.value ?? [];
 }
 
 </script>

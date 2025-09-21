@@ -71,6 +71,11 @@ type HolidayEntry {
   name: String
 }
 
+type Interval {
+  end: DateTime!
+  start: DateTime!
+}
+
 type Mutation {
   new: Mutation!
   resourceDelete(resourceId: Int!): Boolean!
@@ -106,6 +111,7 @@ type Region {
 type Resource {
   added: DateTime!
   availability: [Availability!]!
+  combinedAvailability(end: DateTime!, start: DateTime!): [Interval!]!
   dbId: Int!
   holiday: Holiday
   name: String!
