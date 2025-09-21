@@ -4,8 +4,6 @@ use std::{
     ops::{Add, Sub},
 };
 
-use itertools::Itertools;
-
 /// Marker trait for a value that can be used in an interval
 pub trait IntervalValue: PartialOrd + Ord + PartialEq + Eq + Copy + Clone {}
 impl<T: PartialOrd + Ord + PartialEq + Eq + Copy + Clone> IntervalValue for T {}

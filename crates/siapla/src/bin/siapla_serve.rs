@@ -12,7 +12,7 @@ use siapla::{
     scheduling::recalculate_loop,
 };
 use std::{net::SocketAddr, sync::Arc};
-use tokio::{net::TcpListener, task};
+use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;

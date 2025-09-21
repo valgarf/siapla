@@ -2,7 +2,7 @@ use std::{collections::HashSet, str::FromStr};
 
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use itertools::{Either, Itertools as _};
+use itertools::Itertools as _;
 use juniper::{GraphQLEnum, Nullable, graphql_object};
 use sea_orm::{ActiveValue, QueryOrder as _, prelude::*};
 use strum::{EnumString, IntoStaticStr};

@@ -4,7 +4,12 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use super::dataloader::{ByColBatcher, ByColLoader};
+use super::dataloader::{AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader};
+use crate::scheduling::Intervals;
+use chrono::NaiveDateTime;
+
+type AvailabilityLoaderMap =
+    std::collections::HashMap<(NaiveDateTime, NaiveDateTime), AvailabilityLoader>;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::TryFutureExt;
 use sea_orm::{
@@ -15,6 +20,7 @@ use tokio::sync::{OnceCell, RwLock};
 pub struct Context {
     txn: OnceCell<DatabaseTransaction>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
+    availability_loaders: Arc<RwLock<AvailabilityLoaderMap>>,
     me: Weak<Self>,
 }
 
@@ -42,6 +48,7 @@ impl Context {
             by_col_loaders: Arc::new(RwLock::new(
                 anymap::Map::<dyn anymap::any::Any + Send + Sync>::new(),
             )),
+            availability_loaders: Arc::new(RwLock::new(AvailabilityLoaderMap::new())),
             me: me.clone(),
         })
     }
@@ -49,10 +56,7 @@ impl Context {
     pub async fn txn(&self) -> anyhow::Result<&DatabaseTransaction> {
         self.txn
             .get_or_try_init::<anyhow::Error, _, _>(|| async {
-                Ok(Database::connect(env::var("DATABASE_URL")?)
-                    .await?
-                    .begin()
-                    .await?)
+                Ok(Database::connect(env::var("DATABASE_URL")?).await?.begin().await?)
             })
             .await
     }
@@ -155,6 +159,46 @@ impl Context {
         //     Err(anyhow::anyhow!("More than one entry found"))
         // }
     }
+
+    /// Load availability intervals for a single resource id, for the given start/end window.
+    /// Loaders are cached per (start,end) pair in an AvailabilityLoaderMap stored in the same anymap
+    /// used for the `by_col_loaders`.
+    pub fn load_combined_availability(
+        &self,
+        resource_id: i32,
+        start: NaiveDateTime,
+        end: NaiveDateTime,
+    ) -> impl std::future::Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
+        let loaders = Arc::clone(&self.availability_loaders);
+        let me = self.me.clone();
+        let fut = async move {
+            loop {
+                let read_map = loaders.read().await;
+                let opt_loader = read_map.get(&(start, end)).cloned();
+                if let Some(loader) = opt_loader {
+                    let res = loader.try_load(resource_id).await;
+                    match res {
+                        Err(_) => return Ok(Intervals::new()), // id cannot be found
+                        Ok(v) => return Ok(v.map_err(|err| anyhow::anyhow!("{err}"))?),
+                    }
+                }
+                drop(read_map);
+                let mut write_map = loaders.write().await;
+                if !write_map.contains_key(&(start, end)) {
+                    let loader = AvailabilityLoader::new(AvailabilityBatcher {
+                        ctx: me.clone(),
+                        start,
+                        end,
+                    })
+                    .with_yield_count(100);
+                    write_map.insert((start, end), loader);
+                }
+                drop(write_map);
+                continue;
+            }
+        };
+        fut
+    }
 }
 
 pub async fn add_context(mut req: Request, next: Next) -> Result<Response, StatusCode> {
@@ -162,8 +206,6 @@ pub async fn add_context(mut req: Request, next: Next) -> Result<Response, Statu
     req.extensions_mut().insert(Arc::clone(&ctx));
     let res = next.run(req).await;
     let mut ctx = Arc::into_inner(ctx).expect("All other references should have been destroyed");
-    ctx.commit()
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    ctx.commit().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(res)
 }

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 
 use juniper::{Nullable, graphql_object};
+use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
-use sea_orm::{ActiveModelTrait as _, ActiveValue};
 
 use crate::{
     entity::{availability, holiday, resource, vacation},
@@ -18,6 +18,22 @@ use super::{
     vacation::VacationInput,
 };
 
+use crate::scheduling::Interval;
+
+pub struct GQLInterval {
+    iv: Interval<DateTime<Utc>>,
+}
+
+#[graphql_object]
+#[graphql(name = "Interval")]
+impl GQLInterval {
+    pub fn start(&self) -> DateTime<Utc> {
+        self.iv.start().value().expect("Must be bounded")
+    }
+    pub fn end(&self) -> DateTime<Utc> {
+        self.iv.end().value().expect("Must be bounded")
+    }
+}
 #[graphql_object]
 #[graphql(name = "Resource")]
 impl resource::Model {
@@ -50,6 +66,26 @@ impl resource::Model {
         const CIDX: usize = vacation::Column::ResourceId as usize;
         let vacation = ctx.load_by_col::<vacation::Entity, CIDX>(self.id).await?;
         Ok(vacation)
+    }
+    pub async fn combined_availability(
+        &self,
+        ctx: &Context,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<GQLInterval>> {
+        // Context::load_combined_availability expects NaiveDateTime start/end in UTC
+        let s = start.naive_utc();
+        let e = end.naive_utc();
+        let ivs = ctx.load_combined_availability(self.id, s, e).await?;
+        Ok(ivs
+            .into_iter()
+            .map(|iv| GQLInterval {
+                iv: Interval::new_closed(
+                    iv.start().value().expect("Must be bounded").and_utc(),
+                    iv.end().value().expect("Must be bounded").and_utc(),
+                ),
+            })
+            .collect())
     }
 }
 

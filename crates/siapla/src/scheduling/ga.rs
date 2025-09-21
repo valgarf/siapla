@@ -66,7 +66,7 @@ pub fn generate_random_individual(project: &Project) -> Individual {
 }
 
 pub fn create_random_task_gene(
-    project: &Project,
+    _project: &Project,
     task: Rc<RefCell<Task>>,
     nidx: NodeIndex,
 ) -> TaskGene {

@@ -4,7 +4,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
+use chrono::{NaiveDateTime, TimeDelta};
 use petgraph::Graph;
 
 // Project base information
