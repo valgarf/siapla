@@ -1,5 +1,4 @@
 <template>
-
     <div class="gantt-grid">
         <!-- Top left: new task button -->
         <div class="gantt-corner">
@@ -83,23 +82,24 @@
                 <g>
                     <template v-for="(row, i) in visibleRows" :key="'group'+row.task.dbId">
                         <rect
-                            v-if="row.task.designation == TaskDesignation.Group && allocBoundsMap.get(row.task.dbId) != null"
-                            :x="dateToX(allocBoundsMap.get(row.task.dbId)?.value?.start)"
-                            :y="i * rowHeight + barPadding"
-                            :width="dateToX(allocBoundsMap.get(row.task.dbId)?.value?.end) - dateToX(allocBoundsMap.get(row.task.dbId)?.value?.start)"
+                            v-if="row.task.designation == TaskDesignation.Group && planStore.by_task(row.task.dbId).length > 0"
+                            :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start)" :y="i * rowHeight + barPadding"
+                            :width="dateToX(planStore.by_task(row.task.dbId)[0]?.end) - dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
                             :height="barHeight" fill="#66bb6a" rx="3" />
                     </template>
                 </g>
 
-                <!-- Task allocation bars -->
+                <!-- Task and milestone allocation bars -->
                 <g>
                     <template v-for="(row, i) in visibleRows" :key="'taskalloc'+row.task.dbId">
-                        <template v-for="alloc in planStore.by_task(row.task.dbId)" :key="alloc.dbId">
-                            <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5"
-                                rx="3" @click.stop="() => onTaskClick(row.task.dbId)" />
-                            <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4"
-                                font-size="11" fill="#fff">{{ row.task.title }}</text>
+                        <template v-if="TaskDesignation.Task == row.task.designation">
+                            <template v-for="alloc in planStore.by_task(row.task.dbId)" :key="alloc.dbId">
+                                <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
+                                    :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight"
+                                    fill="#42a5f5" rx="3" @click.stop="() => onTaskClick(row.task.dbId)" />
+                                <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4"
+                                    font-size="11" fill="#fff">{{ row.task.title }}</text>
+                            </template>
                         </template>
                     </template>
                 </g>
@@ -112,6 +112,15 @@
                                 :transform="`translate(${dateToX(row.task.scheduleTarget)}, ${i * rowHeight + rowHeight / 2})`">
                                 <rect x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
                                     stroke="#b06b00" />
+                            </g>
+                        </template>
+                        <template
+                            v-if="row.task.designation == TaskDesignation.Milestone && planStore.by_task(row.task.dbId).length > 0">
+                            <g
+                                :transform="`translate(${dateToX(planStore.by_task(row.task.dbId)[0]!.start)}, ${i * rowHeight + rowHeight / 2})`">
+                                <rect x="-6" y="-6" width="12" height="12"
+                                    :fill="planStore.by_task(row.task.dbId)[0]!.start <= row.task.scheduleTarget! ? '#66bb6a' : '#ef5350'"
+                                    transform="rotate(45)" stroke="#b06b00" />
                             </g>
                         </template>
                         <template v-if="row.task.designation == TaskDesignation.Requirement && row.task.earliestStart">
@@ -140,7 +149,6 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import type { ComputedRef } from 'vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
@@ -299,60 +307,28 @@ const rows = computed(() => {
 const visibleRows = computed(() => rows.value);
 const chartHeight = computed(() => visibleRows.value.length * rowHeight);
 
-// Allocation bounds map: computed map of computed refs per task id.
-// Build computed refs recursively so group bounds depend on child computed refs.
-const allocBoundsMap = computed(() => {
-    const map = new Map<number, ComputedRef<{ start: Date; end: Date } | null>>();
-
-    function makeBounds(t: Task): ComputedRef<{ start: Date; end: Date } | null> {
-        const existing = map.get(t.dbId);
-        if (existing) return existing;
-
-        const c = computed(() => {
-            // non-group tasks: derive directly from allocations
-            if (t.designation !== TaskDesignation.Group) {
-                const allocs = planStore.by_task(t.dbId) ?? [];
-                if (allocs.length === 0) return null;
-                const first = allocs[0];
-                if (!first) return null;
-                let minStart = first.start;
-                let maxEnd = first.end;
-                for (const a of allocs) {
-                    if (a.start < minStart) minStart = a.start;
-                    if (a.end > maxEnd) maxEnd = a.end;
-                }
-                return { start: minStart, end: maxEnd };
-            }
-
-            // group tasks: combine bounds of children (ignore nulls)
-            let minStart: Date | null = null;
-            let maxEnd: Date | null = null;
-            for (const child of t.children) {
-                const childComp = makeBounds(child);
-                const childBounds = childComp.value;
-                if (!childBounds) continue;
-                if (minStart == null || childBounds.start < minStart) minStart = childBounds.start;
-                if (maxEnd == null || childBounds.end > maxEnd) maxEnd = childBounds.end;
-            }
-            if (minStart == null || maxEnd == null) return null;
-            return { start: minStart, end: maxEnd };
-        });
-
-        map.set(t.dbId, c);
-        return c;
-    }
-
-    for (const t of taskStore.tasks) {
-        makeBounds(t);
-    }
-    return map;
-});
-
 
 // Arrow path between predecessor and successor allocations (choose last end of pred, first start of succ)
 function allocArrow(predId: number, succId: number): string {
-    const pred_allocs = planStore.by_task(predId).slice().sort((a, b) => a.end.getTime() - b.end.getTime());
-    const succ_allocs = planStore.by_task(succId).slice().sort((a, b) => a.start.getTime() - b.start.getTime());
+    // get allocations or build pseudo allocations for milestones/requirements when missing
+    const pred_allocs_raw = planStore.by_task(predId).slice().sort((a, b) => a.end.getTime() - b.end.getTime());
+    const succ_allocs_raw = planStore.by_task(succId).slice().sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    const predTask = taskStore.task(predId);
+    const succTask = taskStore.task(succId);
+
+    const pred_allocs = pred_allocs_raw.length > 0 ? pred_allocs_raw : (predTask ? [
+        // milestone fallback
+        ...(predTask.designation == TaskDesignation.Milestone && predTask.scheduleTarget ? [{ dbId: -predId, start: predTask.scheduleTarget, end: predTask.scheduleTarget, task: predTask, resources: [] }] : []),
+        // requirement fallback
+        ...(predTask.designation == TaskDesignation.Requirement && predTask.earliestStart ? [{ dbId: -predId, start: predTask.earliestStart, end: predTask.earliestStart, task: predTask, resources: [] }] : []),
+    ] : []);
+
+    const succ_allocs = succ_allocs_raw.length > 0 ? succ_allocs_raw : (succTask ? [
+        ...(succTask.designation == TaskDesignation.Milestone && succTask.scheduleTarget ? [{ dbId: -succId, start: succTask.scheduleTarget, end: succTask.scheduleTarget, task: succTask, resources: [] }] : []),
+        ...(succTask.designation == TaskDesignation.Requirement && succTask.earliestStart ? [{ dbId: -succId, start: succTask.earliestStart, end: succTask.earliestStart, task: succTask, resources: [] }] : []),
+    ] : []);
+
     if (pred_allocs.length == 0 || succ_allocs.length == 0) return "";
     const aPred = pred_allocs[pred_allocs.length - 1]!;
     const aSucc = succ_allocs[0]!;
