@@ -123,6 +123,62 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             }
         }
     }
+
+    // Calculate fulfilled milestones: for each milestone node, check predecessors. If all
+    // predecessors have assignments, the milestone is fulfilled at the maximum end time of
+    // predecessor allocations.
+    for nidx in project.g.node_indices() {
+        if let Node::Milestone(m_rc) = project.g.node_weight(nidx).expect("node must exist") {
+            let milestone = m_rc.borrow();
+            // collect predecessor task ids
+            let pred_task_ids: Vec<i32> = project
+                .g
+                .neighbors_directed(nidx, Direction::Incoming)
+                .filter_map(|pidx| match project.g.node_weight(pidx) {
+                    Some(Node::Task(t)) => Some(t.borrow().db_id),
+                    _ => None,
+                })
+                .collect();
+
+            if pred_task_ids.is_empty() {
+                continue;
+            }
+
+            let mut max_end: Option<NaiveDateTime> = None;
+            let mut all_assigned = true;
+            for tid in pred_task_ids.iter() {
+                if let Some(assign_map) = plan.assignments.get(tid) {
+                    // flatten the assign_map into an iterator of end timestamps and take the max
+                    let task_max_end = itertools::max(
+                        assign_map
+                            .values()
+                            .map(|slot| slot.range.end().value().expect("no unbound intervals")),
+                    );
+                    if let Some(end) = task_max_end {
+                        max_end = match max_end {
+                            None => Some(end),
+                            Some(prev) => Some(std::cmp::max(prev, end)),
+                        };
+                    }
+                } else {
+                    all_assigned = false;
+                    break;
+                }
+            }
+
+            if all_assigned {
+                if let Some(date) = max_end {
+                    plan.fulfilled_milestones.push(
+                        crate::scheduling::datastructures::FulfilledMilestone {
+                            task_id: milestone.db_id,
+                            date,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
     plan
 }
 

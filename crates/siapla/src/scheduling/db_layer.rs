@@ -382,5 +382,15 @@ pub async fn store_plan(ctx: &Context, _problem: &Project, plan: &Plan) -> anyho
             am.insert(txn).await?;
         }
     }
+    // store fulfilled milestones as allocations (no allocated_resource entries)
+    for fm in &plan.fulfilled_milestones {
+        let am = allocation::ActiveModel {
+            id: ActiveValue::NotSet,
+            task_id: ActiveValue::Set(fm.task_id),
+            start: ActiveValue::Set(fm.date.and_utc()),
+            end: ActiveValue::Set(fm.date.and_utc()),
+        };
+        am.insert(txn).await?;
+    }
     Ok(())
 }

@@ -49,6 +49,12 @@ pub struct Milestone {
 }
 
 #[derive(Debug, Clone)]
+pub struct FulfilledMilestone {
+    pub task_id: i32,
+    pub date: NaiveDateTime,
+}
+
+#[derive(Debug, Clone)]
 pub struct Group {
     pub parent: Option<Weak<RefCell<Group>>>,
     pub db_id: i32,
@@ -99,4 +105,5 @@ pub struct ResourceConstraintEntry {
 #[derive(Debug, Default, Clone)]
 pub struct Plan {
     pub assignments: HashMap<i32, HashMap<i32, Slot>>, // task_id -> (resource_id -> Slot)
+    pub fulfilled_milestones: Vec<FulfilledMilestone>,
 }
