@@ -5,7 +5,7 @@ import { computed } from 'vue';
 import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { type Task, useTaskStore } from './task';
-import { type PlanQuery } from 'src/gql/graphql';
+import { TaskDesignation, type PlanQuery } from 'src/gql/graphql';
 
 export interface Allocation {
   dbId: number;
@@ -65,8 +65,27 @@ export const usePlanStore = defineStore('planStore', () => {
     })
   ))
 
-  const start = computed(() => { return new Date(Math.min(...allocations.value.map((a) => a.start.getTime()))) })
-  const end = computed(() => { return new Date(Math.max(...allocations.value.map((a) => a.end.getTime()))) })
+  // include task-based dates (requirements / milestones) in the overall plan bounds
+  const taskStore = useTaskStore();
+
+  const otherDates = computed(() => {
+    const requirementTimes = (taskStore.tasks ?? []).filter((t: Task) => t.designation == TaskDesignation.Requirement && t.earliestStart != null).flatMap((t: Task) => { return t.earliestStart!.getTime() });
+    const milestoneTargets = (taskStore.tasks ?? []).filter((t: Task) => t.designation == TaskDesignation.Milestone && t.scheduleTarget != null).flatMap((t: Task) => { return t.scheduleTarget!.getTime() });
+    return [...requirementTimes, ...milestoneTargets];
+  })
+  const start = computed(() => {
+    const allocStarts = allocations.value.map((a) => a.start.getTime());
+    const all = [...allocStarts, ...otherDates.value];
+    if (all.length === 0) return new Date();
+    return new Date(Math.min(...all));
+  });
+
+  const end = computed(() => {
+    const allocEnds = allocations.value.map((a) => a.end.getTime());
+    const all = [...allocEnds, ...otherDates.value];
+    if (all.length === 0) return new Date();
+    return new Date(Math.max(...all));
+  });
   const resource_ids = computed(() => { return Array.from(allocations_by_resource.value.keys()) })
   return {
     gql: {

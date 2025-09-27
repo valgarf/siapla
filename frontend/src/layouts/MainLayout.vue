@@ -85,17 +85,21 @@ import DialogHandler from 'components/DialogHandler.vue';
 
 const pages: PageLinkProps[] = [
   {
-    title: "Overview",
-    link: "/"
-  },
-  {
     title: "Tasks",
-    link: "/tasks"
+    link: "/"
   },
   {
     title: "Resources",
     link: "/resources"
-  },
+  }
+  // {
+  //   title: "Tasks",
+  //   link: "/tasks"
+  // },
+  // {
+  //   title: "Resources",
+  //   link: "/resources"
+  // },
 
 
 ]

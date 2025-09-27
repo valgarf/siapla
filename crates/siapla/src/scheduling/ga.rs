@@ -108,7 +108,7 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             Node::Task(_) => None,
             Node::Requirement(ref_cell) => Some(ref_cell.borrow().earliest_start),
             Node::Milestone(_) => None,
-            Node::Group(_) => panic!("Dependency graph should nothave groups anymore"),
+            Node::Group(_) => panic!("Dependency graph should not have groups anymore"),
         },
         |_, _| (),
     );
