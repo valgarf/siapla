@@ -1,8 +1,15 @@
 <template>
 
   <div class="gantt-grid">
-    <!-- Top left: empty -->
-    <div class="gantt-corner"></div>
+    <!-- Top left: new task / resource buttons -->
+    <div class="gantt-corner">
+      <div class="corner-buttons">
+        <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
+        </q-btn>
+        <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
+        </q-btn>
+      </div>
+    </div>
     <!-- Top right: header -->
     <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
       @mouseleave="onPanEnd">
@@ -44,9 +51,9 @@
       :style="{ height: chartHeight + 'px', width: resourceColWidth + 'px', position: 'relative', overflow: 'hidden' }"
       @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
       <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
-        <div v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i" class="gantt-resource-row"
-          :style="{ height: rowHeight + 'px' }">
-          <span>{{ resourceStore.resource(rid)?.name ?? '<UNNAMED>' }}</span>
+        <div v-for="(res, i) in Array.from(resourceStore.resources)" :key="i" class="gantt-resource-row"
+          :style="{ height: rowHeight + 'px' }" @click.stop="() => onResourceClick(res.dbId)">
+          <span>{{ resourceStore.resource(res.dbId)?.name ?? '<UNNAMED>' }}</span>
         </div>
       </div>
     </div>
@@ -64,8 +71,8 @@
         </g>
         <!-- Resource availability bars for all non-vacation segments in the visible timeframe -->
         <g>
-          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'avail'+rid">
-            <template v-for="seg in combinedAvailabilityFor(rid)" :key="'seg'+seg.start+seg.end">
+          <template v-for="(res, i) in resourceStore.resources" :key="'avail'+res.dbId">
+            <template v-for="seg in combinedAvailabilityFor(res.dbId)" :key="'seg'+seg.start+seg.end">
               <rect :x="dateToX(seg.start)" :y="i * rowHeight" :width="dateToX(seg.end) - dateToX(seg.start)"
                 :height="rowHeight" fill="#fff" opacity="0.7" stroke="none" />
             </template>
@@ -73,7 +80,7 @@
         </g>
         <!-- Horizontal lines between resources -->
         <g>
-          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="i">
+          <template v-for="(res, i) in resourceStore.resources" :key="i">
             <line :x1="0" :y1="i * rowHeight" :x2="timelineWidth" :y2="i * rowHeight" stroke="#ddd" stroke-width="1" />
           </template>
           <line :x1="0" :y1="planStore.resource_ids.length * rowHeight" :x2="timelineWidth"
@@ -87,7 +94,7 @@
         </g>
         <!-- Vacation bars per resource -->
         <!-- <g>
-          <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="'vac'+rid">
+          <template v-for="(res, i) in resourceStore.resources" :key="'vac'+rid">
             <template v-for="vac in resourceStore.resource(rid)?.vacations ?? []" :key="'vac'+rid+vac.from+vac.until">
               <rect :x="dateToX(vac.from)" :y="i * rowHeight" :width="dateToX(vac.until) - dateToX(vac.from)"
                 :height="rowHeight" fill="#f3f4f5" opacity="1" stroke="none" />
@@ -101,7 +108,8 @@
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="rid">
             <template v-for="alloc in planStore.by_resource(rid)" :key="rid+'-'+alloc.dbId">
               <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5" rx="3" />
+                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5" rx="3"
+                @click.stop="() => onAllocClick(alloc.task?.dbId)" />
               <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11"
                 fill="#fff">{{ alloc.task?.title ?? '' }}</text>
             </template>
@@ -205,15 +213,24 @@ body,
 .gantt-chart-scroll:active {
   cursor: grabbing;
 }
+
+.corner-buttons {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  justify-content: center;
+}
 </style>
 <script setup lang="ts">
 
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
+import { useDialogStore, ResourceDialogData, TaskDialogData, NewTaskDialogData, NewResourceDialogData } from 'src/stores/dialog';
 import { ref, computed } from 'vue';
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
+const dialogStore = useDialogStore();
 
 const resourceColWidth = 160;
 const rowHeight = 40;
@@ -285,7 +302,7 @@ const months = computed(() => {
 });
 
 const timelineWidth = computed(() => days.value.length * dayWidth);
-const chartHeight = computed(() => Array.from(planStore.resource_ids).length * rowHeight);
+const chartHeight = computed(() => resourceStore.resources.length * rowHeight);
 
 function dateToX(date: string | Date): number {
   const d = parseDate(date);
@@ -349,6 +366,26 @@ function onPanEnd() {
 function combinedAvailabilityFor(rid: number) {
   const refArr = resourceStore.getCombinedAvailability(rid, startDay.value, endDay.value);
   return refArr?.value ?? [];
+}
+
+function onResourceClick(rid: number) {
+  // open resource dialog for the clicked resource
+  dialogStore.pushDialog(new ResourceDialogData(rid));
+}
+
+function onAllocClick(taskId: number | undefined | null) {
+  // try to extract a task dbId from the allocation and open its dialog
+  if (taskId != null) {
+    dialogStore.pushDialog(new TaskDialogData(taskId));
+  }
+}
+
+function onNewTask() {
+  dialogStore.pushDialog(new NewTaskDialogData());
+}
+
+function onNewResource() {
+  dialogStore.pushDialog(new NewResourceDialogData());
 }
 
 </script>
