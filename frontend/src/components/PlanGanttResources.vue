@@ -2,7 +2,7 @@
 
   <div class="gantt-grid">
     <!-- Top left: new task / resource buttons -->
-    <div class="gantt-corner">
+    <div class="gantt-corner" id="corner-resources">
       <div class="corner-buttons">
         <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
         </q-btn>
@@ -21,20 +21,21 @@
             <template v-for="(month, i) in months" :key="i">
               <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff" stroke="#ccc"
                 stroke-width="1" />
-              <text :x="month.x + 4" :y="monthRowHeight - 6" font-size="12" fill="#333">{{ month.label }}</text>
-              <!-- Draw vertical bar at the end of each month except the last -->
-              <!-- <line v-if="i < months.length - 1" :x1="month.x + month.width" y1="0" :x2="month.x + month.width" :y2="monthRowHeight" stroke="#ccc" stroke-width="1" /> -->
+              <text :x="month.x + 4" :y="monthRowHeight - 6" font-size="12" fill="#333">
+                {{ month.label }}
+              </text>
             </template>
           </g>
           <!-- Day row with weekend highlight -->
           <g>
             <template v-for="(day, i) in days" :key="i">
               <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" :y="monthRowHeight"
-                :width="dayWidth" :height="dayRowHeight" fill="#fff" stroke="#ccc" stroke-width="1" />
+                :width="dayWidth" :height="dayRowHeight" fill="#fffbe6" stroke="#ccc" stroke-width="1" />
               <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fff"
                 stroke="#ccc" stroke-width="1" />
-              <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{ day.label
-                }}</text>
+              <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">
+                {{ day.label }}
+              </text>
             </template>
           </g>
           <!-- Vertical lines between days -->
@@ -129,7 +130,8 @@ body,
   padding: 0;
   overflow: hidden;
 }
-
+</style>
+<style scoped>
 .gantt-grid {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -154,7 +156,7 @@ body,
   background: #fff;
   border-bottom: 1px solid #ddd;
   border-right: 1px solid #ddd;
-  width: var(--resource-col-width, 160px);
+  width: var(--resource-col-width, 200px);
   height: var(--header-height, 50px);
 }
 
@@ -189,7 +191,7 @@ body,
   height: 40px;
   border-bottom: 1px solid #eee;
   padding-left: 8px;
-  font-size: 15px;
+  font-size: 12px;
   color: #333;
 }
 
@@ -232,7 +234,7 @@ const planStore = usePlanStore();
 const resourceStore = useResourceStore();
 const dialogStore = useDialogStore();
 
-const resourceColWidth = 160;
+const resourceColWidth = 200;
 const rowHeight = 40;
 const barPadding = 8;
 const barHeight = rowHeight - barPadding * 2;
@@ -243,7 +245,7 @@ const headerHeight = monthRowHeight + dayRowHeight;
 
 const startDay = computed(() => {
   const d = planStore.start;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
 });
 const endDay = computed(() => {
   const d = planStore.end;

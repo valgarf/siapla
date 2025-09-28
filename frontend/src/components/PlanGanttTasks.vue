@@ -1,9 +1,11 @@
 <template>
     <div class="gantt-grid">
         <!-- Top left: new task button -->
-        <div class="gantt-corner">
+        <div class="gantt-corner" id="corner-tasks">
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
+                </q-btn>
+                <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
                 </q-btn>
             </div>
         </div>
@@ -18,18 +20,22 @@
                         <template v-for="(month, i) in months" :key="i">
                             <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
                                 stroke="#ccc" stroke-width="1" />
-                            <text :x="month.x + 4" :y="monthRowHeight - 6" font-size="12" fill="#333">{{ month.label
-                                }}</text>
+                            <text :x="month.x + 4" :y="monthRowHeight - 6" font-size="12" fill="#333">
+                                {{ month.label }}
+                            </text>
                         </template>
                     </g>
                     <!-- Day row -->
                     <g>
                         <template v-for="(day, i) in days" :key="i">
-                            <rect :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fff"
+                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x"
+                                :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fffbe6"
                                 stroke="#ccc" stroke-width="1" />
-                            <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{
-                                day.label
-                                }}</text>
+                            <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
+                                fill="#fff" stroke="#ccc" stroke-width="1" />
+                            <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">
+                                {{ day.label }}
+                            </text>
                         </template>
                     </g>
                 </svg>
@@ -60,6 +66,13 @@
                         <path d="M0,0 L10,5 L0,10 z" fill="#333" />
                     </marker>
                 </defs>
+                <!-- Weekend highlight in chart -->
+                <g>
+                    <template v-for="(day, i) in days" :key="'w'+i">
+                        <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" y="0"
+                            :width="dayWidth" :height="chartHeight" fill="#fffbe6" opacity="1" stroke="none" />
+                    </template>
+                </g>
 
                 <!-- Horizontal separators -->
                 <g>
@@ -78,14 +91,49 @@
                     </template>
                 </g>
 
+                <!-- Milestone indication lines -->
+                <g>
+                    <template v-for="(row, i) in visibleRows" :key="'symbol'+row.task.dbId">
+                        <template
+                            v-if="row.task.designation == TaskDesignation.Milestone && planStore.by_task(row.task.dbId).length > 0">
+                            <line :x1="dateToX(planStore.by_task(row.task.dbId)[0]!.start)"
+                                :y1="i * rowHeight + rowHeight / 2" :x2="dateToX(row.task.scheduleTarget)"
+                                :y2="i * rowHeight + rowHeight / 2"
+                                :stroke="planStore.by_task(row.task.dbId)[0]!.start <= row.task.scheduleTarget! ? '#66bb6a' : '#ef5350'"
+                                stroke-width="3" />
+                        </template>
+                    </template>
+                </g>
+
+                <!-- Dependency arrows (predecessor -> successor) -->
+                <g stroke="#333" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
+                    <template v-for="row in visibleRows" :key="'deps'+row.task.dbId">
+                        <template v-for="pred of row.task.predecessors" :key="row.task.dbId + '-pred-' + pred.dbId">
+                            <path v-if="allocArrow(pred.dbId, row.task.dbId)"
+                                :d="allocArrow(pred.dbId, row.task.dbId)" />
+                        </template>
+                    </template>
+                </g>
+
                 <!-- Group bars: span from first child start to last child end -->
                 <g>
                     <template v-for="(row, i) in visibleRows" :key="'group'+row.task.dbId">
-                        <rect
-                            v-if="row.task.designation == TaskDesignation.Group && planStore.by_task(row.task.dbId).length > 0"
-                            :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start)" :y="i * rowHeight + barPadding"
-                            :width="dateToX(planStore.by_task(row.task.dbId)[0]?.end) - dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
-                            :height="barHeight" fill="#66bb6a" rx="3" />
+                        <template
+                            v-if="row.task.designation == TaskDesignation.Group && planStore.by_task(row.task.dbId).length > 0">
+                            <template v-if="collapsedGroups.has(row.task.dbId)">
+                                <rect :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
+                                    :y="i * rowHeight + barPadding"
+                                    :width="dateToX(planStore.by_task(row.task.dbId)[0]?.end) - dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
+                                    :height="barHeight" fill="#66bb6a" rx="3"
+                                    @click.stop="() => onTaskClick(row.task.dbId)" />
+                                <text :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start) + 4"
+                                    :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff">{{
+                                        row.task.title }}</text>
+                            </template>
+                            <polygon v-else
+                                :points="makeGroupBar(dateToX(planStore.by_task(row.task.dbId)[0]?.start), dateToX(planStore.by_task(row.task.dbId)[0]?.end), i * rowHeight + rowHeight * .5)"
+                                fill="black" @click.stop="() => onTaskClick(row.task.dbId)" />
+                        </template>
                     </template>
                 </g>
 
@@ -110,7 +158,7 @@
                         <template v-if="row.task.designation == TaskDesignation.Milestone && row.task.scheduleTarget">
                             <g
                                 :transform="`translate(${dateToX(row.task.scheduleTarget)}, ${i * rowHeight + rowHeight / 2})`">
-                                <rect x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
+                                <rect :x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
                                     stroke="#b06b00" />
                             </g>
                         </template>
@@ -132,15 +180,6 @@
                     </template>
                 </g>
 
-                <!-- Dependency arrows (predecessor -> successor) -->
-                <g stroke="#333" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
-                    <template v-for="row in visibleRows" :key="'deps'+row.task.dbId">
-                        <template v-for="pred of row.task.predecessors" :key="row.task.dbId + '-pred-' + pred.dbId">
-                            <path v-if="allocArrow(pred.dbId, row.task.dbId)"
-                                :d="allocArrow(pred.dbId, row.task.dbId)" />
-                        </template>
-                    </template>
-                </g>
 
             </svg>
         </div>
@@ -152,7 +191,7 @@ import { ref, computed } from 'vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
-import { useDialogStore, TaskDialogData, NewTaskDialogData } from 'src/stores/dialog';
+import { useDialogStore, TaskDialogData, NewTaskDialogData, NewResourceDialogData } from 'src/stores/dialog';
 
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
@@ -287,6 +326,10 @@ function onNewTask() {
     dialogStore.pushDialog(new NewTaskDialogData());
 }
 
+function onNewResource() {
+    dialogStore.pushDialog(new NewResourceDialogData());
+}
+
 // Build a flattened list of tasks grouped by parent groups, with depth
 const rows = computed(() => {
     const tasks = taskStore.tasks.slice();
@@ -337,10 +380,49 @@ function allocArrow(predId: number, succId: number): string {
     const x2 = dateToX(aSucc.start);
     const y2 = (rowIndexForTask(succId) + 0.5) * rowHeight;
     // simple elbow path: horizontal from x1 to midX, vertical to y2, horizontal to x2
-    const midX = x1 + Math.max(12, (x2 - x1) / 2);
-    return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    // const midX = x1 + Math.max(12, (x2 - x1) / 2);
+    // return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+    // const midX = x1 + Math.max(12, (x2 - x1) / 2);
+    const start = [x1, y1];
+    const coords = [];
+    let lastX = x1;
+    let targetX = x2;
+    if (succTask != null && [TaskDesignation.Milestone].includes(succTask.designation)) {
+        targetX = x2 - 8;
+    }
+
+    if (predTask != null && [TaskDesignation.Task, TaskDesignation.Group].includes(predTask.designation)) {
+        lastX = lastX + 5;
+        coords.push([lastX, y1]);
+    }
+    if (lastX > targetX - 15) {
+        const y = y1 < y2 ? y2 - 13 : y2 + 13;
+        coords.push([lastX, y]);
+        coords.push([targetX - 15, y]);
+        coords.push([targetX - 15, y2]);
+    }
+    else {
+        coords.push([lastX, y2]);
+    }
+    coords.push([targetX, y2]);
+    return `M ${start[0]} ${start[1]}` + coords.map(c => `L ${c[0]} ${c[1]}`).join(' ');
 }
 
+function makeGroupBar(x1: number, x2: number, y: number) {
+    const height = 8;
+    const arrowWidth = 7;
+    const arrowHeight = 7;
+
+    const points = [];
+    points.push([x1, y - height / 2]);
+    points.push([x1, y + height / 2 + arrowHeight]);
+    points.push([x1 + arrowWidth, y + height / 2]);
+    points.push([x2 - arrowWidth, y + height / 2]);
+    points.push([x2, y + height / 2 + arrowHeight]);
+    points.push([x2, y - height / 2]);
+    return points.map(p => `${p[0]},${p[1]}`).join(' ')
+
+}
 function rowIndexForTask(tid: number) {
     for (let i = 0; i < visibleRows.value.length; i++) {
         const r = visibleRows.value[i];
@@ -353,8 +435,17 @@ function rowIndexForTask(tid: number) {
 
 </script>
 
+<style>
+html,
+body,
+#app {
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+</style>
 <style scoped>
-/* reuse styles from PlanGanttResources.vue with slight adjustments */
 .gantt-grid {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -414,7 +505,7 @@ function rowIndexForTask(tid: number) {
     height: 40px;
     border-bottom: 1px solid #eee;
     padding-left: 8px;
-    font-size: 15px;
+    font-size: 12px;
     color: #333;
 }
 
