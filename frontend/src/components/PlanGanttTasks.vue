@@ -366,6 +366,7 @@ function allocArrow(predId: number, succId: number): string {
     const succTask = taskStore.task(succId);
     let predCollapsedGroup = predTask?.parent;
     let succCollapsedGroup = succTask?.parent;
+    // check if source or target are within a collapsed group and get that group
     while (predCollapsedGroup != null) {
         if (collapsedGroups.value.has(predCollapsedGroup.dbId)) {
             break;
@@ -379,10 +380,13 @@ function allocArrow(predId: number, succId: number): string {
         succCollapsedGroup = succCollapsedGroup.parent
     }
     if (predCollapsedGroup != null && predCollapsedGroup == succCollapsedGroup) {
+        // both in the same collapsed group, nothing to draw
         return ""
     }
 
 
+    // get the allocations for the task. milestones and requirements have date values that can be used
+    // directly if there is no corresponding allocation (there never is for requirements, there is for fulfilled milestones)
     const pred_allocs = pred_allocs_raw.length > 0 ? pred_allocs_raw : (predTask ? [
         // milestone fallback
         ...(predTask.designation == TaskDesignation.Milestone && predTask.scheduleTarget ? [{ dbId: -predId, start: predTask.scheduleTarget, end: predTask.scheduleTarget, task: predTask, resources: [] }] : []),
@@ -395,35 +399,37 @@ function allocArrow(predId: number, succId: number): string {
         ...(succTask.designation == TaskDesignation.Requirement && succTask.earliestStart ? [{ dbId: -succId, start: succTask.earliestStart, end: succTask.earliestStart, task: succTask, resources: [] }] : []),
     ] : []);
 
+    // can only draw arrows if we have allocations
     if (pred_allocs.length == 0 || succ_allocs.length == 0) return "";
     const aPred = pred_allocs[pred_allocs.length - 1]!;
     const aSucc = succ_allocs[0]!;
+    // start and end positions
     const x1 = dateToX(aPred.end);
     const y1 = (rowIndexForTask(predCollapsedGroup?.dbId ?? predId) + 0.5) * rowHeight;
     const x2 = dateToX(aSucc.start);
     const y2 = (rowIndexForTask(succCollapsedGroup?.dbId ?? succId) + 0.5) * rowHeight;
-    // simple elbow path: horizontal from x1 to midX, vertical to y2, horizontal to x2
-    // const midX = x1 + Math.max(12, (x2 - x1) / 2);
-    // return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
-    // const midX = x1 + Math.max(12, (x2 - x1) / 2);
     const start = [x1, y1];
     const coords = [];
     let lastX = x1;
     let targetX = x2;
     let targetY = y2;
     if (succCollapsedGroup != null) {
+        // target is a collapsed group, draw arrow towards the side of the group
         targetY = y1 < y2 ? y2 - barHeight / 2 : y2 + barHeight / 2;
     }
     if (succTask != null && [TaskDesignation.Milestone].includes(succTask.designation) && succCollapsedGroup == null) {
+        // target is a milestone, leave a little more space to not collide with the milestone symbol
         targetX = x2 - 8;
     }
 
     if (predTask != null && [TaskDesignation.Task, TaskDesignation.Group].includes(predTask.designation) && predCollapsedGroup == null) {
+        // when starting from a normal task / group bar: move right for a very short line
         lastX = lastX + 5;
         coords.push([lastX, y1]);
     }
 
     if (succCollapsedGroup != null) {
+        // target is a collapsed group, handle a vertical arrow
         if (lastX != targetX) {
             let y = y1
             if (targetX < lastX) {
@@ -437,6 +443,8 @@ function allocArrow(predId: number, succId: number): string {
     }
     else {
         if (lastX > targetX - 15) {
+            // last x position too large, we need to have a few extra coordinates to draw the line
+            // to a smaller x value
             const y = y1 < y2 ? y2 - 15 : y2 + 15;
             coords.push([lastX, y]);
             lastX = targetX - 15
@@ -471,23 +479,9 @@ function rowIndexForTask(tid: number) {
     return -1;
 }
 
-// Helpers for template: nothing extra required, imports are available in script setup
-
 </script>
 
 <style>
-xxx {
-    a: #ffb74d;
-    b: #b06b00;
-    c: #3f8d43;
-    e: #ef5350;
-    e: #d21714;
-    f: #ffb74d;
-    s: #2c0b41;
-    r: #0a6fc2;
-}
-
-
 html,
 body,
 #app {
