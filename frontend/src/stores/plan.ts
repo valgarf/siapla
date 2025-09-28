@@ -133,14 +133,14 @@ export const usePlanStore = defineStore('planStore', () => {
   const start = computed(() => {
     const allocStarts = allocations.value.map((a) => a.start.getTime());
     const all = [...allocStarts, ...otherDates.value];
-    if (all.length === 0) return new Date();
+    if (all.length === 0 || queryGetAll.loading.value || taskStore.loading) return new Date();
     return new Date(Math.min(...all));
   });
 
   const end = computed(() => {
     const allocEnds = allocations.value.map((a) => a.end.getTime());
     const all = [...allocEnds, ...otherDates.value];
-    if (all.length === 0) return new Date();
+    if (all.length === 0 || queryGetAll.loading.value || taskStore.loading) return new Date();
     return new Date(Math.max(...all));
   });
   const resource_ids = computed(() => { return Array.from(allocations_by_resource.value.keys()) })

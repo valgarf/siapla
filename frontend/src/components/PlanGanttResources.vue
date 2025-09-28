@@ -73,7 +73,7 @@
         <!-- Resource availability bars for all non-vacation segments in the visible timeframe -->
         <g>
           <template v-for="(res, i) in resourceStore.resources" :key="'avail'+res.dbId">
-            <template v-for="seg in combinedAvailabilityFor(res.dbId)" :key="'seg'+seg.start+seg.end">
+            <template v-for="seg in getCombinedAvailability(res.dbId)" :key="'seg'+seg.start+seg.end">
               <rect :x="dateToX(seg.start)" :y="i * rowHeight" :width="dateToX(seg.end) - dateToX(seg.start)"
                 :height="rowHeight" fill="#fff" opacity="0.7" stroke="none" />
             </template>
@@ -364,10 +364,16 @@ function onPanEnd() {
   isPanning.value = false;
 }
 
+const combinedAvailabiltyQuery = resourceStore.fetchCombinedAvailability(startDay, endDay);
 // Return the unwrapped array from the store's computed Ref for template iteration.
-function combinedAvailabilityFor(rid: number) {
-  const refArr = resourceStore.getCombinedAvailability(rid, startDay.value, endDay.value);
-  return refArr?.value ?? [];
+function getCombinedAvailability(resourceId: number): { start: Date, end: Date }[] {
+  const q = combinedAvailabiltyQuery;
+  if (!q || !q.result || q.result.value == null) return [] as Array<{ start: Date; end: Date }>;
+  const data = q.result.value;
+  const r = data.resources.find((rr) => rr.dbId === resourceId);
+  if (!r) return [] as Array<{ start: Date; end: Date }>;
+  return r.combinedAvailability.map((it) => ({ start: new Date(it.start), end: new Date(it.end) }));
+
 }
 
 function onResourceClick(rid: number) {

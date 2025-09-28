@@ -217,42 +217,28 @@ export const useResourceStore = defineStore('resourceStore', () => {
   const mutSaveResource = useMutation(RESOURCE_SAVE_MUTATION);
   const mutDeleteResource = useMutation(RESOURCE_DELETE_MUTATION);
   // cache for combined availability queries keyed by start_end -> stores the useQuery return object
-  const combinedQueryCache: Map<string, UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }>> = new Map();
 
+  const allCombinedQueries: UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }>[] = [];
   async function refetch(resourceId: number | null) { // eslint-disable-line @typescript-eslint/no-unused-vars
     // TODO: optimize to only refetch the changed resource?
+    console.log("refetch")
     await queryGetAll.refetch();
-    for (const q of combinedQueryCache.values()) {
+    for (const q of allCombinedQueries) {
       await q.refetch();
     }
   }
   // Fetch combined availability for ALL resources in the given window and cache the query object.
   // Returns the useQuery return value (not the resolved data) so callers can react to q.result.
-  function fetchCombinedAvailability(start: Date, end: Date): UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }> {
-    const startStr = start.toISOString();
-    const endStr = end.toISOString();
-    const key = `${startStr}_${endStr}`;
-    let q = combinedQueryCache.get(key);
-    if (q != null) {
-      return q;
-    }
-    q = useQuery(COMBINED_AVAILABILITY_QUERY, { start: startStr, end: endStr });
-    combinedQueryCache.set(key, q);
+  function fetchCombinedAvailability(start: Ref<Date>, end: Ref<Date>): UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }> {
+    const q = useQuery(COMBINED_AVAILABILITY_QUERY, computed(() => {
+      return {
+        start: start.value.toISOString(), end: end.value.toISOString()
+      }
+    }));
+    allCombinedQueries.push(q)
     return q;
   }
 
-  // Return a computed list of intervals for the given resource id and window.
-  // If the query hasn't completed or there is no data yet, returns an empty array.
-  function getCombinedAvailability(resourceId: number, start: Date, end: Date): Ref<Array<{ start: Date, end: Date }>> {
-    const q = fetchCombinedAvailability(start, end);
-    return computed(() => {
-      if (!q || !q.result || q.result.value == null) return [] as Array<{ start: Date; end: Date }>;
-      const data = q.result.value;
-      const r = data.resources.find((rr) => rr.dbId === resourceId);
-      if (!r) return [] as Array<{ start: Date; end: Date }>;
-      return r.combinedAvailability.map((it) => ({ start: new Date(it.start), end: new Date(it.end) }));
-    });
-  }
 
   const apollo_objs = [queryGetAll, mutSaveResource, mutDeleteResource];
   const resource_map = computed(() => {
@@ -317,7 +303,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
     resource: (dbId: number): Resource | undefined => {
       return resource_map.value?.get(dbId);
     },
-    getCombinedAvailability,
+    fetchCombinedAvailability,
     saveResource,
     deleteResource,
   };
