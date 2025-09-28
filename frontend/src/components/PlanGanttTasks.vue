@@ -50,8 +50,12 @@
                     :style="{ height: rowHeight + 'px', paddingLeft: (8 + row.depth * 12) + 'px' }">
                     <q-btn flat dense size="sm" v-if="row.task.designation == TaskDesignation.Group"
                         @click.stop="toggleGroup(row.task.dbId)"
-                        :icon="collapsedGroups.has(row.task.dbId) ? 'chevron_right' : 'expand_more'" />
-                    <span @click.stop="() => onTaskClick(row.task.dbId)">{{ row.task.title }}</span>
+                        :icon="collapsedGroups.has(row.task.dbId) ? 'chevron_right' : 'expand_more'"
+                        :style="{ padding: '0px' }" />
+                    <span @click.stop="() => onTaskClick(row.task.dbId)"
+                        :style="{ marginLeft: row.task.designation != TaskDesignation.Group ? '17.15px' : '0px' }">{{
+                            row.task.title
+                        }}</span>
                 </div>
             </div>
         </div>
@@ -107,10 +111,9 @@
 
                 <!-- Dependency arrows (predecessor -> successor) -->
                 <g stroke="#333" stroke-width="1.2" fill="none" marker-end="url(#arrow)">
-                    <template v-for="row in visibleRows" :key="'deps'+row.task.dbId">
-                        <template v-for="pred of row.task.predecessors" :key="row.task.dbId + '-pred-' + pred.dbId">
-                            <path v-if="allocArrow(pred.dbId, row.task.dbId)"
-                                :d="allocArrow(pred.dbId, row.task.dbId)" />
+                    <template v-for="task in taskStore.tasks" :key="'deps'+task.dbId">
+                        <template v-for="pred of task.predecessors" :key="task.dbId + '-pred-' + pred.dbId">
+                            <path v-if="allocArrow(pred.dbId, task.dbId)" :d="allocArrow(pred.dbId, task.dbId)" />
                         </template>
                     </template>
                 </g>
@@ -124,7 +127,7 @@
                                 <rect :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
                                     :y="i * rowHeight + barPadding"
                                     :width="dateToX(planStore.by_task(row.task.dbId)[0]?.end) - dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
-                                    :height="barHeight" fill="#66bb6a" rx="3"
+                                    :height="barHeight" fill="#6a1b9a" rx="3"
                                     @click.stop="() => onTaskClick(row.task.dbId)" />
                                 <text :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start) + 4"
                                     :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff">{{
@@ -174,7 +177,7 @@
                         <template v-if="row.task.designation == TaskDesignation.Requirement && row.task.earliestStart">
                             <g
                                 :transform="`translate(${dateToX(row.task.earliestStart)}, ${i * rowHeight + rowHeight / 2})`">
-                                <circle r="6" fill="#ab47bc" stroke="#6a1b9a" />
+                                <circle r="6" fill="#ffb74d" stroke="#6a1b9a" />
                             </g>
                         </template>
                     </template>
@@ -359,6 +362,24 @@ function allocArrow(predId: number, succId: number): string {
 
     const predTask = taskStore.task(predId);
     const succTask = taskStore.task(succId);
+    let predCollapsedGroup = predTask?.parent;
+    let succCollapsedGroup = succTask?.parent;
+    while (predCollapsedGroup != null) {
+        if (collapsedGroups.value.has(predCollapsedGroup.dbId)) {
+            break;
+        }
+        predCollapsedGroup = predCollapsedGroup.parent
+    }
+    while (succCollapsedGroup != null) {
+        if (collapsedGroups.value.has(succCollapsedGroup.dbId)) {
+            break;
+        }
+        succCollapsedGroup = succCollapsedGroup.parent
+    }
+    if (predCollapsedGroup != null && predCollapsedGroup == succCollapsedGroup) {
+        return ""
+    }
+
 
     const pred_allocs = pred_allocs_raw.length > 0 ? pred_allocs_raw : (predTask ? [
         // milestone fallback
@@ -376,9 +397,9 @@ function allocArrow(predId: number, succId: number): string {
     const aPred = pred_allocs[pred_allocs.length - 1]!;
     const aSucc = succ_allocs[0]!;
     const x1 = dateToX(aPred.end);
-    const y1 = (rowIndexForTask(predId) + 0.5) * rowHeight;
+    const y1 = (rowIndexForTask(predCollapsedGroup?.dbId ?? predId) + 0.5) * rowHeight;
     const x2 = dateToX(aSucc.start);
-    const y2 = (rowIndexForTask(succId) + 0.5) * rowHeight;
+    const y2 = (rowIndexForTask(succCollapsedGroup?.dbId ?? succId) + 0.5) * rowHeight;
     // simple elbow path: horizontal from x1 to midX, vertical to y2, horizontal to x2
     // const midX = x1 + Math.max(12, (x2 - x1) / 2);
     // return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
@@ -387,24 +408,38 @@ function allocArrow(predId: number, succId: number): string {
     const coords = [];
     let lastX = x1;
     let targetX = x2;
-    if (succTask != null && [TaskDesignation.Milestone].includes(succTask.designation)) {
+    let targetY = y2;
+    if (succCollapsedGroup != null) {
+        targetY = y1 < y2 ? y2 - barHeight / 2 : y2 + barHeight / 2;
+    }
+    if (succTask != null && [TaskDesignation.Milestone].includes(succTask.designation) && succCollapsedGroup == null) {
         targetX = x2 - 8;
     }
 
-    if (predTask != null && [TaskDesignation.Task, TaskDesignation.Group].includes(predTask.designation)) {
+    if (predTask != null && [TaskDesignation.Task, TaskDesignation.Group].includes(predTask.designation) && predCollapsedGroup == null) {
         lastX = lastX + 5;
         coords.push([lastX, y1]);
     }
-    if (lastX > targetX - 15) {
-        const y = y1 < y2 ? y2 - 13 : y2 + 13;
-        coords.push([lastX, y]);
-        coords.push([targetX - 15, y]);
-        coords.push([targetX - 15, y2]);
+
+    if (succCollapsedGroup != null) {
+        if (lastX > targetX) {
+            const y = y1 < y2 ? y2 - 15 : y2 + 15;
+            coords.push([lastX, y]);
+            lastX = targetX
+            coords.push([lastX, y]);
+        }
+        coords.push([lastX, targetY]);
     }
     else {
-        coords.push([lastX, y2]);
+        if (lastX > targetX - 15) {
+            const y = y1 < y2 ? y2 - 15 : y2 + 15;
+            coords.push([lastX, y]);
+            lastX = targetX - 15
+            coords.push([lastX, y]);
+        }
+        coords.push([lastX, targetY]);
+        coords.push([targetX, targetY]);
     }
-    coords.push([targetX, y2]);
     return `M ${start[0]} ${start[1]}` + coords.map(c => `L ${c[0]} ${c[1]}`).join(' ');
 }
 
