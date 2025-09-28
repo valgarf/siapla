@@ -424,8 +424,11 @@ function allocArrow(predId: number, succId: number): string {
     }
 
     if (succCollapsedGroup != null) {
-        if (lastX > targetX) {
-            const y = y1 < y2 ? y2 - 15 : y2 + 15;
+        if (lastX != targetX) {
+            let y = y1
+            if (targetX < lastX) {
+                y = y1 < y2 ? y1 + 15 : y1 - 15;
+            }
             coords.push([lastX, y]);
             lastX = targetX
             coords.push([lastX, y]);
