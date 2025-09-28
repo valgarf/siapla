@@ -93,24 +93,13 @@
             <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#ddd" stroke-width="1" />
           </template>
         </g>
-        <!-- Vacation bars per resource -->
-        <!-- <g>
-          <template v-for="(res, i) in resourceStore.resources" :key="'vac'+rid">
-            <template v-for="vac in resourceStore.resource(rid)?.vacations ?? []" :key="'vac'+rid+vac.from+vac.until">
-              <rect :x="dateToX(vac.from)" :y="i * rowHeight" :width="dateToX(vac.until) - dateToX(vac.from)"
-                :height="rowHeight" fill="#f3f4f5" opacity="1" stroke="none" />
-            </template>
-          </template>
-        </g> -->
-
-
         <!-- Allocation bars -->
         <g>
           <template v-for="(rid, i) in Array.from(planStore.resource_ids)" :key="rid">
             <template v-for="alloc in planStore.by_resource(rid)" :key="rid+'-'+alloc.dbId">
               <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5" rx="3"
-                @click.stop="() => onAllocClick(alloc.task?.dbId)" />
+                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5" stroke="#0a6fc2"
+                rx="3" @click.stop="() => onAllocClick(alloc.task?.dbId)" />
               <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11"
                 fill="#fff">{{ alloc.task?.title ?? '' }}</text>
             </template>

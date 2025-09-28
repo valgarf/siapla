@@ -127,7 +127,7 @@
                                 <rect :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
                                     :y="i * rowHeight + barPadding"
                                     :width="dateToX(planStore.by_task(row.task.dbId)[0]?.end) - dateToX(planStore.by_task(row.task.dbId)[0]?.start)"
-                                    :height="barHeight" fill="#6a1b9a" rx="3"
+                                    :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
                                     @click.stop="() => onTaskClick(row.task.dbId)" />
                                 <text :x="dateToX(planStore.by_task(row.task.dbId)[0]?.start) + 4"
                                     :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff">{{
@@ -140,14 +140,15 @@
                     </template>
                 </g>
 
-                <!-- Task and milestone allocation bars -->
+                <!-- Task allocation bars -->
                 <g>
                     <template v-for="(row, i) in visibleRows" :key="'taskalloc'+row.task.dbId">
                         <template v-if="TaskDesignation.Task == row.task.designation">
                             <template v-for="alloc in planStore.by_task(row.task.dbId)" :key="alloc.dbId">
                                 <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
                                     :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight"
-                                    fill="#42a5f5" rx="3" @click.stop="() => onTaskClick(row.task.dbId)" />
+                                    fill="#42a5f5" stroke="#0a6fc2" rx="3"
+                                    @click.stop="() => onTaskClick(row.task.dbId)" />
                                 <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4"
                                     font-size="11" fill="#fff">{{ row.task.title }}</text>
                             </template>
@@ -171,13 +172,14 @@
                                 :transform="`translate(${dateToX(planStore.by_task(row.task.dbId)[0]!.start)}, ${i * rowHeight + rowHeight / 2})`">
                                 <rect x="-6" y="-6" width="12" height="12"
                                     :fill="planStore.by_task(row.task.dbId)[0]!.start <= row.task.scheduleTarget! ? '#66bb6a' : '#ef5350'"
-                                    transform="rotate(45)" stroke="#b06b00" />
+                                    :stroke="planStore.by_task(row.task.dbId)[0]!.start <= row.task.scheduleTarget! ? '#3f8d43' : '#d21714'"
+                                    transform="rotate(45)" />
                             </g>
                         </template>
                         <template v-if="row.task.designation == TaskDesignation.Requirement && row.task.earliestStart">
                             <g
                                 :transform="`translate(${dateToX(row.task.earliestStart)}, ${i * rowHeight + rowHeight / 2})`">
-                                <circle r="6" fill="#ffb74d" stroke="#6a1b9a" />
+                                <circle r="6" fill="#ffb74d" stroke="#b06b00" />
                             </g>
                         </template>
                     </template>
@@ -471,6 +473,18 @@ function rowIndexForTask(tid: number) {
 </script>
 
 <style>
+xxx {
+    a: #ffb74d;
+    b: #b06b00;
+    c: #3f8d43;
+    e: #ef5350;
+    e: #d21714;
+    f: #ffb74d;
+    s: #2c0b41;
+    r: #0a6fc2;
+}
+
+
 html,
 body,
 #app {
