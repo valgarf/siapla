@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use juniper::{Nullable, graphql_object};
 use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
+use tracing::error;
 
 use crate::{
     entity::{availability, holiday, resource, vacation},
@@ -76,7 +77,9 @@ impl resource::Model {
         // Context::load_combined_availability expects NaiveDateTime start/end in UTC
         let s = start.naive_utc();
         let e = end.naive_utc();
-        let ivs = ctx.load_combined_availability(self.id, s, e).await?;
+        let ivs = ctx.load_combined_availability(self.id, s, e).await.inspect_err(|e| {
+            error!("Faild to load combined availability from dataloader:: {:?}", e)
+        })?;
         Ok(ivs
             .into_iter()
             .map(|iv| GQLInterval {

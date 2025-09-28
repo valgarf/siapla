@@ -298,6 +298,9 @@ pub fn plan_task(
     } else {
         return Err(anyhow!("Failed to determine start timestamp."));
     };
+    if task.effort <= 0.0 {
+        return Err(anyhow!("No effort set for this task."));
+    }
     let mut slot_iterators: Vec<_SlotIterator> = res_ids
         .into_iter()
         .map(|res_id| {

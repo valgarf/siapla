@@ -5,8 +5,11 @@ use std::{
 };
 
 /// Marker trait for a value that can be used in an interval
-pub trait IntervalValue: PartialOrd + Ord + PartialEq + Eq + Copy + Clone {}
-impl<T: PartialOrd + Ord + PartialEq + Eq + Copy + Clone> IntervalValue for T {}
+pub trait IntervalValue:
+    PartialOrd + Ord + PartialEq + Eq + Copy + Clone + std::fmt::Debug
+{
+}
+impl<T: PartialOrd + Ord + PartialEq + Eq + Copy + Clone + std::fmt::Debug> IntervalValue for T {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Bound<T: IntervalValue> {
@@ -546,10 +549,12 @@ impl<T: IntervalValue> Intervals<T> {
     }
 
     pub fn hull(&self) -> Option<Interval<T>> {
-        if let (Some(Interval { start, end: _ }), Some(Interval { start: _, end })) =
-            (self.intervals.first(), self.intervals.last())
+        if let (
+            Some(Interval { start: first_start, end: _ }),
+            Some(Interval { start: _, end: last_end }),
+        ) = (self.intervals.first(), self.intervals.last())
         {
-            Some(Interval { start: *start, end: *end })
+            Some(Interval { start: *first_start, end: *last_end })
         } else {
             None
         }

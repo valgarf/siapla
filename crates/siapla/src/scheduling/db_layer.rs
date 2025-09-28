@@ -118,9 +118,16 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
         if let Some(pid) = t.parent_id {
             if let (Some(&in_nidx), Some(&out_nidx)) = (grp_in_idx.get(&pid), grp_out_idx.get(&pid))
             {
-                let nidx = db_to_nidx[&t.id];
-                g.add_edge(in_nidx, nidx, ());
-                g.add_edge(nidx, out_nidx, ());
+                if let (Some(&t_in_nidx), Some(&t_out_nidx)) =
+                    (grp_in_idx.get(&t.id), grp_out_idx.get(&t.id))
+                {
+                    g.add_edge(in_nidx, t_in_nidx, ());
+                    g.add_edge(t_out_nidx, out_nidx, ());
+                } else {
+                    let nidx = db_to_nidx[&t.id];
+                    g.add_edge(in_nidx, nidx, ());
+                    g.add_edge(nidx, out_nidx, ());
+                }
             }
             let parent = group_map.get(&pid).expect("Group must exist.");
             if let Some(child) = group_map.get(&t.id) {

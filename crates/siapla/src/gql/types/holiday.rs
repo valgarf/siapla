@@ -6,6 +6,7 @@ use sea_orm::{
     ActiveValue, ColumnTrait, DatabaseTransaction, EntityTrait, Order, QueryFilter, QueryOrder,
 };
 use tokio::sync::OnceCell;
+use tracing::error;
 
 use crate::{
     entity::{holiday, holiday_entry},
@@ -139,9 +140,15 @@ impl GQLHoliday {
         from: chrono::NaiveDate,
         until: chrono::NaiveDate,
     ) -> anyhow::Result<Vec<holiday_entry::Model>> {
-        let model = self.get_model(ctx).await?;
+        let model = self
+            .get_model(ctx)
+            .await
+            .inspect_err(|e| error!("error on GQLHoliday::get_model: {:?}", e))?;
         let txn = ctx.txn().await?;
-        model.ensure_entries(txn, from, until).await
+        model
+            .ensure_entries(txn, from, until)
+            .await
+            .inspect_err(|e| error!("error on GQLHoliday::ensure_entries: {:?}", e))
     }
 }
 
@@ -262,26 +269,38 @@ impl holiday::Model {
         )
         .await?;
 
-        let new_entries = entries.iter().flat_map(|e| {
-            let mut result = vec![];
-            if e.nationwide || e.subdivisions.iter().flatten().any(|d| d.code == self.external_id) {
-                let mut start = e.start_date;
-                while start <= e.end_date {
-                    result.push(holiday_entry::ActiveModel {
-                        date: ActiveValue::Set(start),
-                        holiday_id: ActiveValue::Set(self.id),
-                        name: ActiveValue::Set(Some(
-                            e.name.first().map(|n| n.text.clone()).unwrap_or("".into()),
-                        )),
-                        ..Default::default()
-                    });
-                    start = start.succ_opt().expect("Should always be representable");
+        let new_entries = entries
+            .iter()
+            .flat_map(|e| {
+                let mut result = vec![];
+                if e.nationwide
+                    || e.subdivisions.iter().flatten().any(|d| d.code == self.external_id)
+                {
+                    let mut start = e.start_date;
+                    while start <= e.end_date {
+                        result.push(holiday_entry::ActiveModel {
+                            date: ActiveValue::Set(start),
+                            holiday_id: ActiveValue::Set(self.id),
+                            name: ActiveValue::Set(Some(
+                                e.name.first().map(|n| n.text.clone()).unwrap_or("".into()),
+                            )),
+                            ..Default::default()
+                        });
+                        start = start.succ_opt().expect("Should always be representable");
+                    }
                 }
-            }
-            result.into_iter()
-        });
+                result.into_iter()
+            })
+            .collect::<Vec<_>>();
 
-        holiday_entry::Entity::insert_many(new_entries).exec(txn).await?;
+        if !new_entries.is_empty() {
+            holiday_entry::Entity::insert_many(new_entries).exec(txn).await.inspect_err(|err| {
+                error!(
+                    "Database error uploading holiday entries for {} (id: {}): {:?}",
+                    self.name, self.id, err
+                )
+            })?;
+        }
         Ok(())
     }
 
