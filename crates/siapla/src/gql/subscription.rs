@@ -10,7 +10,7 @@ use tokio_stream::wrappers::WatchStream;
 use super::context::Context;
 use crate::app_state::CalculationState;
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct Subscription {}
 
 pub struct GQLCalculationUpdate {
@@ -53,6 +53,9 @@ impl Subscription {
     async fn calculation_update(
         ctx: &Context,
     ) -> BoxStream<'static, Result<GQLCalculationUpdate, juniper::FieldError>> {
+        println!("START SUBSCRIPTION");
+        println!("START SUBSCRIPTION");
+        println!("START SUBSCRIPTION");
         let app_state = ctx.app_state();
         let rx = app_state.state_tx.subscribe();
         let stream = WatchStream::new(rx).map(|s| Ok(GQLCalculationUpdate { inner: s }));

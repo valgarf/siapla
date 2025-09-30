@@ -9,7 +9,7 @@ pub enum CalculationState {
     Finished,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AppState {
     /// broadcast channel for modification events (sender identity as String)
     pub modify_tx: broadcast::Sender<String>,

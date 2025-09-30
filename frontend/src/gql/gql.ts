@@ -14,8 +14,6 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
-    "\n  subscription calcBanner { calculationUpdate { state } }\n": typeof types.CalcBannerDocument,
-    "\n  mutation recalcBanner { recalculateNow }\n": typeof types.RecalcBannerDocument,
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": typeof types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": typeof types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": typeof types.GetHolidayDocument,
@@ -31,8 +29,6 @@ type Documents = {
     "\n  mutation task_delete($taskId: Int!) {\n    taskDelete(taskId: $taskId)\n  }\n": typeof types.Task_DeleteDocument,
 };
 const documents: Documents = {
-    "\n  subscription calcBanner { calculationUpdate { state } }\n": types.CalcBannerDocument,
-    "\n  mutation recalcBanner { recalculateNow }\n": types.RecalcBannerDocument,
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": types.GetHolidayDocument,
@@ -62,14 +58,6 @@ const documents: Documents = {
  */
 export function graphql(source: string): unknown;
 
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  subscription calcBanner { calculationUpdate { state } }\n"): (typeof documents)["\n  subscription calcBanner { calculationUpdate { state } }\n"];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(source: "\n  mutation recalcBanner { recalculateNow }\n"): (typeof documents)["\n  mutation recalcBanner { recalculateNow }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

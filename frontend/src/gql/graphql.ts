@@ -15,20 +15,6 @@ export type Scalars = {
   Int: { input: number; output: number; }
   Float: { input: number; output: number; }
   /**
-   * Date in the proleptic Gregorian calendar (without time zone).
-   *
-   * Represents a description of the date (as used for birthdays, for example).
-   * It cannot represent an instant on the time-line.
-   *
-   * [`Date` scalar][1] compliant.
-   *
-   * See also [`chrono::NaiveDate`][2] for details.
-   *
-   * [1]: https://graphql-scalars.dev/docs/scalars/date
-   * [2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
-   */
-  Date: { input: any; output: any; }
-  /**
    * Combined date and time (with time zone) in [RFC 3339][0] format.
    *
    * Represents a description of an exact instant on the time-line (such as the
@@ -43,6 +29,20 @@ export type Scalars = {
    * [2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
    */
   DateTime: { input: any; output: any; }
+  /**
+   * Date in the proleptic Gregorian calendar (without time zone).
+   *
+   * Represents a description of the date (as used for birthdays, for example).
+   * It cannot represent an instant on the time-line.
+   *
+   * [`LocalDate` scalar][1] compliant.
+   *
+   * See also [`chrono::NaiveDate`][2] for details.
+   *
+   * [1]: https://graphql-scalars.dev/docs/scalars/local-date
+   * [2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
+   */
+  LocalDate: { input: any; output: any; }
 };
 
 export type Allocation = {
@@ -98,13 +98,13 @@ export type Holiday = {
 
 
 export type HolidayEntriesArgs = {
-  from: Scalars['Date']['input'];
-  until: Scalars['Date']['input'];
+  from: Scalars['LocalDate']['input'];
+  until: Scalars['LocalDate']['input'];
 };
 
 export type HolidayEntry = {
   __typename?: 'HolidayEntry';
-  date: Scalars['Date']['output'];
+  date: Scalars['LocalDate']['output'];
   dbId: Scalars['Int']['output'];
   holiday: Holiday;
   name?: Maybe<Scalars['String']['output']>;
@@ -311,16 +311,6 @@ export enum Weekday {
   Wednesday = 'WEDNESDAY'
 }
 
-export type CalcBannerSubscriptionVariables = Exact<{ [key: string]: never; }>;
-
-
-export type CalcBannerSubscription = { __typename?: 'Subscription', calculationUpdate: { __typename?: 'CalculationUpdate', state: CalculationState } };
-
-export type RecalcBannerMutationVariables = Exact<{ [key: string]: never; }>;
-
-
-export type RecalcBannerMutation = { __typename?: 'Mutation', recalculateNow: boolean };
-
 export type GetCountriesQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -402,8 +392,6 @@ export type Task_DeleteMutationVariables = Exact<{
 export type Task_DeleteMutation = { __typename?: 'Mutation', taskDelete: boolean };
 
 
-export const CalcBannerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"calcBanner"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calculationUpdate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"state"}}]}}]}}]} as unknown as DocumentNode<CalcBannerSubscription, CalcBannerSubscriptionVariables>;
-export const RecalcBannerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"recalcBanner"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"recalculateNow"}}]}}]} as unknown as DocumentNode<RecalcBannerMutation, RecalcBannerMutationVariables>;
 export const GetCountriesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCountries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"countries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isocode"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]} as unknown as DocumentNode<GetCountriesQuery, GetCountriesQueryVariables>;
 export const GetRegionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetRegions"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"country"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"regions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetRegionsQuery, GetRegionsQueryVariables>;
 export const GetHolidayDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetHoliday"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getFromOpenHolidays"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"country"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"region"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetHolidayQuery, GetHolidayQueryVariables>;

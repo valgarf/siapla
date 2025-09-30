@@ -1,9 +1,15 @@
 use axum::{
-    Extension, Router, middleware,
+    Extension, Router,
+    extract::WebSocketUpgrade,
+    middleware,
+    response::Response,
     routing::{MethodFilter, get, on},
 };
 use juniper::DefaultScalarValue;
-use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
+use juniper_axum::{
+    extract::JuniperRequest, graphiql, playground, response::JuniperResponse, subscriptions,
+};
+use juniper_graphql_ws::ConnectionConfig;
 use siapla::app_state::AppState;
 use siapla::{
     gql::{
@@ -28,6 +34,28 @@ pub async fn graphql(
     JuniperRequest(req): JuniperRequest<DefaultScalarValue>,
 ) -> JuniperResponse<DefaultScalarValue> {
     JuniperResponse(req.execute(&schema, &context).await)
+}
+
+async fn custom_subscriptions(
+    Extension(schema): Extension<Arc<Schema>>,
+    Extension(app_state): Extension<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    ws.protocols(["graphql-transport-ws", "graphql-ws"])
+        // .max_frame_size(1024)
+        // .max_message_size(1024)
+        // .max_write_buffer_size(100)
+        .on_upgrade(move |socket| {
+            subscriptions::serve_ws(
+                socket,
+                schema,
+                ConnectionConfig::new(
+                    Arc::try_unwrap(Context::new(app_state))
+                        .expect("Arc has just been created, must be able to unwrap it."),
+                )
+                .with_max_in_flight_operations(10),
+            )
+        })
 }
 
 #[tokio::main]
@@ -55,10 +83,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/graphql", on(MethodFilter::GET.or(MethodFilter::POST), graphql))
-        // .route(
-        //     "/subscriptions",
-        //     get(ws::<Arc<Schema>>(ConnectionConfig::new(()))),
-        // )
+        .route("/subscriptions", get(custom_subscriptions))
         .route("/graphiql", get(graphiql("/graphql", "/subscriptions")))
         .route("/playground", get(playground("/graphql", "/subscriptions")))
         .layer(

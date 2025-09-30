@@ -26,6 +26,15 @@ pub struct Context {
     app_state: Arc<AppState>,
 }
 
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("txn", &self.txn)
+            .field("app_state", &self.app_state)
+            .finish()
+    }
+}
+
 impl juniper::Context for Context {}
 
 async fn load_by_column_value<ET: EntityTrait, const CIDX: usize>(

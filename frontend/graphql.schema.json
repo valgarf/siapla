@@ -384,17 +384,6 @@
       },
       {
         "kind": "SCALAR",
-        "name": "Date",
-        "description": "Date in the proleptic Gregorian calendar (without time zone).\n\nRepresents a description of the date (as used for birthdays, for example).\nIt cannot represent an instant on the time-line.\n\n[`Date` scalar][1] compliant.\n\nSee also [`chrono::NaiveDate`][2] for details.\n\n[1]: https://graphql-scalars.dev/docs/scalars/date\n[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html",
-        "isOneOf": null,
-        "fields": null,
-        "inputFields": null,
-        "interfaces": null,
-        "enumValues": null,
-        "possibleTypes": null
-      },
-      {
-        "kind": "SCALAR",
         "name": "DateTime",
         "description": "Combined date and time (with time zone) in [RFC 3339][0] format.\n\nRepresents a description of an exact instant on the time-line (such as the\ninstant that a user account was created).\n\n[`DateTime` scalar][1] compliant.\n\nSee also [`chrono::DateTime`][2] for details.\n\n[0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5\n[1]: https://graphql-scalars.dev/docs/scalars/date-time\n[2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html",
         "isOneOf": null,
@@ -461,7 +450,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "Date",
+                    "name": "LocalDate",
                     "ofType": null
                   }
                 },
@@ -477,7 +466,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "Date",
+                    "name": "LocalDate",
                     "ofType": null
                   }
                 },
@@ -571,7 +560,7 @@
               "name": null,
               "ofType": {
                 "kind": "SCALAR",
-                "name": "Date",
+                "name": "LocalDate",
                 "ofType": null
               }
             },
@@ -680,6 +669,17 @@
         ],
         "inputFields": null,
         "interfaces": [],
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
+        "kind": "SCALAR",
+        "name": "LocalDate",
+        "description": "Date in the proleptic Gregorian calendar (without time zone).\n\nRepresents a description of the date (as used for birthdays, for example).\nIt cannot represent an instant on the time-line.\n\n[`LocalDate` scalar][1] compliant.\n\nSee also [`chrono::NaiveDate`][2] for details.\n\n[1]: https://graphql-scalars.dev/docs/scalars/local-date\n[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html",
+        "isOneOf": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
         "enumValues": null,
         "possibleTypes": null
       },

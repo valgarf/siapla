@@ -58,7 +58,7 @@ export const usePlanStore = defineStore('planStore', () => {
   const calcSub = useSubscription(CALC_SUB);
   const mutRecalculate = useMutation(RECALC_MUT);
   // const calculationState: Ref<CalculationState> = ref(CalculationState.Calculating);
-  calcSub.start()
+  // calcSub.start()
   const calculationState = computed(() => { return calcSub.result.value?.calculationUpdate?.state ?? CalculationState.Modified });
   watch(
     () => calcSub.result.value,
@@ -203,7 +203,7 @@ export const usePlanStore = defineStore('planStore', () => {
       mutRecalculate,
     },
     calculationState,
-    loading: queryGetAll.loading,
+    loading: computed(() => queryGetAll.loading.value || calcSub.loading.value),
     allocations,
     start,
     end,

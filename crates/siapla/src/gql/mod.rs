@@ -10,7 +10,7 @@ pub use types::{allocation, availability, holiday, plan, resource, task, vacatio
 
 use juniper::*;
 
-pub type Schema = RootNode<'static, query::Query, mutation::Mutation, subscription::Subscription>;
+pub type Schema = RootNode<query::Query, mutation::Mutation, subscription::Subscription>;
 
 pub fn schema() -> Schema {
     Schema::new(query::Query::new(), mutation::Mutation::new(), subscription::Subscription::new())

@@ -36,21 +36,6 @@ type Country {
 }
 
 """
-Date in the proleptic Gregorian calendar (without time zone).
-
-Represents a description of the date (as used for birthdays, for example).
-It cannot represent an instant on the time-line.
-
-[`Date` scalar][1] compliant.
-
-See also [`chrono::NaiveDate`][2] for details.
-
-[1]: https://graphql-scalars.dev/docs/scalars/date
-[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
-"""
-scalar Date
-
-"""
 Combined date and time (with time zone) in [RFC 3339][0] format.
 
 Represents a description of an exact instant on the time-line (such as the
@@ -69,14 +54,14 @@ scalar DateTime
 type Holiday {
   country: Country
   dbId: Int!
-  entries(from: Date!, until: Date!): [HolidayEntry!]!
+  entries(from: LocalDate!, until: LocalDate!): [HolidayEntry!]!
   externalId: String!
   name: String!
   region: Region
 }
 
 type HolidayEntry {
-  date: Date!
+  date: LocalDate!
   dbId: Int!
   holiday: Holiday!
   name: String
@@ -86,6 +71,21 @@ type Interval {
   end: DateTime!
   start: DateTime!
 }
+
+"""
+Date in the proleptic Gregorian calendar (without time zone).
+
+Represents a description of the date (as used for birthdays, for example).
+It cannot represent an instant on the time-line.
+
+[`LocalDate` scalar][1] compliant.
+
+See also [`chrono::NaiveDate`][2] for details.
+
+[1]: https://graphql-scalars.dev/docs/scalars/local-date
+[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
+"""
+scalar LocalDate
 
 type Mutation {
   new: Mutation!
