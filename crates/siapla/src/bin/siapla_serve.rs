@@ -4,6 +4,7 @@ use axum::{
 };
 use juniper::DefaultScalarValue;
 use juniper_axum::{extract::JuniperRequest, graphiql, playground, response::JuniperResponse};
+use siapla::app_state::AppState;
 use siapla::{
     gql::{
         Schema,
@@ -39,9 +40,12 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .with_env_filter(EnvFilter::try_new("debug").unwrap())
         .init();
+    let (app_state, manual_rx) = AppState::new();
 
     let local_set = tokio::task::LocalSet::new();
-    local_set.spawn_local(recalculate_loop());
+    // spawn scheduling loop with access to app_state
+    let app_state_for_loop = Arc::clone(&app_state);
+    local_set.spawn_local(async move { recalculate_loop(app_state_for_loop, manual_rx).await });
     // tokio::spawn(recalculate_loop());
 
     let cors = CorsLayer::new()
@@ -61,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
             ServiceBuilder::new()
                 .layer(cors)
                 .layer(Extension(Arc::new(siapla::gql::schema())))
-                // .layer(Extension(Context::new())),
+                .layer(Extension(Arc::clone(&app_state)))
                 .layer(middleware::from_fn(add_context)),
         );
     // .route("/", get(homepage))

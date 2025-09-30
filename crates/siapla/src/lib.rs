@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use thiserror::Error;
 
+pub mod app_state;
 pub mod entity;
 pub mod gql;
 pub mod scheduling;

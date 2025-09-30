@@ -18,6 +18,17 @@ input AvailabilityInput {
   weekday: Weekday!
 }
 
+enum CalculationState {
+  CALCULATING
+  FINISHED
+  MODIFIED
+}
+
+type CalculationUpdate {
+  plan: Plan
+  state: CalculationState!
+}
+
 type Country {
   isocode: String!
   name: String!
@@ -78,6 +89,9 @@ type Interval {
 
 type Mutation {
   new: Mutation!
+
+  """Trigger a manual recalculation now"""
+  recalculateNow: Boolean!
   resourceDelete(resourceId: Int!): Boolean!
   resourceSave(resource: ResourceSaveInput!): Resource!
   taskDelete(taskId: Int!): Boolean!
@@ -156,6 +170,7 @@ input ResourceSaveInput {
 
 type Subscription {
   apiVersion: String!
+  calculationUpdate: CalculationUpdate!
 }
 
 type Task {

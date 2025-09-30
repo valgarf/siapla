@@ -10,6 +10,7 @@ use chrono::NaiveDateTime;
 
 type AvailabilityLoaderMap =
     std::collections::HashMap<(NaiveDateTime, NaiveDateTime), AvailabilityLoader>;
+use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::TryFutureExt;
 use sea_orm::{
@@ -22,6 +23,7 @@ pub struct Context {
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
     availability_loaders: Arc<RwLock<AvailabilityLoaderMap>>,
     me: Weak<Self>,
+    app_state: Arc<AppState>,
 }
 
 impl juniper::Context for Context {}
@@ -42,7 +44,7 @@ where
 }
 
 impl Context {
-    pub fn new() -> Arc<Self> {
+    pub fn new(app_state: Arc<AppState>) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             txn: Default::default(),
             by_col_loaders: Arc::new(RwLock::new(
@@ -50,6 +52,7 @@ impl Context {
             )),
             availability_loaders: Arc::new(RwLock::new(AvailabilityLoaderMap::new())),
             me: me.clone(),
+            app_state,
         })
     }
 
@@ -202,10 +205,22 @@ impl Context {
 }
 
 pub async fn add_context(mut req: Request, next: Next) -> Result<Response, StatusCode> {
-    let ctx = Context::new();
+    // app_state should be provided as an Extension earlier in the stack
+    let app_state = req
+        .extensions()
+        .get::<Arc<AppState>>()
+        .cloned()
+        .expect("AppState must be provided as an Extension");
+    let ctx = Context::new(app_state);
     req.extensions_mut().insert(Arc::clone(&ctx));
     let res = next.run(req).await;
     let mut ctx = Arc::into_inner(ctx).expect("All other references should have been destroyed");
     ctx.commit().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(res)
+}
+
+impl Context {
+    pub fn app_state(&self) -> Arc<AppState> {
+        Arc::clone(&self.app_state)
+    }
 }

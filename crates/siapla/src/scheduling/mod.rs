@@ -5,6 +5,7 @@ mod interval;
 mod weak_hash_set;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::{broadcast::error::RecvError, mpsc::UnboundedReceiver};
 
 pub use datastructures::*;
 pub use db_layer::query_problem;
@@ -19,53 +20,110 @@ use crate::{
     },
 };
 
-pub async fn recalculate_loop() {
+pub async fn recalculate_loop(
+    app_state: Arc<crate::app_state::AppState>,
+    mut manual_rx: UnboundedReceiver<()>,
+) {
+    // Startup: perform a calculation immediately
+    let mut modify_rx = app_state.modify_tx.subscribe();
+    let debounce = tokio::time::sleep(Duration::from_secs(0));
+    tokio::pin!(debounce);
+
+    // after first run, set finished
+    // Note: perform_recalculation sets Finished itself when successful
+
     loop {
-        let ctx = Context::new();
-        match query_problem(&ctx).await {
-            Err(err) => println!("Error querying problem: {}", err),
-            Ok(mut problem) => {
-                let individual = generate_random_individual(&mut problem);
-                let task_order = individual
-                    .tasks
-                    .iter()
-                    .map(|t| t.task.borrow().title.clone())
-                    .collect::<Vec<_>>();
-                println!("Problem recalculated successfully. Random order: {:?}", &task_order);
-                let plan = plan_individual(&problem, &individual);
-                let tasks = problem
-                    .objs
-                    .tasks
-                    .iter()
-                    .map(|t| (t.borrow().db_id, t))
-                    .collect::<HashMap<i32, _>>();
-                println!("Plan:");
-                for (tid, assignments) in &plan.assignments {
-                    let resources: Vec<i32> = assignments.keys().cloned().collect();
-                    let task = tasks[&tid].borrow();
-                    println!(" {} ({}): {:?}", task.title, tid, resources);
-                    println!("    {}", assignments.values().last().unwrap().range);
-                }
-                match store_plan(&ctx, &problem, &plan).await {
-                    Ok(_) => {
-                        println!("Stored new plan successfully.");
+        // wait for either: modification event, manual trigger, or debounce timeout
+        tokio::select! {
+            biased;
+            // manual recalculation takes precedence
+            maybe_manual = manual_rx.recv() => {
+                if maybe_manual.is_some() {
+                    if let Err(e) = perform_recalculation(&app_state).await {
+                        println!("Error recalculating (manual): {}", e);
                     }
-                    Err(err) => {
-                        println!("Error storing plan: {}", err);
+                } else {
+                    // channel closed, break loop
+                    break;
+                }
+            }
+            // modification event: reset debounce timer
+            mod_res = modify_rx.recv() => {
+                match mod_res {
+                    Ok(_sender) => {
+                        // mark modified and reset timer
+                        app_state.set_state(crate::app_state::CalculationState::Modified);
+                        debounce.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(300));
+                    }
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(_)) => {
+                        // continue; treat as modification
+                        app_state.set_state(crate::app_state::CalculationState::Modified);
+                        debounce.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(300));
                     }
                 }
-                drop(problem);
+            }
+            _ = &mut debounce => {
+                // timer fired -> start calculation
+                println!("debounce fired");
+                debounce.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(24*3600*7));
+                if let Err(e) = perform_recalculation(&app_state).await {
+                    println!("Error recalculating (debounce): {}", e);
+                }
             }
         }
-        match Arc::into_inner(ctx)
-            .expect("This function is the only one with a strong reference.")
-            .commit()
-            .await
-        {
-            Err(err) => println!("Error committing: {}", err),
-            Ok(_) => {}
-        }
-
-        tokio::time::sleep(Duration::from_secs(10)).await;
     }
+}
+
+async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> anyhow::Result<()> {
+    // build a Context for this calculation
+    app_state.set_state(crate::app_state::CalculationState::Calculating);
+    let ctx = Context::new(Arc::clone(app_state));
+    match query_problem(&ctx).await {
+        Err(err) => {
+            println!("Error querying problem: {}", err);
+            return Err(err);
+        }
+        Ok(mut problem) => {
+            let individual = generate_random_individual(&mut problem);
+            let task_order =
+                individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
+            println!("Problem recalculated successfully. Random order: {:?}", &task_order);
+            let plan = plan_individual(&problem, &individual);
+            let tasks = problem
+                .objs
+                .tasks
+                .iter()
+                .map(|t| (t.borrow().db_id, t))
+                .collect::<HashMap<i32, _>>();
+            println!("Plan:");
+            for (tid, assignments) in &plan.assignments {
+                let resources: Vec<i32> = assignments.keys().cloned().collect();
+                let task = tasks[&tid].borrow();
+                println!(" {} ({}): {:?}", task.title, tid, resources);
+                println!("    {}", assignments.values().last().unwrap().range);
+            }
+            match store_plan(&ctx, &problem, &plan).await {
+                Ok(_) => {
+                    println!("Stored new plan successfully.");
+                }
+                Err(err) => {
+                    println!("Error storing plan: {}", err);
+                }
+            }
+            // set finished state
+            app_state.set_state(crate::app_state::CalculationState::Finished);
+            drop(problem);
+        }
+    }
+
+    match Arc::into_inner(ctx)
+        .expect("This function is the only one with a strong reference.")
+        .commit()
+        .await
+    {
+        Err(err) => println!("Error committing: {}", err),
+        Ok(_) => {}
+    }
+    Ok(())
 }

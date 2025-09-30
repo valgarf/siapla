@@ -14,10 +14,14 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+    "\n  subscription calcBanner { calculationUpdate { state } }\n": typeof types.CalcBannerDocument,
+    "\n  mutation recalcBanner { recalculateNow }\n": typeof types.RecalcBannerDocument,
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": typeof types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": typeof types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": typeof types.GetHolidayDocument,
     "\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n": typeof types.PlanDocument,
+    "\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n": typeof types.CalcUpdateDocument,
+    "\n  mutation recalculate { recalculateNow }\n": typeof types.RecalculateDocument,
     "\n  query resources {\n    resources {\n      dbId\n      name\n      timezone\n      added\n      removed\n      vacation {\n        dbId\n        from\n        until\n      }\n      holiday {\n        dbId\n        name\n        country {\n          name\n          isocode\n        }\n        region {\n          name\n          isocode\n        }\n      }\n      availability {\n        weekday\n        duration\n      }\n    }\n  }\n": typeof types.ResourcesDocument,
     "\n  query combinedAvailability($start: DateTime!, $end: DateTime!) {\n    resources {\n      dbId\n      combinedAvailability(start: $start, end: $end) {\n        start\n        end\n      }\n    }\n  }\n": typeof types.CombinedAvailabilityDocument,
     "\n  mutation resource_save($resource: ResourceSaveInput!) {\n    resourceSave(resource: $resource) {\n      dbId\n    }\n  }\n": typeof types.Resource_SaveDocument,
@@ -27,10 +31,14 @@ type Documents = {
     "\n  mutation task_delete($taskId: Int!) {\n    taskDelete(taskId: $taskId)\n  }\n": typeof types.Task_DeleteDocument,
 };
 const documents: Documents = {
+    "\n  subscription calcBanner { calculationUpdate { state } }\n": types.CalcBannerDocument,
+    "\n  mutation recalcBanner { recalculateNow }\n": types.RecalcBannerDocument,
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": types.GetHolidayDocument,
     "\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n": types.PlanDocument,
+    "\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n": types.CalcUpdateDocument,
+    "\n  mutation recalculate { recalculateNow }\n": types.RecalculateDocument,
     "\n  query resources {\n    resources {\n      dbId\n      name\n      timezone\n      added\n      removed\n      vacation {\n        dbId\n        from\n        until\n      }\n      holiday {\n        dbId\n        name\n        country {\n          name\n          isocode\n        }\n        region {\n          name\n          isocode\n        }\n      }\n      availability {\n        weekday\n        duration\n      }\n    }\n  }\n": types.ResourcesDocument,
     "\n  query combinedAvailability($start: DateTime!, $end: DateTime!) {\n    resources {\n      dbId\n      combinedAvailability(start: $start, end: $end) {\n        start\n        end\n      }\n    }\n  }\n": types.CombinedAvailabilityDocument,
     "\n  mutation resource_save($resource: ResourceSaveInput!) {\n    resourceSave(resource: $resource) {\n      dbId\n    }\n  }\n": types.Resource_SaveDocument,
@@ -57,6 +65,14 @@ export function graphql(source: string): unknown;
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function graphql(source: "\n  subscription calcBanner { calculationUpdate { state } }\n"): (typeof documents)["\n  subscription calcBanner { calculationUpdate { state } }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation recalcBanner { recalculateNow }\n"): (typeof documents)["\n  mutation recalcBanner { recalculateNow }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function graphql(source: "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n"): (typeof documents)["\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
@@ -70,6 +86,14 @@ export function graphql(source: "\n  query GetHoliday($isocode: String!) {\n    
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n"): (typeof documents)["\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n"): (typeof documents)["\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  mutation recalculate { recalculateNow }\n"): (typeof documents)["\n  mutation recalculate { recalculateNow }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

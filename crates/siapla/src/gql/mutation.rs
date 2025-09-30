@@ -20,24 +20,30 @@ impl Mutation {
     }
 
     async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<task::Model> {
-        task_save(ctx, task).await
+        let res = task_save(ctx, task).await?;
+        // notify modification channel
+        ctx.app_state().notify_modified("graphql".to_string());
+        Ok(res)
     }
 
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
-        let am = task::ActiveModel {
-            id: sea_orm::ActiveValue::Set(task_id),
-            ..Default::default()
-        };
+        let am = task::ActiveModel { id: sea_orm::ActiveValue::Set(task_id), ..Default::default() };
         let res = am.delete(txn).await?;
-        Ok(res.rows_affected > 0)
+        let ok = res.rows_affected > 0;
+        if ok {
+            ctx.app_state().notify_modified("graphql".to_string());
+        }
+        Ok(ok)
     }
 
     async fn resource_save(
         ctx: &Context,
         resource: ResourceSaveInput,
     ) -> anyhow::Result<resource::Model> {
-        resource_save(ctx, resource).await
+        let res = resource_save(ctx, resource).await?;
+        ctx.app_state().notify_modified("graphql".to_string());
+        Ok(res)
     }
 
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
@@ -47,6 +53,16 @@ impl Mutation {
             ..Default::default()
         };
         let res = am.delete(txn).await?;
-        Ok(res.rows_affected > 0)
+        let ok = res.rows_affected > 0;
+        if ok {
+            ctx.app_state().notify_modified("graphql".to_string());
+        }
+        Ok(ok)
+    }
+
+    /// Trigger a manual recalculation now
+    async fn recalculate_now(ctx: &Context) -> anyhow::Result<bool> {
+        ctx.app_state().trigger_manual();
+        Ok(true)
     }
 }

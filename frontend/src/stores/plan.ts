@@ -1,11 +1,11 @@
-import { useQuery } from '@vue/apollo-composable';
+import { useMutation, useQuery, useSubscription } from '@vue/apollo-composable';
 import { acceptHMRUpdate, defineStore } from 'pinia';
 import { graphql } from 'src/gql';
-import { computed, type ComputedRef } from 'vue';
+import { computed, type ComputedRef, watch } from 'vue'; // type Ref, ref,
 import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { type Task, useTaskStore } from './task';
-import { TaskDesignation, type PlanQuery } from 'src/gql/graphql';
+import { TaskDesignation, type PlanQuery, CalculationState } from 'src/gql/graphql';
 
 export interface Allocation {
   dbId: number;
@@ -33,6 +33,18 @@ const PLAN_QUERY = graphql(`
 }
 `);
 
+const CALC_SUB = graphql(`
+  subscription calcUpdate {
+    calculationUpdate {
+      state
+    }
+  }
+`);
+
+const RECALC_MUT = graphql(`
+  mutation recalculate { recalculateNow }
+`);
+
 function convertQueryResult(query: PlanQuery): Allocation[] {
   const resourceStore = useResourceStore();
   const taskStore = useTaskStore();
@@ -43,6 +55,24 @@ function convertQueryResult(query: PlanQuery): Allocation[] {
 // actual store
 export const usePlanStore = defineStore('planStore', () => {
   const queryGetAll = useQuery(PLAN_QUERY);
+  const calcSub = useSubscription(CALC_SUB);
+  const mutRecalculate = useMutation(RECALC_MUT);
+  // const calculationState: Ref<CalculationState> = ref(CalculationState.Calculating);
+  calcSub.start()
+  const calculationState = computed(() => { return calcSub.result.value?.calculationUpdate?.state ?? CalculationState.Modified });
+  watch(
+    () => calcSub.result.value,
+    (v) => {
+      const state = v?.calculationUpdate?.state;
+      // if (state != null) {
+      //   calculationState.value = state;
+      // }
+      if (state === CalculationState.Finished) {
+        // react to finished events: refetch plan
+        queryGetAll.refetch()?.catch((reason) => { console.warn("Failed to load plan: ", reason) });
+      }
+    }
+  );
   const apollo_objs = [queryGetAll];
   const allocations = computed(() => {
     if (queryGetAll.result.value == null) {
@@ -170,7 +200,9 @@ export const usePlanStore = defineStore('planStore', () => {
   return {
     gql: {
       queryGetAll,
+      mutRecalculate,
     },
+    calculationState,
     loading: queryGetAll.loading,
     allocations,
     start,
@@ -187,6 +219,9 @@ export const usePlanStore = defineStore('planStore', () => {
     by_task: (dbId: number): Allocation[] => {
       return allocations_by_task.value.get(dbId) ?? [];
     },
+    recalculate: () => {
+      return mutRecalculate.mutate()
+    }
   };
 });
 
