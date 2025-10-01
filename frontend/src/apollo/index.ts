@@ -18,6 +18,7 @@ export /* async */ function getClientOptions(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   /* {app, router, ...} */ options?: Partial<BootFileParams>,
 ) {
+  console.log(process.env.GRAPHQL_URI, process.env.GRAPHQL_WS)
   const httpLink = createHttpLink({
     uri:
       process.env.GRAPHQL_URI ||

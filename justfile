@@ -26,7 +26,7 @@ serve-backend-once:
 
 [working-directory("./frontend")]
 serve-frontend:
-    GRAPHQL_URI="http://localhost:8880/graphql" GRAPHQL_WS="ws://localhost:8880/subscriptions" quasar dev
+    GRAPHQL_WS="ws://localhost:8880/subscriptions" GRAPHQL_URI="http://localhost:8880/graphql" quasar dev
 
 serve:
     #!/usr/bin/env bash

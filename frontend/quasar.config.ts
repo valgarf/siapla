@@ -52,7 +52,10 @@ export default defineConfig((/* ctx */) => {
 
       // publicPath: '/',
       // analyze: true,
-      // env: {},
+      env: {
+        "GRAPHQL_URI": process.env.GRAPHQL_URI,
+        "GRAPHQL_WS": process.env.GRAPHQL_WS,
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,
