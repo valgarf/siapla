@@ -44,7 +44,6 @@ const bgClass = computed(() => {
 
 <style scoped>
 .plan-calc-banner {
-    padding: 6px 12px;
     color: #222;
 }
 
@@ -63,6 +62,7 @@ const bgClass = computed(() => {
 }
 
 .plan-calc-banner .left {
+    padding: 6px 12px;
     display: flex;
     align-items: center;
     gap: 8px
