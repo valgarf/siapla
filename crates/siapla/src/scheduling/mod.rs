@@ -39,6 +39,7 @@ pub async fn recalculate_loop(
             // manual recalculation takes precedence
             maybe_manual = manual_rx.recv() => {
                 if maybe_manual.is_some() {
+                    debounce.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(24*3600*7));
                     if let Err(e) = perform_recalculation(&app_state).await {
                         println!("Error recalculating (manual): {}", e);
                     }
