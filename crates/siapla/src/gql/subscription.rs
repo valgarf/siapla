@@ -53,9 +53,6 @@ impl Subscription {
     async fn calculation_update(
         ctx: &Context,
     ) -> BoxStream<'static, Result<GQLCalculationUpdate, juniper::FieldError>> {
-        println!("START SUBSCRIPTION");
-        println!("START SUBSCRIPTION");
-        println!("START SUBSCRIPTION");
         let app_state = ctx.app_state();
         let rx = app_state.state_tx.subscribe();
         let stream = WatchStream::new(rx).map(|s| Ok(GQLCalculationUpdate { inner: s }));
