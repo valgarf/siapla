@@ -21,7 +21,7 @@
                     <g>
                         <template v-for="(day, i) in days" :key="i">
                             <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x"
-                                :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" fill="#fffbe6"
+                                :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" :fill="weekendColor"
                                 stroke="#ccc" stroke-width="1" />
                             <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
                                 fill="#fff" stroke="#ccc" stroke-width="1" />
@@ -68,7 +68,7 @@
                 <g>
                     <template v-for="(day, i) in days" :key="'w'+i">
                         <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" y="0"
-                            :width="dayWidth" :height="chartHeight" fill="#fffbe6" opacity="1" stroke="none" />
+                            :width="dayWidth" :height="chartHeight" :fill="weekendColor" opacity="1" stroke="none" />
                     </template>
                 </g>
 
@@ -210,6 +210,7 @@ const emit = defineEmits<{
     (e: 'row-click', id: number): void
 }>()
 
+const weekendColor = "#fff7ce"
 const descriptionColWidth = computed(() => 240);
 const rowHeight = computed(() => props.rowHeight ?? 36)
 const dayWidth = computed(() => props.dayWidth ?? 24)
@@ -536,7 +537,7 @@ function toggleGroup(id: number) {
 .gantt-chart-scroll {
     overflow: hidden;
     cursor: grab;
-    background: #f3f4f5;
+    background: v-bind('(props.availability?.length ?? 0) > 0 ? "#f1f2f3" : "#fff"');
     position: relative;
 }
 
