@@ -73,8 +73,8 @@ function onResourceClick(rid: number) {
   dialogStore.pushDialog(new ResourceDialogData(rid));
 }
 
-function onAllocClick(taskId: number | undefined | null) {
-  if (taskId != null) dialogStore.pushDialog(new TaskDialogData(taskId));
+function onAllocClick(data: { taskId: number | null }) {
+  if (data.taskId != null) dialogStore.pushDialog(new TaskDialogData(data.taskId));
 }
 
 function onNewTask() {

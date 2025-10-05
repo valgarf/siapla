@@ -1,6 +1,6 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :availability="availability"
-        :dependencies="dependencies" :rowSymbols="rowSymbols" @alloc-click="onTaskClick" @row-click="onTaskClick">
+        :dependencies="dependencies" :rowSymbols="rowSymbols" @alloc-click="onAllocClick" @row-click="onTaskClick">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -31,6 +31,9 @@ function onTaskClick(tid: number | null) {
     if (tid != null) {
         dialogStore.pushDialog(new TaskDialogData(tid));
     }
+}
+function onAllocClick(data: { rowId: number | null }) {
+    onTaskClick(data.rowId)
 }
 function onNewTask() {
     dialogStore.pushDialog(new NewTaskDialogData());
