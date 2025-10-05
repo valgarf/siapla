@@ -41,12 +41,12 @@
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" class="gantt-row-description"
                     :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }">
-                    <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm"
+                    <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
                         :style="{ padding: '0px' }" />
                     <span :style="{ marginLeft: rw.row.designation != TaskDesignation.Group ? '17.15px' : '0px' }"
-                        @click.stop="emitRowClick(rw.row.id)">{{
+                        class="clickable" @click.stop="emitRowClick(rw.row.id)">{{
                             rw.row.name
                         }}</span>
                     <span v-if="props.rowSymbols && props.rowSymbols.find(s => s.rowId === rw.row.id)"
@@ -133,21 +133,24 @@
                         <template v-if="collapsedGroups.has(rw.row.id)">
                             <rect :x="dateToX(firstAllocStart(rw.row))" :y="i * rowHeight + barPadding"
                                 :width="dateToX(firstAllocEnd(rw.row)) - dateToX(firstAllocStart(rw.row))"
-                                :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3" />
+                                :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
+                                @click.stop="() => emitAllocClick(rw.row.id)" class="clickable" />
                             <text :x="dateToX(firstAllocStart(rw.row)) + 4"
-                                :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff">{{
+                                :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff"
+                                @click.stop="() => emitAllocClick(rw.row.id)" class="clickable">{{
                                     rw.row.name }}</text>
                         </template>
                         <template v-else>
                             <polygon
                                 :points="makeGroupBar(dateToX(firstAllocStart(rw.row)), dateToX(lastAllocEnd(rw.row)), i * rowHeight + rowHeight * 0.5)"
-                                fill="black" />
+                                fill="black" @click.stop="() => emitAllocClick(rw.row.id)" class="clickable" />
                         </template>
                     </template>
                     <!-- requirements -->
                     <template v-if="rw.row.designation === TaskDesignation.Requirement && rw.row.earliestStart">
                         <g :transform="`translate(${dateToX(rw.row.earliestStart)}, ${i * rowHeight + rowHeight / 2})`">
-                            <circle r="6" fill="#ffb74d" stroke="#b06b00" />
+                            <circle r="6" fill="#ffb74d" stroke="#b06b00" @click.stop="() => emitAllocClick(rw.row.id)"
+                                class="clickable" />
                         </g>
                     </template>
 
@@ -156,7 +159,7 @@
                         <g
                             :transform="`translate(${dateToX(rw.row.scheduleTarget)}, ${i * rowHeight + rowHeight / 2})`">
                             <rect :x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
-                                stroke="#b06b00" />
+                                stroke="#b06b00" @click.stop="() => emitAllocClick(rw.row.id)" class="clickable" />
                         </g>
                     </template>
                     <template
@@ -166,7 +169,8 @@
                             <rect x="-6" y="-6" width="12" height="12"
                                 :fill="allocBeforeTarget(rw.row) === true ? '#66bb6a' : '#ef5350'"
                                 :stroke="allocBeforeTarget(rw.row) === true ? '#3f8d43' : '#d21714'"
-                                transform="rotate(45)" />
+                                transform="rotate(45)" @click.stop="() => emitAllocClick(rw.row.id)"
+                                class="clickable" />
                         </g>
                     </template>
 
@@ -175,9 +179,11 @@
                         <template v-for="alloc in rw.row.allocations" :key="rw.row.id + '-alloc-' + alloc.dbId">
                             <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
                                 :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5"
-                                stroke="#0a6fc2" rx="3" @click.stop="() => emitAllocClick(rw.row.id)" />
+                                stroke="#0a6fc2" rx="3" @click.stop="() => emitAllocClick(rw.row.id)"
+                                class="clickable" />
                             <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4"
-                                font-size="11" fill="#fff">{{ alloc.task?.title ?? '' }}</text>
+                                font-size="11" fill="#fff" @click.stop="() => emitAllocClick(rw.row.id)"
+                                class="clickable">{{ alloc.task?.title ?? '' }}</text>
                         </template>
                     </template>
                 </template>
@@ -510,17 +516,22 @@ function toggleGroup(id: number) {
     cursor: grab;
 }
 
+.gantt-descriptions-list:active,
+.gantt-header:active,
+.gantt-chart-scroll:active {
+    cursor: grabbing;
+}
+
+.clickable {
+    cursor: pointer;
+}
+
 .row-symbol {
     margin-left: 6px;
     color: #b58900;
     font-weight: bold;
 }
 
-.gantt-descriptions-list:active,
-.gantt-header:active,
-.gantt-chart-scroll:active {
-    cursor: grabbing;
-}
 
 .gantt-header-and-chart {
     display: block;
