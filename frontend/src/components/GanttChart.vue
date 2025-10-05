@@ -13,9 +13,11 @@
                         <template v-for="(month, i) in months" :key="i">
                             <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
                                 stroke="#ccc" stroke-width="1" />
-                            <text v-if="month.width > dayWidth * 4" :x="month.x + 4" :y="monthRowHeight - 6"
-                                font-size="12" fill="#333">{{ month.label
-                                }}</text>
+                            <foreignObject v-if="month.width > dayWidth * 4" :x="month.x + 4" :y="0"
+                                :width="month.width - 8" :height="monthRowHeight">
+                                <div class="svg-text-ellipsis svg-text-month" xmlns="http://www.w3.org/1999/xhtml">{{
+                                    month.label }}</div>
+                            </foreignObject>
                         </template>
                     </g>
                     <g>
@@ -25,8 +27,11 @@
                                 stroke="#ccc" stroke-width="1" />
                             <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
                                 fill="#fff" stroke="#ccc" stroke-width="1" />
-                            <text :x="day.x + 2" :y="monthRowHeight + dayRowHeight - 6" font-size="10" fill="#666">{{
-                                day.label }}</text>
+                            <foreignObject :x="day.x + 2" :y="monthRowHeight" :width="dayWidth - 4"
+                                :height="dayRowHeight">
+                                <div class="svg-text-ellipsis svg-text-day" xmlns="http://www.w3.org/1999/xhtml">{{
+                                    day.label }}</div>
+                            </foreignObject>
                         </template>
                     </g>
                 </svg>
@@ -46,7 +51,7 @@
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
                         :style="{ padding: '0px' }" />
                     <span :style="{ marginLeft: rw.row.designation != TaskDesignation.Group ? '17.15px' : '0px' }"
-                        class="clickable" @click.stop="emitRowClick(rw.row.id)">{{
+                        class="clickable row-name" @click.stop="emitRowClick(rw.row.id)">{{
                             rw.row.name
                         }}</span>
                     <span v-if="props.rowSymbols && props.rowSymbols.find(s => s.rowId === rw.row.id)"
@@ -110,9 +115,9 @@
                     <template v-for="(rw, i) in visibleRows" :key="'milestone-line-'+rw.row.id">
                         <template
                             v-if="rw.row.designation == TaskDesignation.Milestone && rw.row.scheduleTarget && rw.row.allocations && rw.row.allocations.length > 0">
-                            <line :x1="dateToX(firstAllocStart(rw.row))" :y1="i * rowHeight + rowHeight / 2"
+                            <line :x1="dateToX(firstAllocStart(rw.row)!)" :y1="i * rowHeight + rowHeight / 2"
                                 :x2="dateToX(rw.row.scheduleTarget)" :y2="i * rowHeight + rowHeight / 2"
-                                :stroke="firstAllocStart(rw.row) <= rw.row.scheduleTarget! ? '#66bb6a' : '#ef5350'"
+                                :stroke="firstAllocStart(rw.row)! <= rw.row.scheduleTarget! ? '#66bb6a' : '#ef5350'"
                                 stroke-width="3" />
                         </template>
                     </template>
@@ -131,18 +136,21 @@
                     <template
                         v-if="rw.row.designation === TaskDesignation.Group && rw.row.allocations && rw.row.allocations.length > 0">
                         <template v-if="collapsedGroups.has(rw.row.id)">
-                            <rect :x="dateToX(firstAllocStart(rw.row))" :y="i * rowHeight + barPadding"
-                                :width="dateToX(firstAllocEnd(rw.row)) - dateToX(firstAllocStart(rw.row))"
+                            <rect :x="dateToX(firstAllocStart(rw.row)!)" :y="i * rowHeight + barPadding"
+                                :width="dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)"
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
                                 @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
-                            <text :x="dateToX(firstAllocStart(rw.row)) + 4"
-                                :y="i * rowHeight + barPadding + barHeight / 2 + 4" font-size="11" fill="#fff"
-                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable">{{
-                                    rw.row.name }}</text>
+                            <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
+                                :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
+                                :height="barHeight">
+                                <div class="svg-text-ellipsis svg-text-bar clickable"
+                                    xmlns="http://www.w3.org/1999/xhtml" @click.stop="() => emitRowClick(rw.row.id)">{{
+                                        rw.row.name }}</div>
+                            </foreignObject>
                         </template>
                         <template v-else>
                             <polygon
-                                :points="makeGroupBar(dateToX(firstAllocStart(rw.row)), dateToX(lastAllocEnd(rw.row)), i * rowHeight + rowHeight * 0.5)"
+                                :points="makeGroupBar(dateToX(firstAllocStart(rw.row)!), dateToX(lastAllocEnd(rw.row)!), i * rowHeight + rowHeight * 0.5)"
                                 fill="black" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
                         </template>
                     </template>
@@ -165,7 +173,7 @@
                     <template
                         v-if="rw.row.designation === TaskDesignation.Milestone && rw.row.allocations && rw.row.allocations.length > 0">
                         <g
-                            :transform="`translate(${dateToX(firstAllocStart(rw.row))}, ${i * rowHeight + rowHeight / 2})`">
+                            :transform="`translate(${dateToX(firstAllocStart(rw.row)!)}, ${i * rowHeight + rowHeight / 2})`">
                             <rect x="-6" y="-6" width="12" height="12"
                                 :fill="allocBeforeTarget(rw.row) === true ? '#66bb6a' : '#ef5350'"
                                 :stroke="allocBeforeTarget(rw.row) === true ? '#3f8d43' : '#d21714'"
@@ -181,10 +189,14 @@
                                 stroke="#0a6fc2" rx="3"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
                                 class="clickable" />
-                            <text :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding + barHeight / 2 + 4"
-                                font-size="11" fill="#fff"
-                                @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
-                                class="clickable">{{ alloc.task?.title ?? '' }}</text>
+                            <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
+                                :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
+                                :height="barHeight">
+                                <div class="svg-text-ellipsis svg-text-alloc clickable"
+                                    xmlns="http://www.w3.org/1999/xhtml"
+                                    @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
+                                    {{ alloc.task?.title ?? '' }}</div>
+                            </foreignObject>
                         </template>
                     </template>
                 </template>
@@ -378,14 +390,11 @@ function fallbackTimestamp(row: Row): string | Date | null {
 }
 
 function firstAllocStart(row: Row) {
-    return row.allocations?.[0]?.start ?? fallbackTimestamp(row) ?? props.start
-}
-function firstAllocEnd(row: Row) {
-    return row.allocations?.[0]?.end ?? fallbackTimestamp(row) ?? props.end
+    return row.allocations?.[0]?.start ?? fallbackTimestamp(row)
 }
 function lastAllocEnd(row: Row) {
     const allocs: Allocation[] = row.allocations ?? []
-    return (allocs.length > 0 ? allocs[allocs.length - 1]!.end : fallbackTimestamp(row)) ?? props.end
+    return (allocs.length > 0 ? allocs[allocs.length - 1]!.end : fallbackTimestamp(row))
 }
 function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
@@ -416,6 +425,14 @@ function allocArrow(predId: number, succId: number): string {
     const predCollapsedGroup = predRw?.lastVisibleId != predRw.row.id ? rowMap.value.get(predRw?.lastVisibleId) : null;
     const succCollapsedGroup = succRw?.lastVisibleId != succRw.row.id ? rowMap.value.get(succRw?.lastVisibleId) : null;
     if (predCollapsedGroup != null && predCollapsedGroup == succCollapsedGroup) {
+        // both in the same collapsed group, nothing to draw
+        return ""
+    }
+    if (predCollapsedGroup == null && succCollapsedGroup != null && succCollapsedGroup == predRw) {
+        // both in the same collapsed group, nothing to draw
+        return ""
+    }
+    if (predCollapsedGroup != null && succCollapsedGroup == null && predCollapsedGroup == succRw) {
         // both in the same collapsed group, nothing to draw
         return ""
     }
@@ -533,6 +550,41 @@ function toggleGroup(id: number) {
     font-weight: bold;
 }
 
+.svg-text-ellipsis {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: block;
+    box-sizing: border-box;
+    height: 100%;
+    line-height: 1;
+    align-content: center;
+}
+
+.svg-text-month {
+    font-size: 12px;
+    color: #333;
+}
+
+.svg-text-day {
+    font-size: 10px;
+    color: #666;
+}
+
+.svg-text-bar,
+.svg-text-alloc {
+    font-size: 11px;
+    color: #fff;
+}
+
+.row-name {
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    height: 100%;
+    line-height: 1;
+    overflow: hidden;
+    align-content: center;
+}
 
 .gantt-header-and-chart {
     display: block;

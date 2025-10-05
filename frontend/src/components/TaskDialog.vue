@@ -219,7 +219,7 @@ function from_select_opt(t: SelectOpt): Task | undefined {
 }
 
 const possibleParents = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId).map(to_select_opt)
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation == TaskDesignation.Group).map(to_select_opt)
 })
 const parent = computed({
     get() {

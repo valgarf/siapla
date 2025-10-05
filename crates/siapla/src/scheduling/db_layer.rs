@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::{Rc, Weak};
+use std::str::FromStr;
 
 use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
@@ -97,6 +98,7 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
             let out_nidx = g.add_node(node);
             grp_in_idx.insert(t.id, in_nidx);
             grp_out_idx.insert(t.id, out_nidx);
+            println!("Added to group indices: {} (in: {:?}, out: {:?})", t.id, in_nidx, out_nidx);
             g.add_edge(in_nidx, out_nidx, ());
         } else {
             db_to_nidx.insert(t.id, g.add_node(node));
@@ -116,6 +118,8 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
 
     // add parent links
     for t in db_task_map.values() {
+        let designation =
+            TaskDesignation::from_str(&t.designation).expect("Must have a valid designation");
         if let Some(pid) = t.parent_id {
             if let (Some(&in_nidx), Some(&out_nidx)) = (grp_in_idx.get(&pid), grp_out_idx.get(&pid))
             {
@@ -126,8 +130,12 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
                     g.add_edge(t_out_nidx, out_nidx, ());
                 } else {
                     let nidx = db_to_nidx[&t.id];
-                    g.add_edge(in_nidx, nidx, ());
-                    g.add_edge(nidx, out_nidx, ());
+                    if designation != TaskDesignation::Requirement {
+                        g.add_edge(in_nidx, nidx, ());
+                    }
+                    if designation != TaskDesignation::Milestone {
+                        g.add_edge(nidx, out_nidx, ());
+                    }
                 }
             }
             let parent = group_map.get(&pid).expect("Group must exist.");
@@ -135,7 +143,9 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
                 child.borrow_mut().parent = Some(Rc::downgrade(parent));
             } else if let Some(child) = task_map.get(&t.id) {
                 child.borrow_mut().parent = Some(Rc::downgrade(parent));
-            } else {
+            } else if ![TaskDesignation::Requirement, TaskDesignation::Milestone]
+                .contains(&designation)
+            {
                 panic!("No task or group with id found.");
             }
         }
