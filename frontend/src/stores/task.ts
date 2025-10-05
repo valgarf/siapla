@@ -6,6 +6,7 @@ import { computed, type Ref } from 'vue';
 import { TaskDialogData, useDialogStore } from './dialog';
 import type { Resource } from './resource';
 import { useResourceStore } from './resource';
+import { ApolloError } from '@apollo/client/core';
 
 export interface Task {
   dbId: number;
@@ -31,7 +32,7 @@ export interface ResourceConstraint {
 export interface TaskInput extends Partial<Task> {
   title: string;
   description: string;
-  designation: TaskDesignation;  
+  designation: TaskDesignation;
 }
 
 const TASK_QUERY = graphql(`
@@ -164,24 +165,35 @@ export const useTaskStore = defineStore('taskStore', () => {
       return convertQueryResult(queryGetAll.result.value);
     }
   });
- 
-  async function saveTask(task: Ref<TaskInput>) {
+
+  // Returns any mutation error as a string, or null on success
+  async function saveTask(task: Ref<TaskInput>): Promise<string | null> {
     const dialog = useDialogStore();
-    const resp = await mutSaveTask.mutate({ task: taskToObj(task) });
-    const dbId = resp?.data?.taskSave.dbId;
-    if (dbId != null) {
-      if (task.value.dbId == null) {
-        // a little hacky
-        // TODO: necessary?
-        task.value.dbId = dbId;
-        await queryGetAll.refetch();
-        // TODO: generic error handling?
-        dialog.replaceDialog(new TaskDialogData(dbId));
-      } else {
-        task.value.dbId = dbId;
-        await queryGetAll.refetch();
-        // TODO: generic error handling?
+    try {
+      const resp = await mutSaveTask.mutate({ task: taskToObj(task) });
+      // Apollo GraphQL errors (if any)
+      const gqlErrors = resp?.errors ?? [];
+      if (gqlErrors.length > 0) {
+        return gqlErrors.map((e) => e.message).join('; ');
       }
+      const dbId = resp?.data?.taskSave?.dbId;
+      if (dbId != null) {
+        if (task.value.dbId == null) {
+          // a little hacky
+          // TODO: necessary?
+          task.value.dbId = dbId;
+          await queryGetAll.refetch();
+          // TODO: generic error handling?
+          dialog.replaceDialog(new TaskDialogData(dbId));
+        } else {
+          task.value.dbId = dbId;
+          await queryGetAll.refetch();
+          // TODO: generic error handling?
+        }
+      }
+      return null;
+    } catch (err: unknown) {
+      return err instanceof ApolloError ? err.message : String(err)
     }
   }
 

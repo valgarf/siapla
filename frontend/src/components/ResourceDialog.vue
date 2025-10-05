@@ -9,6 +9,7 @@
             <q-btn flat @click="deleteResource()" :loading="resourceStore.deleting" color="negative" icon="delete"
                 :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
         </template>
+        <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
         <q-card-section>
             <q-input v-if="edit" outlined placeholder="Name" class="text-h5" v-model="localResource.name" />
             <div v-else class="text-h5">{{ localResource.name }}</div>
@@ -67,7 +68,8 @@
         <q-card-section>
             <div class="text-subtitle2 q-pb-sm">Vacations</div>
             <div v-if="edit" class="q-gutter-y-md">
-                <div v-for="(vacation, index) in localResource.vacations" :key="index+'-vacation-edit'" class="row items-center q-gutter-sm">
+                <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-edit'"
+                    class="row items-center q-gutter-sm">
                     <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
                     <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
                     <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
@@ -75,7 +77,8 @@
                 <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
             </div>
             <div v-else>
-                <div v-for="(vacation, index) in localResource.vacations" :key="index+'-vacation-show'" class="q-py-xs">
+                <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-show'"
+                    class="q-py-xs">
                     {{ formatDatetime(vacation.from) }} - {{ formatDatetime(vacation.until) }}
                 </div>
                 <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
@@ -259,7 +262,7 @@ watchEffect(() => {
     edit.value = localResource.value.dbId == null
     originalVacations = [...props.resource.vacations?.map(v => ({ ...v })) || []];
     console.assert(originalVacations.every(v => v.dbId != null), "assertion failed: all vacations should have a dbId")
-    
+
 })
 
 watchEffect(() => {
@@ -271,12 +274,16 @@ watchEffect(() => {
 
 // actions
 
+const saveError = ref<string | null>(null)
+
 async function toggleEdit() {
     if (edit.value) {
-        await save()
-        edit.value = false
+        const err = await save()
+        saveError.value = err
+        if (!err) edit.value = false
     }
     else {
+        saveError.value = null
         edit.value = true
     }
 }
@@ -287,7 +294,7 @@ function addVacation() {
     now.setMinutes(0)
     now.setSeconds(0)
     now.setMilliseconds(0)
-    const newVacation = { 
+    const newVacation = {
         dbId: null,
         from: now,
         until: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -299,7 +306,7 @@ function removeVacation(index: number) {
     localResource.value.vacations.splice(index, 1);
 }
 
-async function save() {
+async function save(): Promise<string | null> {
     let addedVacations = localResource.value.vacations.filter(v => !originalVacations.some(v2 => v2.dbId == v.dbId)).map(v => ({ from: v.from, until: v.until }));
     let removedVacations: number[] = originalVacations.filter(v => !localResource.value.vacations.some(v2 => v2.dbId == v.dbId && v.dbId != null)).map(v => v.dbId as number);
     const modifiedVacations = localResource.value.vacations.filter(v => originalVacations.some(v2 => v2.dbId == v.dbId && v.dbId != null && (v2.from != v.from || v2.until != v.until)));
@@ -308,8 +315,10 @@ async function save() {
     localResource.value.addedVacations = addedVacations
     localResource.value.removedVacations = removedVacations
     localResource.value.vacations = [];
-    await resourceStore.saveResource(localResource);
-    originalVacations = [...localResource.value.vacations.map(v => ({ ...v }))];
+    const err = await resourceStore.saveResource(localResource);
+    // Only clear originalVacations on success
+    if (!err) originalVacations = [...localResource.value.vacations.map(v => ({ ...v }))];
+    return err
 }
 
 async function deleteResource() {

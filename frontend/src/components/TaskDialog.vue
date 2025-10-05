@@ -14,6 +14,7 @@
             <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                 :disable="taskStore.saving" class="q-ma-xs"></q-btn>
         </template>
+        <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
         <q-card-section>
             <q-input v-if="edit" outlined placeholder="Title" class="text-h5" v-model="local_task.title" />
             <div v-else class="text-h5">{{ local_task.title }}</div>
@@ -285,19 +286,26 @@ const effective_requirements = computed(() => {
 
 // actions
 
+const saveError = ref<string | null>(null)
+
 async function toggleEdit() {
     if (edit.value) {
-        await save()
-        edit.value = false
+        const err = await save()
+        saveError.value = err
+        if (!err) edit.value = false
     }
     else {
+        saveError.value = null
         edit.value = true
     }
 }
 
 
-async function save() {
-    await taskStore.saveTask(local_task);
+async function save(): Promise<string | null> {
+    // reset error before saving
+    saveError.value = null
+    const err = await taskStore.saveTask(local_task)
+    return err
 }
 
 async function deleteTask() {

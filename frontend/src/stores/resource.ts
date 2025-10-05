@@ -5,6 +5,7 @@ import { Weekday } from 'src/gql/graphql';
 import type { CombinedAvailabilityQuery, ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
 import { ResourceDialogData, useDialogStore } from './dialog';
+import { ApolloError } from '@apollo/client/core';
 
 export interface Availability {
   mo: number;
@@ -249,23 +250,33 @@ export const useResourceStore = defineStore('resourceStore', () => {
     }
   });
 
-  async function saveResource(resource: Ref<ResourceInput>) {
+  // Returns any mutation error as a string, or null on success
+  async function saveResource(resource: Ref<ResourceInput>): Promise<string | null> {
     const dialog = useDialogStore();
-    const resp = await mutSaveResource.mutate({ resource: resourceToObj(resource) });
-    const dbId = resp?.data?.resourceSave.dbId;
-    if (dbId != null) {
-      if (resource.value.dbId == null) {
-        // a little hacky
-        // TODO: necessary?
-        resource.value.dbId = dbId;
-        await refetch(dbId);
-        // TODO: generic error handling?
-        dialog.replaceDialog(new ResourceDialogData(dbId));
-      } else {
-        resource.value.dbId = dbId;
-        await refetch(dbId);
-        // TODO: generic error handling?
+    try {
+      const resp = await mutSaveResource.mutate({ resource: resourceToObj(resource) });
+      const gqlErrors = resp?.errors ?? [];
+      if (gqlErrors.length > 0) {
+        return gqlErrors.map((e) => e.message).join('; ');
       }
+      const dbId = resp?.data?.resourceSave?.dbId;
+      if (dbId != null) {
+        if (resource.value.dbId == null) {
+          // a little hacky
+          // TODO: necessary?
+          resource.value.dbId = dbId;
+          await refetch(dbId);
+          // TODO: generic error handling?
+          dialog.replaceDialog(new ResourceDialogData(dbId));
+        } else {
+          resource.value.dbId = dbId;
+          await refetch(dbId);
+          // TODO: generic error handling?
+        }
+      }
+      return null;
+    } catch (err: unknown) {
+      return err instanceof ApolloError ? err.message : String(err)
     }
   }
 
