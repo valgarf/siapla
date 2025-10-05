@@ -347,7 +347,7 @@ pub fn remove_groups(g: &mut StableGraph<Node, ()>) {
     }
 }
 
-/// Transitive reduction of the graph (removes unnecessary dependencies between taks)
+/// Transitive reduction of the graph (removes unnecessary dependencies between tasks)
 pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
     let gref: &Graph<Node, ()> = g;
     let sorted = toposort(gref, None).map_err(|_cycle| anyhow::anyhow!("Cycle detected"))?;

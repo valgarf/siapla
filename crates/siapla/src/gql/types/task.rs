@@ -84,6 +84,11 @@ impl task::Model {
         ctx.load_by_col::<task::Entity, CIDX>(self.id).await
     }
 
+    pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<crate::entity::issue::Model>> {
+        const CIDX: usize = crate::entity::issue::Column::TaskId as usize;
+        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(self.id).await
+    }
+
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<Self>> {
         match self.parent_id {
             None => Ok(None),
