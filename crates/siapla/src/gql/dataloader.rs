@@ -1,4 +1,5 @@
 use std::{
+    cmp::{max, min},
     collections::{HashMap, HashSet},
     sync::{Arc, Weak},
 };
@@ -146,10 +147,15 @@ pub async fn query_combined_availability(
     let mut results: Vec<Intervals<NaiveDateTime>> = Vec::with_capacity(resource_ids.len());
     for &rid in resource_ids.iter() {
         let db_res = res_map.get(&rid).expect("Resource must exist");
+        let res_start = max(start, db_res.added.naive_utc());
+        let res_end = match db_res.removed {
+            Some(removed) => min(end, removed.naive_utc()),
+            None => end,
+        };
         let availability_iter = _AvailabilityIterator::new(
             &db_res.timezone,
-            start,
-            end,
+            res_start,
+            res_end,
             db_availabilities.iter().filter(|a| a.resource_id == rid).collect(),
         )?;
 
