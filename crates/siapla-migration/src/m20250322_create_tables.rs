@@ -64,6 +64,7 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
+                    .if_not_exists()
                     .name("IDX_Dependency_PredecessorId")
                     .table(Dependency::Table)
                     .col(Dependency::PredecessorId)
@@ -74,6 +75,7 @@ impl MigrationTrait for Migration {
         manager
             .create_index(
                 Index::create()
+                    .if_not_exists()
                     .name("IDX_Dependency_SuccessorId")
                     .table(Dependency::Table)
                     .col(Dependency::SuccessorId)
@@ -286,6 +288,29 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+        // Issue table: contains a code, description, type and optional link to a task
+        manager
+            .create_table(
+                Table::create()
+                    .table(Issue::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Issue::Id))
+                    .col(integer(Issue::Code))
+                    .col(string(Issue::Description))
+                    .col(string(Issue::Type))
+                    .col(integer_null(Issue::TaskId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Issue_Task")
+                            .from(Issue::Table, Issue::TaskId)
+                            .to(Task::Table, Task::Id)
+                            .on_delete(ForeignKeyAction::SetNull)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
@@ -312,6 +337,9 @@ impl MigrationTrait for Migration {
         manager.drop_table(Table::drop().table(Holiday::Table).if_exists().to_owned()).await?;
 
         manager.drop_table(Table::drop().table(Dependency::Table).if_exists().to_owned()).await?;
+
+        // Drop issue table before task since it references task
+        manager.drop_table(Table::drop().table(Issue::Table).if_exists().to_owned()).await?;
 
         manager.drop_table(Table::drop().table(Task::Table).if_exists().to_owned()).await?;
 
@@ -420,4 +448,14 @@ enum AllocatedResource {
     Id,
     AllocationId,
     ResourceId,
+}
+
+#[derive(DeriveIden)]
+enum Issue {
+    Table,
+    Id,
+    Code,
+    Description,
+    Type,
+    TaskId,
 }

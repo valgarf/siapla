@@ -8,6 +8,7 @@ pub mod availability;
 pub mod dependency;
 pub mod holiday;
 pub mod holiday_entry;
+pub mod issue;
 pub mod resource;
 pub mod resource_constraint;
 pub mod resource_constraint_entry;

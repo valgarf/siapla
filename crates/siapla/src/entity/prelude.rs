@@ -6,6 +6,7 @@ pub use super::availability::Entity as Availability;
 pub use super::dependency::Entity as Dependency;
 pub use super::holiday::Entity as Holiday;
 pub use super::holiday_entry::Entity as HolidayEntry;
+pub use super::issue::Entity as Issue;
 pub use super::resource::Entity as Resource;
 pub use super::resource_constraint::Entity as ResourceConstraint;
 pub use super::resource_constraint_entry::Entity as ResourceConstraintEntry;
