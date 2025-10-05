@@ -1,6 +1,6 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :availability="availability"
-        :dependencies="dependencies" @alloc-click="onTaskClick" @row-click="onTaskClick">
+        :dependencies="dependencies" :rowSymbols="rowSymbols" @alloc-click="onTaskClick" @row-click="onTaskClick">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
@@ -65,6 +66,19 @@ const ganttRows = computed(() => {
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
     }));
+});
+
+const issueStore = useIssueStore();
+const rowSymbols = computed(() => {
+    const map = new Map<number, { rowId: number; symbol: string; title?: string }>();
+    for (const i of issueStore.issues) {
+        if (i.taskId != null) {
+            const existing = map.get(i.taskId);
+            const desc = existing ? existing.title + '\n' + i.description : i.description;
+            map.set(i.taskId, { rowId: i.taskId, symbol: '⚠', title: desc });
+        }
+    }
+    return Array.from(map.values());
 });
 
 // availability per row: tasks do not have availability in this view; provide empty

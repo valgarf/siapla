@@ -7,7 +7,13 @@
                     <div v-if="isLoading">loading</div>
                     <div v-else-if="state == CalculationState.Calculating">calculating</div>
                     <div v-else-if="state == CalculationState.Modified">modified</div>
-                    <div v-else-if="state == CalculationState.Finished">finished</div>
+                    <div v-else-if="state == CalculationState.Finished">
+                        <template v-if="generalIssues.length > 0">
+                            ⚠ Issues: <span v-for="(i, idx) in generalIssues" :key="i.dbId">{{ i.description }}<span
+                                    v-if="idx < generalIssues.length - 1"> - </span></span>
+                        </template>
+                        <template v-else>finished</template>
+                    </div>
                     <div v-else>{{ state }}</div>
                 </div>
             </div>
@@ -22,6 +28,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { usePlanStore } from 'src/stores/plan';
+import { type Issue, useIssueStore } from 'src/stores/issue';
 import { CalculationState } from 'src/gql/graphql';
 
 
@@ -29,6 +36,8 @@ const plan = usePlanStore();
 const state = computed(() => plan.calculationState);
 const isLoading = computed(() => plan.loading);
 const showSpinner = computed(() => isLoading.value || state.value === CalculationState.Calculating);
+const issueStore = useIssueStore();
+const generalIssues = computed(() => issueStore.issues.filter((i: Issue) => i.taskId == null));
 
 async function recalc() {
     await plan.recalculate()
@@ -36,6 +45,8 @@ async function recalc() {
 
 const bgClass = computed(() => {
     if (isLoading.value) return 'yellow';
+    // if there are general issues, stay yellow
+    if (generalIssues.value.length > 0) return 'yellow';
     if (state.value === CalculationState.Finished) return 'green';
     if (state.value === CalculationState.Calculating || state.value === CalculationState.Modified) return 'yellow';
     return 'yellow';

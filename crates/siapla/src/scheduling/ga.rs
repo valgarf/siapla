@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+// anyhow not required here; planner uses PlanningIssue for errors
 use chrono::{NaiveDateTime, TimeDelta};
 use itertools::Itertools;
 use petgraph::{
@@ -14,7 +14,7 @@ use std::{
 };
 use tracing::warn;
 
-use crate::scheduling::{Interval, Intervals, Plan, ResourceConstraint, Slot};
+use crate::scheduling::{Interval, Intervals, Plan, PlanningIssue, ResourceConstraint, Slot};
 
 use super::datastructures::{Node, Project, Task};
 
@@ -117,9 +117,17 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             Ok(assignment) => {
                 plan.assignments.insert(task_gene.task.borrow().db_id, assignment);
             }
-            Err(reason) => {
+            Err(Some(issue)) => {
                 let task = task_gene.task.borrow();
-                warn!("Failed planning task {} (id {}): {}", task.title, task.db_id, reason)
+                warn!(
+                    "Failed planning task {} (id {}): {}",
+                    task.title, task.db_id, issue.description
+                );
+                plan.issues.push(issue);
+            }
+            Err(None) => {
+                let task = task_gene.task.borrow();
+                warn!("Failed planning task {} (id {})", task.title, task.db_id);
             }
         }
     }
@@ -275,7 +283,7 @@ pub fn plan_task(
     task_gene: &TaskGene,
     resource_slots: &mut HashMap<i32, Vec<Slot>>,
     g_finished: &mut Graph<Option<NaiveDateTime>, ()>,
-) -> anyhow::Result<HashMap<i32, Slot>> {
+) -> Result<HashMap<i32, Slot>, Option<PlanningIssue>> {
     let task = task_gene.task.borrow();
     let res_ids: Vec<_> = task_gene.required_resource_ids.iter().cloned().collect();
     let task_start_opt = match g_finished
@@ -296,10 +304,18 @@ pub fn plan_task(
     let task_start = if let Some(task_start) = task_start_opt {
         task_start
     } else {
-        return Err(anyhow!("Failed to determine start timestamp."));
+        return Err(Some(PlanningIssue {
+            code: crate::gql::issue::IssueCode::PredIssue,
+            description: "Failed to determine start timestamp.".to_string(),
+            task_id: Some(task.db_id),
+        }));
     };
     if task.effort <= 0.0 {
-        return Err(anyhow!("No effort set for this task."));
+        return Err(Some(PlanningIssue {
+            code: crate::gql::issue::IssueCode::NoEffort,
+            description: "No effort set for this task.".to_string(),
+            task_id: Some(task.db_id),
+        })); // detected on creation
     }
     let mut slot_iterators: Vec<_SlotIterator> = res_ids
         .into_iter()
@@ -311,11 +327,26 @@ pub fn plan_task(
             )
         })
         .collect();
-    _ensure_overlapping_slots(&mut slot_iterators)?;
+    if let Err(e) = _ensure_overlapping_slots(&mut slot_iterators) {
+        return Err(Some(PlanningIssue {
+            code: crate::gql::issue::IssueCode::NoSlotFound,
+            description: format!("{}", e),
+            task_id: Some(task.db_id),
+        }));
+    }
     let effort = TimeDelta::seconds((task.effort * 8.0 * 3600.0).round() as i64);
     // TODO speed? configure days != 8 hours?
     loop {
-        let intervals = _slot_intervals(project, task_start, &mut slot_iterators)?;
+        let intervals = match _slot_intervals(project, task_start, &mut slot_iterators) {
+            Ok(iv) => iv,
+            Err(e) => {
+                return Err(Some(PlanningIssue {
+                    code: crate::gql::issue::IssueCode::NoSlotFound,
+                    description: format!("{}", e),
+                    task_id: Some(task.db_id),
+                }));
+            }
+        };
         if intervals.length().expect("No unbounded intervals") >= effort {
             let mut result: HashMap<i32, Slot> = HashMap::new();
             let assigned_intervals = _reduce_intervals(intervals, effort);
@@ -342,7 +373,13 @@ pub fn plan_task(
             *nw = slot.range.end().value();
             return Ok(result);
         } else {
-            _advance_earliest_slot(&mut slot_iterators)?;
+            if let Err(e) = _advance_earliest_slot(&mut slot_iterators) {
+                return Err(Some(PlanningIssue {
+                    code: crate::gql::issue::IssueCode::NoSlotFound,
+                    description: format!("{}", e),
+                    task_id: Some(task.db_id),
+                }));
+            }
         }
     }
 }

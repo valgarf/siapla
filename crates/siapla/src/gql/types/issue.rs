@@ -46,6 +46,7 @@ pub enum IssueCode {
     RequirementMissing = 201,
     MilestoneMissing = 202,
     ResourceMissing = 203,
+    NoEffort = 204,
     NoSlotFound = 301,
     DependencyLoop = 302,
     HierarchyLoop = 303,

@@ -14,6 +14,8 @@ pub struct Project {
     pub calculation_end: NaiveDateTime,
     pub objs: ProjectObjects,
     pub g: Graph<Node, ()>,
+    // collected issues discovered at project/query time (code, description, optional task_id)
+    pub issues: Vec<PlanningIssue>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,4 +108,13 @@ pub struct ResourceConstraintEntry {
 pub struct Plan {
     pub assignments: HashMap<i32, HashMap<i32, Slot>>, // task_id -> (resource_id -> Slot)
     pub fulfilled_milestones: Vec<FulfilledMilestone>,
+    // collected issues during planning: (code, description, optional task_id)
+    pub issues: Vec<PlanningIssue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlanningIssue {
+    pub code: crate::gql::issue::IssueCode,
+    pub description: String,
+    pub task_id: Option<i32>,
 }

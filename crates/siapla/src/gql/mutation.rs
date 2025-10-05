@@ -20,7 +20,13 @@ impl Mutation {
     }
 
     async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<task::Model> {
-        let res = task_save(ctx, task).await?;
+        let res = match task_save(ctx, task).await {
+            Ok(res) => res,
+            Err(err) => {
+                ctx.failed().await;
+                Err(err)?
+            }
+        };
         // notify modification channel
         ctx.app_state().notify_modified("graphql".to_string());
         Ok(res)
@@ -41,7 +47,13 @@ impl Mutation {
         ctx: &Context,
         resource: ResourceSaveInput,
     ) -> anyhow::Result<resource::Model> {
-        let res = resource_save(ctx, resource).await?;
+        let res = match resource_save(ctx, resource).await {
+            Ok(res) => res,
+            Err(err) => {
+                ctx.failed().await;
+                Err(err)?
+            }
+        };
         ctx.app_state().notify_modified("graphql".to_string());
         Ok(res)
     }

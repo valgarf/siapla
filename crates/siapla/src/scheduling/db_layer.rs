@@ -4,6 +4,7 @@ use std::fmt::Display;
 use std::rc::{Rc, Weak};
 
 use crate::gql::context::Context;
+use crate::gql::issue::IssueType;
 // availability now loaded via Context::load_combined_availability
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
@@ -245,8 +246,112 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
 
     let print_g = g.map(|_, n| PrintNodeName(n), |_, _| PrintEdgeEmpty {});
     println!("{}", Dot::with_config(&print_g, &[Config::EdgeNoLabel]));
+    let mut project = Project {
+        start,
+        calculation_end: estimated_end,
+        objs: project_objects,
+        g: g,
+        issues: vec![],
+    };
+    project.issues = detect_project_issues(&project);
 
-    Ok(Project { start, calculation_end: estimated_end, objs: project_objects, g: g })
+    Ok(project)
+}
+
+/// Detect project-level and per-task planning issues from the built/reduced graph and objects.
+pub fn detect_project_issues(
+    project: &Project,
+) -> Vec<crate::scheduling::datastructures::PlanningIssue> {
+    let mut issues: Vec<crate::scheduling::datastructures::PlanningIssue> = Vec::new();
+    // global checks
+    if project.objs.requirements.is_empty() {
+        issues.push(crate::scheduling::datastructures::PlanningIssue {
+            code: crate::gql::issue::IssueCode::RequirementMissing,
+            description: "No requirement found in project".to_string(),
+            task_id: None,
+        });
+    }
+    if project.objs.milestones.is_empty() {
+        issues.push(crate::scheduling::datastructures::PlanningIssue {
+            code: crate::gql::issue::IssueCode::MilestoneMissing,
+            description: "No milestone found in project".to_string(),
+            task_id: None,
+        });
+    }
+
+    // per-task checks (requirement ancestors and milestone predecessors)
+    let mut has_requirement_ancestor: std::collections::HashSet<i32> =
+        std::collections::HashSet::new();
+    let mut stack = vec![];
+    for nidx in project.g.externals(petgraph::Direction::Incoming) {
+        if let Some(crate::scheduling::datastructures::Node::Requirement(_)) =
+            project.g.node_weight(nidx)
+        {
+            for nei in project.g.neighbors_directed(nidx, petgraph::Direction::Outgoing) {
+                stack.push(nei);
+            }
+        }
+    }
+    while let Some(nidx) = stack.pop() {
+        if let Some(crate::scheduling::datastructures::Node::Task(t_rc)) =
+            project.g.node_weight(nidx)
+        {
+            has_requirement_ancestor.insert(t_rc.borrow().db_id);
+            for nei in project.g.neighbors_directed(nidx, petgraph::Direction::Outgoing) {
+                stack.push(nei);
+            }
+        }
+    }
+
+    let mut is_required_by_milestone: std::collections::HashSet<i32> =
+        std::collections::HashSet::new();
+    for nidx in project.g.externals(petgraph::Direction::Outgoing) {
+        if let Some(crate::scheduling::datastructures::Node::Milestone(_)) =
+            project.g.node_weight(nidx)
+        {
+            for pred in project.g.neighbors_directed(nidx, petgraph::Direction::Incoming) {
+                stack.push(pred);
+            }
+        }
+    }
+    while let Some(nidx) = stack.pop() {
+        if let Some(crate::scheduling::datastructures::Node::Task(t_rc)) =
+            project.g.node_weight(nidx)
+        {
+            is_required_by_milestone.insert(t_rc.borrow().db_id);
+            for pred in project.g.neighbors_directed(nidx, petgraph::Direction::Incoming) {
+                stack.push(pred);
+            }
+        }
+    }
+
+    for t in project.objs.tasks.iter() {
+        let tid = t.borrow().db_id;
+        if !has_requirement_ancestor.contains(&tid) {
+            issues.push(crate::scheduling::datastructures::PlanningIssue {
+                code: crate::gql::issue::IssueCode::RequirementMissing,
+                description: format!("Task {} has no requirement ancestor", tid),
+                task_id: Some(tid),
+            });
+        }
+        if !is_required_by_milestone.contains(&tid) {
+            issues.push(crate::scheduling::datastructures::PlanningIssue {
+                code: crate::gql::issue::IssueCode::MilestoneMissing,
+                description: format!("Task {} is not a predecessor of any milestone", tid),
+                task_id: Some(tid),
+            });
+        }
+
+        // Resource constraint missing: if a Task has no constraints (inherited or direct)
+        if t.borrow().constraints.is_empty() {
+            issues.push(crate::scheduling::datastructures::PlanningIssue {
+                code: crate::gql::issue::IssueCode::ResourceMissing,
+                description: format!("Task {} has no resource constraints", tid),
+                task_id: Some(tid),
+            });
+        }
+    }
+    issues
 }
 
 struct PrintNodeName<'a>(&'a Node);
@@ -360,10 +465,20 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn store_plan(ctx: &Context, _problem: &Project, plan: &Plan) -> anyhow::Result<()> {
+pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     allocated_resource::Entity::delete_many().exec(txn).await?;
     allocation::Entity::delete_many().exec(txn).await?;
+    // remove previous planning issues
+    crate::entity::issue::Entity::delete_many()
+        .filter(
+            crate::entity::issue::Column::Type
+                .eq(<&'static str>::from(IssueType::PlanningTask))
+                .or(crate::entity::issue::Column::Type
+                    .eq(<&'static str>::from(IssueType::PlanningGeneral))),
+        )
+        .exec(txn)
+        .await?;
     for (task_id, assignment) in &plan.assignments {
         let range = assignment
             .values()
@@ -398,6 +513,39 @@ pub async fn store_plan(ctx: &Context, _problem: &Project, plan: &Plan) -> anyho
             end: ActiveValue::Set(fm.date.and_utc()),
         };
         am.insert(txn).await?;
+    }
+    // Persist project-level issues (from query_problem)
+    for pi in &project.issues {
+        let issue_type_str: String = if pi.task_id.is_some() {
+            <&'static str>::from(IssueType::PlanningTask).into()
+        } else {
+            <&'static str>::from(IssueType::PlanningGeneral).into()
+        };
+        let issue_am = crate::entity::issue::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            code: sea_orm::ActiveValue::Set(pi.code as i32),
+            description: sea_orm::ActiveValue::Set(pi.description.clone()),
+            r#type: sea_orm::ActiveValue::Set(issue_type_str),
+            task_id: sea_orm::ActiveValue::Set(pi.task_id),
+        };
+        issue_am.insert(txn).await?;
+    }
+
+    // Persist planning issues collected in Plan
+    for pi in &plan.issues {
+        let issue_type_str: String = if pi.task_id.is_some() {
+            <&'static str>::from(IssueType::PlanningTask).into()
+        } else {
+            <&'static str>::from(IssueType::PlanningGeneral).into()
+        };
+        let issue_am = crate::entity::issue::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            code: sea_orm::ActiveValue::Set(pi.code as i32),
+            description: sea_orm::ActiveValue::Set(pi.description.clone()),
+            r#type: sea_orm::ActiveValue::Set(issue_type_str),
+            task_id: sea_orm::ActiveValue::Set(pi.task_id),
+        };
+        issue_am.insert(txn).await?;
     }
     Ok(())
 }

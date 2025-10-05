@@ -37,6 +37,13 @@
                 local_task.designation }}</q-chip>
         </q-card-section>
 
+        <q-card-section v-if="local_task.designation == TaskDesignation.Task && taskIssues.length > 0">
+            <div class="issue-list">
+                <div class="issue-list-title">Issues</div>
+                <div v-for="(iss, idx) in taskIssues" :key="idx" class="issue-item">⚠ {{ iss.description }}</div>
+            </div>
+        </q-card-section>
+
         <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
             <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
             <div v-else class="row items-baseline">
@@ -56,13 +63,16 @@
             <div class="q-gutter-y-sm">
                 <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                     <div class="col">
-                        <EditableResourceList v-model="option.resources" :name="`Resource Constraint ${idx+1}${(local_task.resourceConstraints || []).length==0 ? ' (inherited)' : ''}`" :possible="allResources" :edit="edit" class="full-width" />
+                        <EditableResourceList v-model="option.resources"
+                            :name="`Resource Constraint ${idx + 1}${(local_task.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
+                            :possible="allResources" :edit="edit" class="full-width" />
                         <div class="row q-gutter-sm items-center">
-                            <q-checkbox v-if="edit" v-model="option.optional"  label="Optional" />
+                            <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                             <div v-else class="q-ml-md text-subtitle2">
-                                {{ option.optional ? "Optional" : "Required"  }}
+                                {{ option.optional ? "Optional" : "Required" }}
                             </div>
-                            <q-input v-if="edit" v-model.number="option.speed"  type="number" min="0" step="0.1" label="Speed" dense style="max-width: 120px;" />
+                            <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
+                                label="Speed" dense style="max-width: 120px;" />
                             <div v-else class="q-ml-lg text-subtitle2">
                                 Speed: {{ option.speed.toFixed(2) }}
                             </div>
@@ -70,7 +80,8 @@
                     </div>
                     <q-btn flat round v-show="edit" icon="remove" color="negative" @click="removeResourceSlot(idx)" />
                 </div>
-                <q-btn flat v-show="edit" icon="add" color="primary" label="Add Resource Constraint" @click="addResourceSlot" />
+                <q-btn flat v-show="edit" icon="add" color="primary" label="Add Resource Constraint"
+                    @click="addResourceSlot" />
             </div>
         </q-card-section>
 
@@ -111,7 +122,7 @@
             </div>
         </q-card-section>
 
-        
+
     </DialogLayout>
 </template>
 
@@ -124,6 +135,7 @@ import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
 import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
+import { type Issue, useIssueStore } from 'src/stores/issue';
 import DateTimeInput from './DateTimeInput.vue';
 import DialogLayout from './DialogLayout.vue';
 import EditableResourceList from './EditableResourceList.vue';
@@ -158,7 +170,7 @@ watchEffect(() => {
 const parents = computed(() => {
     const parents = [];
     let parent = local_task.value.parent;
-    while (parent != null) {
+    while (parent != null && parent.dbId != local_task.value.dbId) {
         parents.push(parent)
         parent = parent.parent
     }
@@ -180,12 +192,12 @@ const possibleChildren = computed(() => {
 
 const resourceConstraints = computed(() => {
     {
-        let result =  local_task.value.resourceConstraints ?? []
+        let result = local_task.value.resourceConstraints ?? []
         if (!edit.value) {
             let parent = local_task.value.parent;
-            while (result.length < 1 && parent!=null) {
+            while (result.length < 1 && parent != null) {
                 result = parent.resourceConstraints;
-                parent = parent.parent;                
+                parent = parent.parent;
             }
         }
         return result;
@@ -217,44 +229,56 @@ const parent = computed({
     }
 })
 
-function _get_milestones(task: Partial<Task>): Set<Task> {
+function _get_milestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
+    if (task.dbId) {
+        if (seen.has(task.dbId)) {
+            return result;
+        }
+        seen.add(task.dbId)
+    }
     if (task.designation == TaskDesignation.Milestone && task.dbId != null) {
         const store_task = taskStore.task(task.dbId)
         if (store_task != null) { result.add(store_task) }
     }
     if (task.parent != null) {
-        result = result.union(_get_milestones(task.parent))
+        result = result.union(_get_milestones(task.parent, seen))
     }
     for (const suc of task.successors ?? []) {
-        result = result.union(_get_milestones(suc))
+        result = result.union(_get_milestones(suc, seen))
     }
     return result
 }
 
 const effective_milestones = computed(() => {
-    const result = Array.from(_get_milestones(local_task.value)).filter((t) => t.dbId != local_task.value.dbId);
+    const result = Array.from(_get_milestones(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId);
     result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
     return result
 })
 
-function _get_requirements(task: Partial<Task>): Set<Task> {
+function _get_requirements(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
+    if (task.dbId) {
+        if (seen.has(task.dbId)) {
+            return result;
+        }
+        seen.add(task.dbId)
+    }
     if (task.designation == TaskDesignation.Requirement && task.dbId != null) {
         const store_task = taskStore.task(task.dbId)
         if (store_task != null) { result.add(store_task) }
     }
     if (task.parent != null) {
-        result = result.union(_get_requirements(task.parent))
+        result = result.union(_get_requirements(task.parent, seen))
     }
     for (const pre of task.predecessors ?? []) {
-        result = result.union(_get_requirements(pre))
+        result = result.union(_get_requirements(pre, seen))
     }
     return result
 }
 
 const effective_requirements = computed(() => {
-    const result = Array.from(_get_requirements(local_task.value)).filter((t) => t.dbId != local_task.value.dbId);
+    const result = Array.from(_get_requirements(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId);
     result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
     return result
 })
@@ -309,4 +333,28 @@ function removeResourceSlot(idx: number) {
     local_task.value.resourceConstraints.splice(idx, 1);
 }
 
+const issueStore = useIssueStore();
+const taskIssues = computed(() => {
+    const tid = local_task.value.dbId;
+    if (tid == null) return [];
+    return issueStore.issues.filter((i: Issue) => i.taskId === tid);
+});
+
 </script>
+
+<style scoped>
+.issue-list {
+    background: #fff4b1;
+    padding: 8px;
+    border-radius: 6px;
+}
+
+.issue-list-title {
+    font-weight: bold;
+    margin-bottom: 6px;
+}
+
+.issue-item {
+    padding: 4px 0;
+}
+</style>

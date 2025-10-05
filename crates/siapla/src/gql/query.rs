@@ -1,5 +1,5 @@
 use crate::{
-    entity::{holiday, resource, task},
+    entity::{holiday, issue, resource, task},
     gql::plan::Plan,
 };
 
@@ -75,6 +75,12 @@ impl Query {
 
     async fn current_plan(_ctx: &Context) -> Plan {
         Plan {}
+    }
+
+    async fn issues(ctx: &Context) -> anyhow::Result<Vec<issue::Model>> {
+        let tx = ctx.txn().await?;
+        let res = issue::Entity::find().order_by_asc(issue::Column::Id).all(tx).await?;
+        Ok(res)
     }
 }
 

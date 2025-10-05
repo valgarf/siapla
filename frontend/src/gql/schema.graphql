@@ -72,6 +72,33 @@ type Interval {
   start: DateTime!
 }
 
+type Issue {
+  code: IssueCode!
+  dbId: Int!
+  description: String!
+  task: Task
+  type: IssueType!
+}
+
+enum IssueCode {
+  DEPENDENCY_LOOP
+  HIERARCHY_LOOP
+  MILESTONE_MISSING
+  NO_EFFORT
+  NO_SLOT_FOUND
+  PRED_ISSUE
+  REQUIREMENT_MISSING
+  RESOURCE_MISSING
+  UNKNOWN
+}
+
+enum IssueType {
+  GENERAL
+  PLANNING_GENERAL
+  PLANNING_TASK
+  TASK
+}
+
 """
 Date in the proleptic Gregorian calendar (without time zone).
 
@@ -108,6 +135,7 @@ type Query {
   currentPlan: Plan!
   getFromOpenHolidays(isocode: String!): Holiday
   helloWorld: String!
+  issues: [Issue!]!
   region(isocode: String!): Region
   resources: [Resource!]!
   tasks: [Task!]!
@@ -181,6 +209,7 @@ type Task {
   designation: TaskDesignation!
   earliestStart: DateTime
   effort: Float
+  issues: [Issue!]!
   parent: Task
   predecessors: [Task!]!
   resourceConstraints: [ResourceConstraint!]!

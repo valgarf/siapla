@@ -6,6 +6,7 @@ import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { type Task, useTaskStore } from './task';
 import { TaskDesignation, type PlanQuery, CalculationState } from 'src/gql/graphql';
+import { useIssueStore } from './issue';
 
 export interface Allocation {
   dbId: number;
@@ -54,6 +55,7 @@ function convertQueryResult(query: PlanQuery): Allocation[] {
 
 // actual store
 export const usePlanStore = defineStore('planStore', () => {
+  const issueStore = useIssueStore();
   const queryGetAll = useQuery(PLAN_QUERY);
   const calcSub = useSubscription(CALC_SUB);
   const mutRecalculate = useMutation(RECALC_MUT);
@@ -70,6 +72,7 @@ export const usePlanStore = defineStore('planStore', () => {
       if (state === CalculationState.Finished) {
         // react to finished events: refetch plan
         queryGetAll.refetch()?.catch((reason) => { console.warn("Failed to load plan: ", reason) });
+        issueStore.refetch()?.catch((reason) => { console.warn("Failed to load issues: ", reason) });
       }
     }
   );

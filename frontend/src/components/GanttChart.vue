@@ -49,6 +49,10 @@
                         @click.stop="emitRowClick(rw.row.id)">{{
                             rw.row.name
                         }}</span>
+                    <span v-if="props.rowSymbols && props.rowSymbols.find(s => s.rowId === rw.row.id)"
+                        class="row-symbol" :title="(props.rowSymbols.find(s => s.rowId === rw.row.id)?.title) || ''">
+                        {{props.rowSymbols.find(s => s.rowId === rw.row.id)?.symbol}}
+                    </span>
                 </div>
             </div>
         </div>
@@ -204,7 +208,7 @@ type Availability = { rowId: number; segments: AvailabilitySegment[] }
 type Dependency = { predId: number; succId: number }
 type RowWrapper = { visible: boolean, lastVisibleId: number, visibleIdx: number, idx: number, row: Row };
 
-const props = defineProps<{ start: string | Date; end: string | Date; rows: Row[]; availability?: Availability[]; dependencies?: Dependency[]; rowHeight?: number; dayWidth?: number; barPadding?: number }>()
+const props = defineProps<{ start: string | Date; end: string | Date; rows: Row[]; availability?: Availability[]; dependencies?: Dependency[]; rowHeight?: number; dayWidth?: number; barPadding?: number, rowSymbols?: { rowId: number; symbol: string; title?: string }[] }>()
 const emit = defineEmits<{
     (e: 'alloc-click', id: number | null): void
     (e: 'row-click', id: number): void
@@ -504,6 +508,12 @@ function toggleGroup(id: number) {
 .gantt-header,
 .gantt-chart-scroll {
     cursor: grab;
+}
+
+.row-symbol {
+    margin-left: 6px;
+    color: #b58900;
+    font-weight: bold;
 }
 
 .gantt-descriptions-list:active,

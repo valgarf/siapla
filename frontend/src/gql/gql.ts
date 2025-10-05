@@ -17,6 +17,7 @@ type Documents = {
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": typeof types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": typeof types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": typeof types.GetHolidayDocument,
+    "\n  query issues {\n    issues {\n      dbId\n      code\n      description\n      type\n      task {\n        dbId\n      }\n    }\n  }\n": typeof types.IssuesDocument,
     "\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n": typeof types.PlanDocument,
     "\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n": typeof types.CalcUpdateDocument,
     "\n  mutation recalculate { recalculateNow }\n": typeof types.RecalculateDocument,
@@ -32,6 +33,7 @@ const documents: Documents = {
     "\n  query GetCountries {\n    countries {\n      isocode\n      name\n    }\n  }\n": types.GetCountriesDocument,
     "\n    query GetRegions($isocode: String!) {\n      country(isocode: $isocode) {\n        regions {\n          name\n          isocode\n        }\n      }\n    }\n  ": types.GetRegionsDocument,
     "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n": types.GetHolidayDocument,
+    "\n  query issues {\n    issues {\n      dbId\n      code\n      description\n      type\n      task {\n        dbId\n      }\n    }\n  }\n": types.IssuesDocument,
     "\n  query plan {\n    currentPlan {\n      allocations {\n        dbId\n        start\n        end\n        task {\n          dbId\n        }\n        resources {\n          dbId\n        }\n      }\n  }\n}\n": types.PlanDocument,
     "\n  subscription calcUpdate {\n    calculationUpdate {\n      state\n    }\n  }\n": types.CalcUpdateDocument,
     "\n  mutation recalculate { recalculateNow }\n": types.RecalculateDocument,
@@ -70,6 +72,10 @@ export function graphql(source: "\n    query GetRegions($isocode: String!) {\n  
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(source: "\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n"): (typeof documents)["\n  query GetHoliday($isocode: String!) {\n    getFromOpenHolidays(isocode: $isocode) {\n      dbId\n      name\n      country {\n        name\n        isocode\n      }\n      region {\n        name\n        isocode\n      }\n    }\n  }\n"];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(source: "\n  query issues {\n    issues {\n      dbId\n      code\n      description\n      type\n      task {\n        dbId\n      }\n    }\n  }\n"): (typeof documents)["\n  query issues {\n    issues {\n      dbId\n      code\n      description\n      type\n      task {\n        dbId\n      }\n    }\n  }\n"];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-#[derive(GraphQLEnum, IntoStaticStr, EnumString)]
+#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq)]
 pub enum TaskDesignation {
     Task,
     Group,
@@ -426,6 +426,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     let successors = task.successors.take();
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
+    // keep a copy for issue detection after mutations (not used for now)
     let am = task::ActiveModel::from(task);
     let txn = ctx.txn().await?;
     let model = if am.id.is_set() { am.update(txn).await? } else { am.insert(txn).await? };
@@ -442,6 +443,73 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     if let Some(constraints) = resource_constraints {
         update_resource_constraints(&ctx, &model, &constraints).await?;
     }
-    // TODO: before committing, check if we now have predecessor or parent cycles!
+    // Check for dependency cycles (abort save on loop)
+    // Fetch dependencies and run a simple DFS cycle detection
+    let deps = dependency::Entity::find().all(txn).await?;
+    use std::collections::HashMap as _HM;
+    let mut adj: _HM<i32, Vec<i32>> = _HM::new();
+    for d in deps.iter() {
+        adj.entry(d.predecessor_id).or_default().push(d.successor_id);
+    }
+    // DFS
+    fn has_cycle(adj: &std::collections::HashMap<i32, Vec<i32>>) -> bool {
+        use std::collections::HashSet;
+        fn visit(
+            n: i32,
+            adj: &std::collections::HashMap<i32, Vec<i32>>,
+            visiting: &mut HashSet<i32>,
+            visited: &mut HashSet<i32>,
+        ) -> bool {
+            if visited.contains(&n) {
+                return false;
+            }
+            if visiting.contains(&n) {
+                return true;
+            }
+            visiting.insert(n);
+            if let Some(neis) = adj.get(&n) {
+                for &m in neis {
+                    if visit(m, adj, visiting, visited) {
+                        return true;
+                    }
+                }
+            }
+            visiting.remove(&n);
+            visited.insert(n);
+            false
+        }
+        let mut visiting = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        for &n in adj.keys() {
+            if visit(n, adj, &mut visiting, &mut visited) {
+                return true;
+            }
+        }
+        false
+    }
+    if has_cycle(&adj) {
+        return Err(anyhow!("Dependency loop detected"));
+    }
+
+    // Check parent (hierarchy) loops for this task
+    {
+        use std::collections::HashSet;
+        let mut seen: HashSet<i32> = HashSet::new();
+        let mut cur = Some(model.id);
+        while let Some(cid) = cur {
+            if seen.contains(&cid) {
+                return Err(anyhow!("Hierarchy loop detected"));
+            }
+            seen.insert(cid);
+            let t = task::Entity::find_by_id(cid).one(txn).await?;
+            cur = match t {
+                Some(tt) => tt.parent_id,
+                None => None,
+            };
+        }
+    }
+
+    // resource-constraint checks are handled as planning issues in detect_project_issues
+
     Ok(model)
 }

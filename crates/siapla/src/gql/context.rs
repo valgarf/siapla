@@ -12,7 +12,7 @@ type AvailabilityLoaderMap =
     std::collections::HashMap<(NaiveDateTime, NaiveDateTime), AvailabilityLoader>;
 use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
-use futures::TryFutureExt;
+use futures::{TryFutureExt, lock::Mutex};
 use sea_orm::{
     Database, DatabaseTransaction, EntityTrait, TransactionTrait as _, strum::IntoEnumIterator,
 };
@@ -24,6 +24,7 @@ pub struct Context {
     availability_loaders: Arc<RwLock<AvailabilityLoaderMap>>,
     me: Weak<Self>,
     app_state: Arc<AppState>,
+    success: Mutex<bool>,
 }
 
 impl std::fmt::Debug for Context {
@@ -61,8 +62,14 @@ impl Context {
             )),
             availability_loaders: Arc::new(RwLock::new(AvailabilityLoaderMap::new())),
             me: me.clone(),
+            success: Mutex::new(true),
             app_state,
         })
+    }
+
+    pub async fn failed(&self) {
+        let mut lock_guard = self.success.lock().await;
+        *lock_guard = false;
     }
 
     pub async fn txn(&self) -> anyhow::Result<&DatabaseTransaction> {
@@ -224,7 +231,12 @@ pub async fn add_context(mut req: Request, next: Next) -> Result<Response, Statu
     req.extensions_mut().insert(Arc::clone(&ctx));
     let res = next.run(req).await;
     let mut ctx = Arc::into_inner(ctx).expect("All other references should have been destroyed");
-    ctx.commit().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let ctx_success: bool = *ctx.success.lock().await;
+    if res.status().is_success() && ctx_success {
+        ctx.commit().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    } else {
+        ctx.rollback().await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    }
     Ok(res)
 }
 

@@ -33,7 +33,12 @@ pub async fn graphql(
     Extension(context): Extension<Arc<Context>>,
     JuniperRequest(req): JuniperRequest<DefaultScalarValue>,
 ) -> JuniperResponse<DefaultScalarValue> {
-    JuniperResponse(req.execute(&schema, &context).await)
+    let gql_res = req.execute(&schema, &context).await;
+    if !gql_res.is_ok() {
+        context.failed().await;
+    }
+    let jun_res = JuniperResponse(gql_res);
+    jun_res
 }
 
 async fn custom_subscriptions(

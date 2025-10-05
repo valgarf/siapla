@@ -116,6 +116,34 @@ export type Interval = {
   start: Scalars['DateTime']['output'];
 };
 
+export type Issue = {
+  __typename?: 'Issue';
+  code: IssueCode;
+  dbId: Scalars['Int']['output'];
+  description: Scalars['String']['output'];
+  task?: Maybe<Task>;
+  type: IssueType;
+};
+
+export enum IssueCode {
+  DependencyLoop = 'DEPENDENCY_LOOP',
+  HierarchyLoop = 'HIERARCHY_LOOP',
+  MilestoneMissing = 'MILESTONE_MISSING',
+  NoEffort = 'NO_EFFORT',
+  NoSlotFound = 'NO_SLOT_FOUND',
+  PredIssue = 'PRED_ISSUE',
+  RequirementMissing = 'REQUIREMENT_MISSING',
+  ResourceMissing = 'RESOURCE_MISSING',
+  Unknown = 'UNKNOWN'
+}
+
+export enum IssueType {
+  General = 'GENERAL',
+  PlanningGeneral = 'PLANNING_GENERAL',
+  PlanningTask = 'PLANNING_TASK',
+  Task = 'TASK'
+}
+
 export type Mutation = {
   __typename?: 'Mutation';
   new: Mutation;
@@ -159,6 +187,7 @@ export type Query = {
   currentPlan: Plan;
   getFromOpenHolidays?: Maybe<Holiday>;
   helloWorld: Scalars['String']['output'];
+  issues: Array<Issue>;
   region?: Maybe<Region>;
   resources: Array<Resource>;
   tasks: Array<Task>;
@@ -259,6 +288,7 @@ export type Task = {
   designation: TaskDesignation;
   earliestStart?: Maybe<Scalars['DateTime']['output']>;
   effort?: Maybe<Scalars['Float']['output']>;
+  issues: Array<Issue>;
   parent?: Maybe<Task>;
   predecessors: Array<Task>;
   resourceConstraints: Array<ResourceConstraint>;
@@ -330,6 +360,11 @@ export type GetHolidayQueryVariables = Exact<{
 
 export type GetHolidayQuery = { __typename?: 'Query', getFromOpenHolidays?: { __typename?: 'Holiday', dbId: number, name: string, country?: { __typename?: 'Country', name: string, isocode: string } | null, region?: { __typename?: 'Region', name: string, isocode: string } | null } | null };
 
+export type IssuesQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type IssuesQuery = { __typename?: 'Query', issues: Array<{ __typename?: 'Issue', dbId: number, code: IssueCode, description: string, type: IssueType, task?: { __typename?: 'Task', dbId: number } | null }> };
+
 export type PlanQueryVariables = Exact<{ [key: string]: never; }>;
 
 
@@ -395,6 +430,7 @@ export type Task_DeleteMutation = { __typename?: 'Mutation', taskDelete: boolean
 export const GetCountriesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCountries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"countries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isocode"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]} as unknown as DocumentNode<GetCountriesQuery, GetCountriesQueryVariables>;
 export const GetRegionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetRegions"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"country"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"regions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetRegionsQuery, GetRegionsQueryVariables>;
 export const GetHolidayDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetHoliday"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getFromOpenHolidays"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"country"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"region"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetHolidayQuery, GetHolidayQueryVariables>;
+export const IssuesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"issues"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"issues"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}}]} as unknown as DocumentNode<IssuesQuery, IssuesQueryVariables>;
 export const PlanDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"plan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"currentPlan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"allocations"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"start"}},{"kind":"Field","name":{"kind":"Name","value":"end"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"resources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}}]}}]} as unknown as DocumentNode<PlanQuery, PlanQueryVariables>;
 export const CalcUpdateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"calcUpdate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calculationUpdate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"state"}}]}}]}}]} as unknown as DocumentNode<CalcUpdateSubscription, CalcUpdateSubscriptionVariables>;
 export const RecalculateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"recalculate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"recalculateNow"}}]}}]} as unknown as DocumentNode<RecalculateMutation, RecalculateMutationVariables>;
