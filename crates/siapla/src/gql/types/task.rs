@@ -301,7 +301,6 @@ async fn update_resource_constraint_entries(
     new_entries: &[ResourceConstraintEntryInput],
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    use std::collections::HashSet;
     let existing: HashSet<i32> =
         model.entries(ctx).await?.iter().map(|el| el.resource_id).collect();
     let target: HashSet<i32> = new_entries.iter().map(|el| el.resource_id).collect();
@@ -440,7 +439,15 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     if let Some(children) = children {
         update_children(ctx, &model, children).await?;
     }
-    if let Some(constraints) = resource_constraints {
+    // Check if the provided resource constraints reuse the same resource across
+    // multiple constraints. If so, abort early with an error.
+    if let Some(ref constraints) = resource_constraints {
+        let all_used_resources: std::collections::HashSet<i32> =
+            constraints.iter().flat_map(|c| c.entries.iter().map(|e| e.resource_id)).collect();
+        let num_entries: usize = constraints.iter().map(|c| c.entries.len()).sum();
+        if num_entries != all_used_resources.len() {
+            return Err(anyhow::anyhow!("Each resource can only be used once!"));
+        }
         update_resource_constraints(&ctx, &model, &constraints).await?;
     }
     // Check for dependency cycles (abort save on loop)
@@ -453,7 +460,6 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     }
     // DFS
     fn has_cycle(adj: &std::collections::HashMap<i32, Vec<i32>>) -> bool {
-        use std::collections::HashSet;
         fn visit(
             n: i32,
             adj: &std::collections::HashMap<i32, Vec<i32>>,
