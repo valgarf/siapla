@@ -23,6 +23,7 @@ pub struct TaskGene {
     pub task: Rc<RefCell<Task>>,
     pub task_nidx: NodeIndex,
     pub required_resource_ids: HashSet<i32>,
+    pub selectable_resource_ids: Vec<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +35,7 @@ pub fn generate_random_individual(project: &Project) -> Individual {
     // TODO: not all allowed random orders are created with the same probability.
     // Example:
     // Assume we have 3 tasks (T1, T2, T3) and T2 depends on T1.
-    // Allowed orders are:
+    // Allowed orders are (with generation probability):
     // - T1,T2,T3 (25%)
     // - T1,T3,T2 (25%)
     // - T3,T1,T2 (50%)
@@ -79,6 +80,27 @@ pub fn create_random_task_gene(
     let num_opt: usize = rng.random_range(..=opt_constraints.len());
     req_constraints.extend(opt_constraints.choose_multiple(&mut rng, num_opt));
 
+    // From the required constraints, pick the one with the most entries and make it
+    // selectable (we will choose one of these resources later during planning).
+    let mut selectable_resource_ids: Vec<i32> = Vec::new();
+    if !req_constraints.is_empty() {
+        // find index of constraint with the maximum number of entries
+        let max_idx = req_constraints
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| c.constraints.len())
+            .map(|(i, _)| i)
+            .unwrap();
+        // remove the chosen constraint from req_constraints and collect its resource ids
+        let chosen = req_constraints.remove(max_idx);
+        for entry in chosen.constraints.iter() {
+            let rid =
+                Weak::upgrade(&entry.resource).expect("resource must still exist").borrow().db_id;
+            selectable_resource_ids.push(rid);
+        }
+    }
+
+    // For the remaining required constraints, pick exactly one resource each as before.
     let required_resource_ids: HashSet<i32> = req_constraints
         .iter()
         .map(|c| {
@@ -92,7 +114,7 @@ pub fn create_random_task_gene(
         .collect();
     drop(borrowed_task);
     // for c in task.borrow().constraints
-    TaskGene { task, task_nidx: nidx, required_resource_ids }
+    TaskGene { task, task_nidx: nidx, required_resource_ids, selectable_resource_ids }
 }
 
 pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
@@ -190,6 +212,7 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
     plan
 }
 
+#[derive(Clone)]
 struct _SlotIterator<'a> {
     resource_id: i32,
     slots: &'a Vec<Slot>,
@@ -317,9 +340,22 @@ pub fn plan_task(
             task_id: Some(task.db_id),
         })); // detected on creation
     }
-    let mut slot_iterators: Vec<_SlotIterator> = res_ids
-        .into_iter()
-        .map(|res_id| {
+    let effort = TimeDelta::seconds((task.effort * 8.0 * 3600.0).round() as i64);
+
+    // If there are no selectable resources, just attempt with primary iterators
+    let task_selectable = task_gene.selectable_resource_ids.clone();
+    if task_selectable.is_empty() {
+        return Err(Some(PlanningIssue {
+            code: crate::gql::issue::IssueCode::NoSlotFound,
+            description: format!("Task has no resource constraint"),
+            task_id: Some(task.db_id),
+        }));
+    }
+
+    // Create primary slot iterators once and for all
+    let mut primary_iterators: Vec<_SlotIterator> = res_ids
+        .iter()
+        .map(|&res_id| {
             _SlotIterator::new(
                 res_id,
                 resource_slots.get(&res_id).expect("Resource slots must exist"),
@@ -327,59 +363,148 @@ pub fn plan_task(
             )
         })
         .collect();
-    if let Err(e) = _ensure_overlapping_slots(&mut slot_iterators) {
-        return Err(Some(PlanningIssue {
-            code: crate::gql::issue::IssueCode::NoSlotFound,
-            description: format!("{}", e),
-            task_id: Some(task.db_id),
-        }));
-    }
-    let effort = TimeDelta::seconds((task.effort * 8.0 * 3600.0).round() as i64);
-    // TODO speed? configure days != 8 hours?
+
+    // Create selectable iterators once
+    let mut selectable_iterators: Vec<_SlotIterator> = task_selectable
+        .iter()
+        .map(|&rid| {
+            _SlotIterator::new(
+                rid,
+                resource_slots.get(&rid).expect("Resource slots must exist"),
+                task_start,
+            )
+        })
+        .collect();
+
+    // Main loop: advance primary iterators until we find a candidate or run out
     loop {
-        let intervals = match _slot_intervals(project, task_start, &mut slot_iterators) {
-            Ok(iv) => iv,
-            Err(e) => {
+        // Ensure primary iterators overlap
+        if !primary_iterators.is_empty() {
+            if let Err(_) = _ensure_overlapping_slots(&mut primary_iterators) {
                 return Err(Some(PlanningIssue {
                     code: crate::gql::issue::IssueCode::NoSlotFound,
-                    description: format!("{}", e),
+                    description:
+                        "Failed to find overlapping slots for the given resource constraints."
+                            .to_string(),
                     task_id: Some(task.db_id),
                 }));
             }
-        };
-        if intervals.length().expect("No unbounded intervals") >= effort {
-            let mut result: HashMap<i32, Slot> = HashMap::new();
-            let assigned_intervals = _reduce_intervals(intervals, effort);
-            let slot = Slot {
-                range: assigned_intervals.hull().expect("Cannot be empty"),
-                extensible: false,
-                duration: effort,
-                intervals: assigned_intervals,
-            };
-            let mut removal_indices: HashMap<i32, usize> = HashMap::new();
-            for si in &mut slot_iterators {
-                result.insert(si.resource_id, slot.clone());
-                removal_indices.insert(si.resource_id, si.current_idx);
+        }
+
+        // Compute primary_intervals (either full span or intersection of primary slots)
+        let primary_intervals = if primary_iterators.is_empty() {
+            let mut tmp = Intervals::new();
+            tmp.insert(Interval::new_lcro(task_start, project.calculation_end));
+            tmp
+        } else {
+            match _slot_intervals(project, task_start, &mut primary_iterators) {
+                Ok(iv) => iv,
+                Err(_) => {
+                    return Err(Some(PlanningIssue {
+                        code: crate::gql::issue::IssueCode::NoSlotFound,
+                        description: "Failed to compute overlapping intervals.".to_string(),
+                        task_id: Some(task.db_id),
+                    }));
+                }
             }
-            drop(slot_iterators);
-            for (res_id, idx) in removal_indices {
+        };
+
+        // Try each selectable iterator in-place (advance them as needed)
+        let mut best_candidate: Option<(HashMap<i32, Slot>, HashMap<i32, usize>, NaiveDateTime)> =
+            None;
+        for sel_iter in selectable_iterators.iter_mut() {
+            loop {
+                if let Some(sel_slot) = sel_iter.current() {
+                    let inter = primary_intervals.intersection(&sel_slot.intervals);
+                    if inter.length().unwrap_or_default() >= effort {
+                        // feasible candidate: build result map and removals
+                        let mut result_map: HashMap<i32, Slot> = HashMap::new();
+                        let mut removals: HashMap<i32, usize> = HashMap::new();
+                        for pi in primary_iterators.iter() {
+                            let idx = pi.current_idx;
+                            let slot = pi.current().expect("slot must exist").clone();
+                            result_map.insert(pi.resource_id, slot.clone());
+                            removals.insert(pi.resource_id, idx);
+                        }
+                        let sidx = sel_iter.current_idx;
+                        let sslot = sel_iter.current().expect("slot must exist").clone();
+                        result_map.insert(sel_iter.resource_id, sslot.clone());
+                        removals.insert(sel_iter.resource_id, sidx);
+
+                        let assigned_intervals = _reduce_intervals(
+                            primary_intervals.intersection(&sslot.intervals),
+                            effort,
+                        );
+                        let hull = assigned_intervals.hull().expect("Cannot be empty");
+                        let end_ts = hull.end().value().expect("no unbounded intervals");
+                        let assigned_slot = Slot {
+                            range: hull,
+                            extensible: false,
+                            duration: effort,
+                            intervals: assigned_intervals,
+                        };
+                        for rid in result_map.keys().cloned().collect::<Vec<_>>() {
+                            result_map.insert(rid, assigned_slot.clone());
+                        }
+
+                        if let Some((_, _, best_end)) = &best_candidate {
+                            if end_ts < *best_end {
+                                best_candidate = Some((result_map, removals, end_ts));
+                            }
+                        } else {
+                            best_candidate = Some((result_map, removals, end_ts));
+                        }
+                        break;
+                    } else {
+                        // not enough overlap: advance selectable iterator and try again
+                        sel_iter.advance();
+                        // stop if selectable no longer overlaps the primary interval
+                        let primary_max_end = primary_intervals
+                            .clone()
+                            .into_iter()
+                            .map(|iv| iv.end().value().expect("no unbound intervals"))
+                            .max()
+                            .unwrap_or(project.calculation_end);
+                        if let Some(curr) = sel_iter.current() {
+                            let sel_start =
+                                curr.range.start().value().expect("no unbound intervals");
+                            if sel_start >= primary_max_end {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if let Some((result_map, removals, end_ts)) = best_candidate {
+            // drop iterators before mutating resource_slots
+            drop(primary_iterators);
+            drop(selectable_iterators);
+            for (res_id, idx) in removals.iter() {
                 remove_slot(
-                    resource_slots.get_mut(&res_id).expect("Resource must exist"),
-                    idx,
-                    &slot,
+                    resource_slots.get_mut(res_id).expect("Resource must exist"),
+                    *idx,
+                    &result_map.get(res_id).expect("slot must exist"),
                 );
             }
             let nw = g_finished.node_weight_mut(task_gene.task_nidx).expect("Node must exist");
-            *nw = slot.range.end().value();
-            return Ok(result);
-        } else {
-            if let Err(e) = _advance_earliest_slot(&mut slot_iterators) {
-                return Err(Some(PlanningIssue {
-                    code: crate::gql::issue::IssueCode::NoSlotFound,
-                    description: format!("{}", e),
-                    task_id: Some(task.db_id),
-                }));
-            }
+            *nw = Some(end_ts);
+            return Ok(result_map);
+        }
+
+        // no candidate found for current primary positions -> advance earliest primary slot
+        if let Err(_) = _advance_earliest_slot(&mut primary_iterators) {
+            return Err(Some(PlanningIssue {
+                code: crate::gql::issue::IssueCode::NoSlotFound,
+                description: "Failed to find overlapping slots for the given resource constraints."
+                    .to_string(),
+                task_id: Some(task.db_id),
+            }));
         }
     }
 }
