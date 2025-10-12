@@ -21,6 +21,10 @@ serve-backend:
     DATABASE_URL="sqlite:./test.sqlite" watchexec -d 1s -o restart -w ../crates cargo run -p siapla --bin siapla-serve
 
 [working-directory("./run-data")]
+serve-backend-release:
+    DATABASE_URL="sqlite:./test.sqlite" watchexec -d 1s -o restart -w ../crates cargo run --profile release -p siapla --bin siapla-serve
+
+[working-directory("./run-data")]
 serve-backend-once:
     DATABASE_URL="sqlite:./test.sqlite" cargo run -p siapla --bin siapla-serve
 

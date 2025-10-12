@@ -16,7 +16,7 @@ use crate::{
     gql::context::Context,
     scheduling::{
         db_layer::store_plan,
-        ga::{generate_random_individual, plan_individual},
+        ga::{GASettings, plan_individual, run_ga},
     },
 };
 
@@ -80,13 +80,14 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
     // build a Context for this calculation
     app_state.set_state(crate::app_state::CalculationState::Calculating);
     let ctx = Context::new(Arc::clone(app_state));
+    let settings = GASettings::default();
     match query_problem(&ctx).await {
         Err(err) => {
             println!("Error querying problem: {}", err);
             return Err(err);
         }
         Ok(mut problem) => {
-            let individual = generate_random_individual(&mut problem);
+            let individual = run_ga(&mut problem, &settings);
             let task_order =
                 individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
             println!("Problem recalculated successfully. Random order: {:?}", &task_order);

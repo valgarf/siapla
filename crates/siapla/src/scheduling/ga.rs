@@ -11,12 +11,53 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::{Rc, Weak},
+    time::Instant,
 };
 use tracing::warn;
 
 use crate::scheduling::{Interval, Intervals, Plan, PlanningIssue, ResourceConstraint, Slot};
 
 use super::datastructures::{Node, Project, Task};
+
+/// Settings for the genetic algorithm.
+pub struct GASettings {
+    pub iterations: usize,
+    pub population: usize,
+    pub keep_seeds: usize,
+    /// probabilities for how to generate a new individual from parents/mutations
+    /// (mutation_only, crossover_only, both)
+    pub prob_mutation_only: f64,
+    pub prob_crossover_only: f64,
+    pub prob_both: f64,
+    /// probability for mutating resources (applied per task)
+    pub prob_mutate_resources: f64,
+    /// probability for mutating order by swapping two adjacent tasks (per individual)
+    pub prob_mutate_order: f64,
+    /// probability for creating a crossover point at any given index between tasks
+    pub prob_crossover_point: f64,
+    /// slopes for cost function: (low, medium, high) before target
+    pub slopes_before: [f64; 3],
+    /// slopes for cost function: (low, medium, high) after target
+    pub slopes_after: [f64; 3],
+}
+
+impl Default for GASettings {
+    fn default() -> Self {
+        Self {
+            iterations: 100,
+            population: 100,
+            keep_seeds: 10,
+            prob_mutation_only: 0.25,
+            prob_crossover_only: 0.25,
+            prob_both: 0.25,
+            prob_mutate_resources: 0.05,
+            prob_mutate_order: 0.2,
+            prob_crossover_point: 0.3,
+            slopes_before: [-0.1, -0.2, -0.4],
+            slopes_after: [0.2, 0.4, 0.6],
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TaskGene {
@@ -64,6 +105,237 @@ pub fn generate_random_individual(project: &Project) -> Individual {
         }
     }
     Individual { tasks: task_genes }
+}
+
+// helper: compute cost for an individual (lower is better)
+pub fn cost_function(project: &Project, settings: &GASettings, ind: &Individual) -> f64 {
+    // plan the individual
+    let plan = plan_individual(project, ind);
+    // map milestone id -> finished date
+    let mut fm_map: HashMap<i32, NaiveDateTime> = HashMap::new();
+    for fm in plan.fulfilled_milestones.iter() {
+        fm_map.insert(fm.task_id, fm.date);
+    }
+
+    // since no priority metadata exists, use medium priority index = 1
+    let pri_idx = 1usize;
+    let mut total_cost = 0.0f64;
+    for m in project.objs.milestones.iter() {
+        let milestone = m.borrow();
+        if let Some(finished) = fm_map.get(&milestone.db_id) {
+            let diff = *finished - milestone.schedule_target;
+            let secs = diff.as_seconds_f64();
+            if secs < 0.0 {
+                // finished before target -> negative cost
+                total_cost += secs.abs() * settings.slopes_before[pri_idx];
+            } else {
+                // finished after -> positive cost
+                total_cost += secs * settings.slopes_after[pri_idx];
+            }
+        } else {
+            // milestone not fulfilled: penalize as if finished at calculation_end + (end - start)
+            let diff = project.calculation_end - milestone.schedule_target;
+            let project_length = project.calculation_end - project.start;
+            let secs = diff.as_seconds_f64() + project_length.as_seconds_f64();
+            total_cost += secs * settings.slopes_after[pri_idx];
+        }
+    }
+    total_cost
+}
+
+/// Run the genetic algorithm and return the best found individual.
+///
+/// NOTE: The project model currently does not contain per-milestone priority metadata.
+/// As a pragmatic default we treat all milestones as 'medium' priority. If you later
+/// add priority information to milestones, the cost function here should be adapted to
+/// read it and pick the appropriate slope index.
+pub fn run_ga(project: &Project, settings: &GASettings) -> Individual {
+    let start_time = Instant::now();
+    let mut rng = rand::rng();
+
+    let cost_of = |ind: &Individual| -> f64 { cost_function(project, settings, ind) };
+    // initial population
+    let mut population: Vec<(Individual, f64)> = (0..settings.population)
+        .map(|_| {
+            let ind = generate_random_individual(project);
+            let c = cost_of(&ind);
+            (ind, c)
+        })
+        .collect();
+
+    // ensure keep_seeds is not larger than population
+    let keep_seeds = settings.keep_seeds.min(settings.population);
+
+    // iterate
+    for _it in 0..settings.iterations {
+        // sort by cost ascending
+        population.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        println!(
+            "iteration: {} | Best: {} | Worst: {}",
+            _it,
+            population.first().expect("Cannot be empty").1,
+            population.last().expect("Cannot be empty").1
+        );
+
+        // keep the best individual unchanged
+        let best = population.first().expect("must have at least one entry").0.clone();
+
+        // select seeds (best N)
+        let seeds: Vec<Individual> =
+            population.into_iter().take(keep_seeds).map(|(i, _)| i).collect();
+
+        // prepare next generation, start with seeds copied
+        let mut next: Vec<Individual> = vec![];
+
+        // generate rest of population (except the preserved best)
+        while next.len() + 1 < settings.population {
+            // pick generation mode
+            let r: f64 = rng.random();
+            let take_mut = r < settings.prob_mutation_only;
+            let take_cross = r >= settings.prob_mutation_only
+                && r < (settings.prob_mutation_only + settings.prob_crossover_only);
+            let take_both = r >= (settings.prob_mutation_only + settings.prob_crossover_only)
+                && r < (settings.prob_mutation_only
+                    + settings.prob_crossover_only
+                    + settings.prob_both);
+
+            // choose parents
+            let parent_from_seed = |rng: &mut _| -> Individual {
+                if seeds.is_empty() {
+                    generate_random_individual(project)
+                } else {
+                    seeds.choose(rng).unwrap().clone()
+                }
+            };
+
+            let mut child = if take_cross || take_both {
+                // crossover between two parents
+                let p1 = parent_from_seed(&mut rng);
+                let p2 = parent_from_seed(&mut rng);
+                // if either parent has empty task list, fallback
+                if p1.tasks.is_empty() || p2.tasks.is_empty() {
+                    parent_from_seed(&mut rng)
+                } else {
+                    // create crossover points between 1..len-1 positions
+                    let len = p1.tasks.len().max(p2.tasks.len());
+                    let mut points = vec![rng.random_range(..len)];
+                    while rng.random::<f64>() < settings.prob_crossover_point {
+                        points.push(rng.random_range(..len));
+                    }
+                    points.sort_unstable();
+                    points.dedup();
+
+                    let mut use_first = true;
+                    let mut idx1 = 0usize;
+                    let mut idx2 = 0usize;
+                    let mut child_tasks: Vec<TaskGene> = Vec::with_capacity(len);
+                    let mut next_point_iter = points.into_iter();
+                    let mut next_point = next_point_iter.next();
+                    for pos in 0..len {
+                        if let Some(np) = next_point {
+                            if pos >= np {
+                                use_first = !use_first;
+                                next_point = next_point_iter.next();
+                            }
+                        }
+                        let source = if use_first { &p1.tasks } else { &p2.tasks };
+                        // take next task from source skipping duplicates
+                        let mut taken = false;
+                        while (if use_first { idx1 } else { idx2 }) < source.len() {
+                            let idx = if use_first { idx1 } else { idx2 };
+                            let tg = &source[idx];
+                            let tid = tg.task.borrow().db_id;
+                            let already = child_tasks.iter().any(|c| c.task.borrow().db_id == tid);
+                            if use_first {
+                                idx1 += 1
+                            } else {
+                                idx2 += 1
+                            }
+                            if !already {
+                                child_tasks.push(tg.clone());
+                                taken = true;
+                                break;
+                            }
+                        }
+                        if !taken {
+                            // nothing available from selected source, fill remaining from other
+                            // Is this even possible?
+                            let other = if use_first { &p2.tasks } else { &p1.tasks };
+                            let mut other_idx = 0usize;
+                            while other_idx < other.len() {
+                                let tg = &other[other_idx];
+                                let tid = tg.task.borrow().db_id;
+                                let already =
+                                    child_tasks.iter().any(|c| c.task.borrow().db_id == tid);
+                                if !already {
+                                    child_tasks.push(tg.clone());
+                                    break;
+                                }
+                                other_idx += 1;
+                            }
+                            break;
+                        }
+                    }
+                    Individual { tasks: child_tasks }
+                }
+            } else if take_mut {
+                // mutation-only: pick a seed and mutate
+                parent_from_seed(&mut rng)
+            } else {
+                // default: random individual
+                generate_random_individual(project)
+            };
+
+            // apply mutation if requested or mode==both or mode==mutation
+            // mutation: with prob_mutate_order perform one adjacent swap (if allowed)
+            while rng.random::<f64>() < settings.prob_mutate_order && child.tasks.len() >= 2 {
+                let idx = rng.random_range(..(child.tasks.len() - 1));
+                let first_n = child.tasks[idx].task_nidx;
+                let second_n = child.tasks[idx + 1].task_nidx;
+                // only swap if second does NOT depend on previous one (no edge first -> second)
+                if project.g.find_edge(first_n, second_n).is_none() {
+                    child.tasks.swap(idx, idx + 1);
+                }
+            }
+
+            // resource mutation: per-task probability
+            for t_idx in 0..child.tasks.len() {
+                if rng.random::<f64>() < settings.prob_mutate_resources {
+                    let tg = &child.tasks[t_idx];
+                    let new_tg =
+                        create_random_task_gene(project, Rc::clone(&tg.task), tg.task_nidx);
+                    // replace resource-related fields (keep Rc pointers)
+                    child.tasks[t_idx].required_resource_ids = new_tg.required_resource_ids;
+                    child.tasks[t_idx].selectable_resource_ids = new_tg.selectable_resource_ids;
+                }
+            }
+
+            next.push(child);
+        }
+
+        // evaluate next generation
+        population = next
+            .into_iter()
+            .map(|ind| {
+                let c = cost_of(&ind);
+                (ind, c)
+            })
+            .collect();
+
+        // ensure best individual so far is preserved
+        population.push((best.clone(), cost_of(&best)));
+    }
+
+    // final sort and return best individual
+    population.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    let end_time = Instant::now();
+    println!(
+        "final result | Best: {} | Worst: {}",
+        population.first().expect("Cannot be empty").1,
+        population.last().expect("Cannot be empty").1
+    );
+    println!("Took {} seconds", (end_time - start_time).as_secs_f64());
+    population.first().expect("population must not be empty").0.clone()
 }
 
 pub fn create_random_task_gene(
