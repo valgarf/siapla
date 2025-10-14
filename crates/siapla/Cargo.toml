@@ -41,3 +41,6 @@ petgraph = "0.8.2"
 rand = "0.9.2"
 chrono-tz = "0.10.4"
 tokio-stream = { version = "0.1.11", features = ["sync"] }
+include_dir = "0.7"
+mime_guess = "2.0"
+clap = { version = "4.4", features = ["derive"] }

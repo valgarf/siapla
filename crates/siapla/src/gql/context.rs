@@ -18,6 +18,14 @@ use sea_orm::{
 };
 use tokio::sync::{OnceCell, RwLock};
 
+// global database url that can be set from the server's command line
+static GLOBAL_DATABASE_URL: OnceCell<String> = OnceCell::const_new();
+
+/// Set the global database url used by Context. Call early in program startup.
+pub fn set_global_database_url(url: impl Into<String>) {
+    let _ = GLOBAL_DATABASE_URL.set(url.into());
+}
+
 pub struct Context {
     txn: OnceCell<DatabaseTransaction>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
@@ -75,7 +83,13 @@ impl Context {
     pub async fn txn(&self) -> anyhow::Result<&DatabaseTransaction> {
         self.txn
             .get_or_try_init::<anyhow::Error, _, _>(|| async {
-                Ok(Database::connect(env::var("DATABASE_URL")?).await?.begin().await?)
+                // prefer explicitly set global url, fall back to env var for compatibility
+                let url = GLOBAL_DATABASE_URL
+                    .get()
+                    .cloned()
+                    .or_else(|| env::var("DATABASE_URL").ok())
+                    .ok_or_else(|| anyhow::anyhow!("DATABASE_URL not set"))?;
+                Ok(Database::connect(url).await?.begin().await?)
             })
             .await
     }

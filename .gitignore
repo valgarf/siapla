@@ -1,4 +1,4 @@
 /target
 /siapla.code-workspace
 /run-data
-
+/crates/siapla/src/bundled_frontend/*

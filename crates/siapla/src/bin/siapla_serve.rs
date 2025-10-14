@@ -1,3 +1,6 @@
+use axum::body::Body;
+use axum::http::{Response as HttpResponse, StatusCode, header::CONTENT_TYPE};
+use axum::response::IntoResponse;
 use axum::{
     Extension, Router,
     extract::WebSocketUpgrade,
@@ -5,12 +8,15 @@ use axum::{
     response::Response,
     routing::{MethodFilter, get, on},
 };
+use clap::Parser;
+use include_dir::{Dir, include_dir};
 use juniper::DefaultScalarValue;
 use juniper_axum::{
     extract::JuniperRequest, graphiql, playground, response::JuniperResponse, subscriptions,
 };
 use juniper_graphql_ws::ConnectionConfig;
 use siapla::app_state::AppState;
+use siapla::gql::context::set_global_database_url;
 use siapla::{
     gql::{
         Schema,
@@ -63,6 +69,47 @@ async fn custom_subscriptions(
         })
 }
 
+// Embed the bundled frontend directory at compile time
+// include the bundled_frontend directory that lives in the same crate
+static BUNDLED_FRONTEND_DIR: Dir = include_dir!("crates/siapla/src/bundled_frontend");
+
+#[derive(Parser, Debug)]
+#[command(name = "siapla-serve")]
+struct Args {
+    /// Database URL to use (overrides DATABASE_URL env var)
+    #[arg(long, default_value = "sqlite:./run-data/test.sqlite")]
+    database_url: String,
+    /// Bind address e.g. 127.0.0.1:8880
+    #[arg(long, default_value = "0.0.0.0:80")]
+    bind: String,
+}
+
+fn file_response_from_dir(mut path: String) -> Response {
+    // normalize the path, try index.html for directories
+    if path == "" || path.ends_with('/') {
+        path = format!("{}/index.html", path.trim_end_matches('/'))
+    }
+    match BUNDLED_FRONTEND_DIR.get_file(path.trim_start_matches('/')) {
+        Some(file) => {
+            let ct = mime_guess::from_path(file.path()).first_or_text_plain();
+            HttpResponse::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, ct.as_ref())
+                .body(Body::from(file.contents().to_vec()))
+                .unwrap()
+        }
+        None => HttpResponse::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .unwrap(),
+    }
+}
+
+async fn serve_frontend(path: Option<String>) -> impl IntoResponse {
+    let p = path.unwrap_or_else(|| "index.html".into());
+    file_response_from_dir(p)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -91,6 +138,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/subscriptions", get(custom_subscriptions))
         .route("/graphiql", get(graphiql("/graphql", "/subscriptions")))
         .route("/playground", get(playground("/graphql", "/subscriptions")))
+        // serve bundled frontend at root
+        .route("/", get(|| async { file_response_from_dir("index.html".to_string()) }))
+        .route(
+            "/{*path}",
+            get(|axum::extract::Path(path): axum::extract::Path<String>| async move {
+                serve_frontend(Some(path)).await
+            }),
+        )
         .layer(
             ServiceBuilder::new()
                 .layer(cors)
@@ -100,7 +155,11 @@ async fn main() -> anyhow::Result<()> {
         );
     // .route("/", get(homepage))
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8880));
+    // parse cli args and set global database url
+    let args = Args::parse();
+    set_global_database_url(args.database_url);
+
+    let addr: SocketAddr = args.bind.parse().unwrap_or(SocketAddr::from(([0, 0, 0, 0], 80)));
     let listener =
         TcpListener::bind(addr).await.unwrap_or_else(|e| panic!("failed to listen on {addr}: {e}"));
     info!("listening on {addr}");
