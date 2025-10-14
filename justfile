@@ -1,14 +1,18 @@
+
 set windows-shell := ["nu", "-c"]
+db := 'sqlite:./run-data/test.sqlite'
 
 default:
     @just --list
 
 
+[working-directory(".")]
 [positional-arguments]
-migrate db='sqlite:./run-data/test.sqlite' *args='':
+migrate *args='':
     DATABASE_URL="{{db}}" sea-orm-cli migrate -d ./crates/siapla-migration {{args}}
 
-generate-entity db='sqlite:./run-data/test.sqlite': (migrate "up")
+[working-directory(".")]
+generate-entity: (migrate "up")
     DATABASE_URL="{{db}}" sea-orm-cli generate entity \
         --with-serde both \
         --enum-extra-derives 'PartialEq','Eq','Hash' \
@@ -16,17 +20,17 @@ generate-entity db='sqlite:./run-data/test.sqlite': (migrate "up")
         --expanded-format \
         -o ./crates/siapla/src/entity
 
-[working-directory("./run-data")]
-serve-backend db='sqlite:./test.sqlite':
+[working-directory(".")]
+serve-backend :
     # pass database url to the binary via command line flag --database-url
-    watchexec -d 1s -o restart -w ../crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
+    watchexec -d 1s -o restart -w crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
 
-[working-directory("./run-data")]
-serve-backend-release db='sqlite:./test.sqlite':
-    watchexec -d 1s -o restart -w ../crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
+[working-directory(".")]
+serve-backend-release:
+    watchexec -d 1s -o restart -w crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
 
-[working-directory("./run-data")]
-serve-backend-once db='sqlite:./test.sqlite':
+[working-directory(".")]
+serve-backend-once:
     cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
 
 [working-directory("./frontend")]
@@ -45,7 +49,7 @@ build-frontend:
     # mkdir -p ../crates/siapla/src/bundled_frontend
     # cp -r dist/spa/* ../crates/siapla/src/bundled_frontend/
 
-
+[working-directory(".")]
 build-backend: build-frontend
     cargo build --release -p siapla
 
