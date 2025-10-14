@@ -14,6 +14,8 @@ export interface Allocation {
   end: Date;
   task: Task | null;
   resources: Resource[];
+  allocationType?: string;
+  final?: boolean;
 }
 
 const PLAN_QUERY = graphql(`
@@ -23,15 +25,13 @@ const PLAN_QUERY = graphql(`
         dbId
         start
         end
-        task {
-          dbId
-        }
-        resources {
-          dbId
-        }
+        allocationType
+        final
+        task { dbId }
+        resources { dbId }
       }
+    }
   }
-}
 `);
 
 const CALC_SUB = graphql(`
@@ -46,17 +46,17 @@ const RECALC_MUT = graphql(`
   mutation recalculate { recalculateNow }
 `);
 
-function convertQueryResult(query: PlanQuery): Allocation[] {
+function convertQueryResult(query: any): Allocation[] {
   const resourceStore = useResourceStore();
   const taskStore = useTaskStore();
-  const allocations: Allocation[] = query.currentPlan.allocations.map(a => { return { dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), task: taskStore.task(a.task.dbId) ?? null, resources: a.resources.map(r => { return resourceStore.resource(r.dbId) ?? null }).filter(r => r != null) } });
+  const allocations: Allocation[] = query.currentPlan.allocations.map((a: any) => ({ dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), allocationType: a.allocationType ?? undefined, final: a.final ?? false, task: taskStore.task(a.task.dbId) ?? null, resources: a.resources.map((r: any) => resourceStore.resource(r.dbId)).filter((r: any) => r != null) }));
   return allocations;
 }
 
 // actual store
 export const usePlanStore = defineStore('planStore', () => {
   const issueStore = useIssueStore();
-  const queryGetAll = useQuery(PLAN_QUERY);
+  const queryGetAll = useQuery(PLAN_QUERY as any);
   const calcSub = useSubscription(CALC_SUB);
   const mutRecalculate = useMutation(RECALC_MUT);
   // const calculationState: Ref<CalculationState> = ref(CalculationState.Calculating);

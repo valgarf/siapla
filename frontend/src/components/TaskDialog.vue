@@ -93,6 +93,32 @@
                 <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
             </div>
         </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
+            <div class="row items-center q-gutter-sm">
+                <div class="col">
+                    <div class="text-subtitle2">Bookings</div>
+                    <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
+                        style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
+                        <div class="row items-center q-gutter-sm">
+                            <DateTimeInput v-model="b.start" label="Start" />
+                            <DateTimeInput v-model="b.end" label="End" />
+                            <q-checkbox v-model="b.final" label="Final" />
+                            <q-btn flat icon="delete" color="negative" @click="() => deleteBooking(b)" />
+                        </div>
+                        <div class="q-mt-sm">
+                            <EditableResourceList :name="`booking-resources-${idx}`" v-model="b.resources"
+                                :possible="allResources" :edit="true" />
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <q-btn flat icon="add" label="Add Booking" color="primary" @click="() => {
+                        const newB: any = { dbId: -Date.now(), start: new Date(), end: new Date(Date.now() + 24 * 60 * 60 * 1000), resources: [], final: false };
+                        saveBooking(newB);
+                    }" />
+                </div>
+            </div>
+        </q-card-section>
         <q-card-section
             v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
             <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
@@ -143,10 +169,14 @@ import EditableResourceList from './EditableResourceList.vue';
 import EditableTaskList from './EditableTaskList.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import TaskChip from './TaskChip.vue';
+import { usePlanStore, type Allocation } from 'src/stores/plan';
+import { useMutation } from '@vue/apollo-composable';
+import { graphql } from 'src/gql';
 
 const taskStore = useTaskStore();
 const dialogStore = useDialogStore();
 const resourceStore = useResourceStore();
+const planStore = usePlanStore();
 
 const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [] };
 const local_task = ref<TaskInput>(local_task_default)
@@ -332,22 +362,45 @@ async function deleteTask() {
 
 const allResources = computed(() => resourceStore.resources);
 
-function addResourceSlot() {
-    if (!local_task.value.resourceConstraints) local_task.value.resourceConstraints = [];
-    local_task.value.resourceConstraints.push({ resources: [], optional: false, speed: 1 });
-}
-function removeResourceSlot(idx: number) {
-    if (!local_task.value.resourceConstraints) return;
-    local_task.value.resourceConstraints.splice(idx, 1);
-}
+// booking mutations
+const BOOKING_SAVE = graphql(`
+  mutation bookingSave($dbId: Int, $taskId: Int!, $start: DateTime!, $end: DateTime!, $resources: [Int!]!, $final: Boolean!) {
+    bookingSave(dbId: $dbId, taskId: $taskId, start: $start, end: $end, resources: $resources, final: $final) { dbId }
+  }
+`);
+const BOOKING_DELETE = graphql(`
+  mutation bookingDelete($dbId: Int!) { bookingDelete(dbId: $dbId) }
+`);
+const mutBookingSave = useMutation(BOOKING_SAVE as any);
+const mutBookingDelete = useMutation(BOOKING_DELETE as any);
 
-const issueStore = useIssueStore();
-const taskIssues = computed(() => {
+function taskBookings(): Allocation[] {
     const tid = local_task.value.dbId;
     if (tid == null) return [];
-    return issueStore.issues.filter((i: Issue) => i.taskId === tid);
-});
+    return planStore.by_task(tid);
+}
 
+async function saveBooking(b: any) {
+    const vars: any = { dbId: b.dbId > 0 ? b.dbId : null, taskId: local_task.value.dbId, start: b.start, end: b.end, resources: (b.resources || []).map((r: any) => r.dbId), final: b.final ?? false };
+    try {
+        await mutBookingSave.mutate(vars as any);
+        planStore.gql.queryGetAll.refetch?.();
+    } catch (err) {
+        console.warn('Failed to save booking', err);
+    }
+}
+
+async function deleteBooking(b: any) {
+    if (!b.dbId || b.dbId <= 0) return;
+    try {
+        await mutBookingDelete.mutate({ dbId: b.dbId } as any);
+        planStore.gql.queryGetAll.refetch?.();
+    } catch (err) {
+        console.warn('Failed to delete booking', err);
+    }
+}
+
+// ...existing code...
 </script>
 
 <style scoped>

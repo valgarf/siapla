@@ -400,11 +400,35 @@ pub fn create_random_task_gene(
 
 pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
     let mut plan = Plan::default();
+    // prepare resource slots but ensure resources are only used after their last booking
     let mut resource_slots = project
         .objs
         .resources
         .iter()
-        .map(|r| (r.borrow().db_id, r.borrow().slots.clone()))
+        .map(|r| {
+            let rb = r.borrow();
+            let mut slots = rb.slots.clone();
+            if let Some(book_end) = rb.last_booking_end {
+                // truncate or drop slots that end before or start before the booking end
+                slots = slots
+                    .into_iter()
+                    .filter_map(|mut s| {
+                        let sstart = s.range.start().value().expect("No unbound intervals");
+                        let send = s.range.end().value().expect("No unbound intervals");
+                        if send <= book_end {
+                            None
+                        } else if sstart < book_end {
+                            // move start forward to booking end
+                            s.range = super::Interval::new_lcro(book_end, send);
+                            Some(s)
+                        } else {
+                            Some(s)
+                        }
+                    })
+                    .collect();
+            }
+            (rb.db_id, slots)
+        })
         .collect::<HashMap<i32, _>>();
     let mut g_finished = project.g.map(
         |_, n| match n {
@@ -415,7 +439,20 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
         },
         |_, _| (),
     );
+    // schedule tasks with existing bookings and remaining effort first
+    let mut booked_first: Vec<&TaskGene> = vec![];
+    let mut others: Vec<&TaskGene> = vec![];
     for task_gene in &individual.tasks {
+        let t = task_gene.task.borrow();
+        if t.booked_until.is_some() && t.booked_remaining_effort > 0.0 {
+            booked_first.push(task_gene);
+        } else {
+            others.push(task_gene);
+        }
+    }
+    let ordered_tasks = booked_first.into_iter().chain(others.into_iter());
+
+    for task_gene in ordered_tasks {
         match plan_task(project, task_gene, &mut resource_slots, &mut g_finished) {
             Ok(assignment) => {
                 plan.assignments.insert(task_gene.task.borrow().db_id, assignment);

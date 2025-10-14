@@ -1,7 +1,9 @@
 use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
+use sea_orm::{ActiveValue, prelude::*};
 
 use crate::entity::{resource, task};
+use crate::entity::{allocation, allocated_resource};
 
 use super::{
     context::Context,
@@ -64,6 +66,70 @@ impl Mutation {
             id: sea_orm::ActiveValue::Set(resource_id),
             ..Default::default()
         };
+        let res = am.delete(txn).await?;
+        let ok = res.rows_affected > 0;
+        if ok {
+            ctx.app_state().notify_modified("graphql".to_string());
+        }
+        Ok(ok)
+    }
+
+    async fn booking_save(
+        ctx: &Context,
+        db_id: Option<i32>,
+        task_id: i32,
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+        resources: Vec<i32>,
+        r#final: bool,
+    ) -> anyhow::Result<allocation::Model> {
+        let txn = ctx.txn().await?;
+        // upsert allocation
+        let db_alloc = if let Some(id) = db_id {
+            let mut am = allocation::ActiveModel {
+                id: ActiveValue::Set(id),
+                task_id: ActiveValue::Set(task_id),
+                start: ActiveValue::Set(start),
+                end: ActiveValue::Set(end),
+                allocation_type: ActiveValue::Set(<&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into()),
+                r#final: ActiveValue::Set(r#final),
+            };
+            am.update(txn).await?
+        } else {
+            let am = allocation::ActiveModel {
+                id: ActiveValue::NotSet,
+                task_id: ActiveValue::Set(task_id),
+                start: ActiveValue::Set(start),
+                end: ActiveValue::Set(end),
+                allocation_type: ActiveValue::Set(<&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into()),
+                r#final: ActiveValue::Set(r#final),
+            };
+            am.insert(txn).await?
+        };
+        // replace allocated resources
+        allocated_resource::Entity::delete_many()
+            .filter(allocated_resource::Column::AllocationId.eq(db_alloc.id))
+            .exec(txn)
+            .await?;
+        for rid in resources {
+            let arm = allocated_resource::ActiveModel {
+                id: ActiveValue::NotSet,
+                allocation_id: ActiveValue::Set(db_alloc.id),
+                resource_id: ActiveValue::Set(rid),
+            };
+            arm.insert(txn).await?;
+        }
+        ctx.app_state().notify_modified("graphql".to_string());
+        Ok(db_alloc)
+    }
+
+    async fn booking_delete(ctx: &Context, db_id: i32) -> anyhow::Result<bool> {
+        let txn = ctx.txn().await?;
+        allocated_resource::Entity::delete_many()
+            .filter(allocated_resource::Column::AllocationId.eq(db_id))
+            .exec(txn)
+            .await?;
+        let am = allocation::ActiveModel { id: sea_orm::ActiveValue::Set(db_id), ..Default::default() };
         let res = am.delete(txn).await?;
         let ok = res.rows_affected > 0;
         if ok {

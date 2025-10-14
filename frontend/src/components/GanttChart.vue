@@ -185,8 +185,9 @@
                     <template v-if="rw.row.designation === TaskDesignation.Task && rw.row.allocations">
                         <template v-for="alloc in rw.row.allocations" :key="rw.row.id + '-alloc-' + alloc.dbId">
                             <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" fill="#42a5f5"
-                                stroke="#0a6fc2" rx="3"
+                                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight"
+                                :fill="alloc.allocationType === 'BOOKING' ? '#ffb74d' : '#42a5f5'"
+                                :stroke="alloc.allocationType === 'BOOKING' ? '#b06b00' : '#0a6fc2'" rx="3"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
                                 class="clickable" />
                             <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
@@ -212,7 +213,7 @@
 import { TaskDesignation } from 'src/gql/graphql';
 import { ref, computed } from 'vue'
 
-type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null }
+type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType?: string; final?: boolean }
 type Row = {
     id: number;
     name: string;
