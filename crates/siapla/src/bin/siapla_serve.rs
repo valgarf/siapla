@@ -24,6 +24,8 @@ use siapla::{
     },
     scheduling::recalculate_loop,
 };
+use siapla_migration::MigratorTrait as _;
+use sqlx::migrate::MigrateDatabase as _;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -110,6 +112,22 @@ async fn serve_frontend(path: Option<String>) -> impl IntoResponse {
     file_response_from_dir(p)
 }
 
+async fn init_db(db_url: &str) -> anyhow::Result<()> {
+    if db_url.starts_with("sqlite:") {
+        if !sqlx::Sqlite::database_exists(&db_url).await? {
+            sqlx::Sqlite::create_database(&db_url).await?;
+        }
+    }
+    // Initialize database connection
+    let connect_opts = sea_orm::ConnectOptions::new(db_url).to_owned();
+    let db = sea_orm::Database::connect(connect_opts).await?;
+
+    // Upgrade to latest state
+    siapla_migration::Migrator::up(&db, None).await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -120,6 +138,12 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .with_env_filter(EnvFilter::try_new("debug").unwrap())
         .init();
+
+    // parse cli args and set global database url
+    let args = Args::parse();
+    init_db(&args.database_url).await?;
+    set_global_database_url(args.database_url);
+
     let (app_state, manual_rx) = AppState::new();
 
     let local_set = tokio::task::LocalSet::new();
@@ -154,10 +178,6 @@ async fn main() -> anyhow::Result<()> {
                 .layer(middleware::from_fn(add_context)),
         );
     // .route("/", get(homepage))
-
-    // parse cli args and set global database url
-    let args = Args::parse();
-    set_global_database_url(args.database_url);
 
     let addr: SocketAddr = args.bind.parse().unwrap_or(SocketAddr::from(([0, 0, 0, 0], 80)));
     let listener =
