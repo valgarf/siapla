@@ -88,5 +88,7 @@ docker-build binary='target/release/siapla-serve' tag='siapla:latest': build-bac
 [working-directory(".")]
 docker-run tag='siapla:latest' db_path='./run-data/test.sqlite' port='8890':
     # run container with /data mounted to local db path and port exposed
+    docker stop siapla
+    docker rm siapla
     docker run -d --name siapla -p {{port}}:80 -v {{db_path}}:/data/default.sqlite {{tag}}
 

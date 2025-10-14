@@ -515,7 +515,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
         }
     }
     // store fulfilled milestones as allocations (no allocated_resource entries)
-    for fm in &plan.fulfilled_milestones {
+    for fm in plan.fulfilled_milestones.values() {
         let am = allocation::ActiveModel {
             id: ActiveValue::NotSet,
             task_id: ActiveValue::Set(fm.task_id),

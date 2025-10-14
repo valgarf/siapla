@@ -15,7 +15,9 @@ use std::{
 };
 use tracing::warn;
 
-use crate::scheduling::{Interval, Intervals, Plan, PlanningIssue, ResourceConstraint, Slot};
+use crate::scheduling::{
+    Interval, Intervals, Milestone, Plan, PlanningIssue, ResourceConstraint, Slot,
+};
 
 use super::datastructures::{Node, Project, Task};
 
@@ -36,9 +38,9 @@ pub struct GASettings {
     /// probability for creating a crossover point at any given index between tasks
     pub prob_crossover_point: f64,
     /// slopes for cost function: (low, medium, high) before target
-    pub slopes_before: [f64; 3],
+    pub cost_before: [f64; 3],
     /// slopes for cost function: (low, medium, high) after target
-    pub slopes_after: [f64; 3],
+    pub cost_after: [f64; 3],
 }
 
 impl Default for GASettings {
@@ -53,8 +55,9 @@ impl Default for GASettings {
             prob_mutate_resources: 0.05,
             prob_mutate_order: 0.2,
             prob_crossover_point: 0.3,
-            slopes_before: [-0.1, -0.2, -0.4],
-            slopes_after: [0.2, 0.4, 0.6],
+
+            cost_before: [-0.2, -0.4, -0.6],
+            cost_after: [0.2, 0.4, 0.6],
         }
     }
 }
@@ -107,41 +110,47 @@ pub fn generate_random_individual(project: &Project) -> Individual {
     Individual { tasks: task_genes }
 }
 
+pub fn milestone_cost(
+    project: &Project,
+    settings: &GASettings,
+    plan: &Plan,
+    milestone: &Milestone,
+) -> f64 {
+    // since no priority metadata exists, use medium priority index = 1
+    let pri_idx = 1usize;
+    let day = 3600.0 * 24.0;
+    if let Some(fulfilled_milestone) = plan.fulfilled_milestones.get(&milestone.db_id) {
+        let diff = fulfilled_milestone.date - milestone.schedule_target;
+        let days = diff.as_seconds_f64() / day;
+        if days < 0.0 {
+            // finished before target -> negative cost
+            (days.abs() + 1.0).ln() * settings.cost_before[pri_idx]
+        } else {
+            // finished after -> positive cost
+            (days.powi(2) + days) * settings.cost_after[pri_idx]
+        }
+    } else {
+        // milestone not fulfilled: penalize as if finished at calculation_end + (end - start)
+        let diff = project.calculation_end - milestone.schedule_target;
+        let project_length = project.calculation_end - project.start;
+        let days = (diff.as_seconds_f64() + project_length.as_seconds_f64()) / day;
+        (days.powi(2) + days) * settings.cost_after[pri_idx]
+    }
+}
+
 // helper: compute cost for an individual (lower is better)
 pub fn cost_function(project: &Project, settings: &GASettings, ind: &Individual) -> f64 {
     // plan the individual
     let plan = plan_individual(project, ind);
-    // map milestone id -> finished date
-    let mut fm_map: HashMap<i32, NaiveDateTime> = HashMap::new();
-    for fm in plan.fulfilled_milestones.iter() {
-        fm_map.insert(fm.task_id, fm.date);
-    }
-
-    // since no priority metadata exists, use medium priority index = 1
-    let pri_idx = 1usize;
     let mut total_cost = 0.0f64;
     for m in project.objs.milestones.iter() {
-        let milestone = m.borrow();
-        if let Some(finished) = fm_map.get(&milestone.db_id) {
-            let diff = *finished - milestone.schedule_target;
-            let secs = diff.as_seconds_f64();
-            if secs < 0.0 {
-                // finished before target -> negative cost
-                total_cost += secs.abs() * settings.slopes_before[pri_idx];
-            } else {
-                // finished after -> positive cost
-                total_cost += secs * settings.slopes_after[pri_idx];
-            }
-        } else {
-            // milestone not fulfilled: penalize as if finished at calculation_end + (end - start)
-            let diff = project.calculation_end - milestone.schedule_target;
-            let project_length = project.calculation_end - project.start;
-            let secs = diff.as_seconds_f64() + project_length.as_seconds_f64();
-            total_cost += secs * settings.slopes_after[pri_idx];
-        }
+        total_cost += milestone_cost(project, settings, &plan, &m.borrow());
     }
     total_cost
 }
+
+// c* ln(t +delta) -> c/(t+delta) ->
+// c*sqrt(t+delta) -> c * 0.5 *(t+delta)**3/2
 
 /// Run the genetic algorithm and return the best found individual.
 ///
@@ -470,7 +479,8 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
 
             if all_assigned {
                 if let Some(date) = max_end {
-                    plan.fulfilled_milestones.push(
+                    plan.fulfilled_milestones.insert(
+                        milestone.db_id,
                         crate::scheduling::datastructures::FulfilledMilestone {
                             task_id: milestone.db_id,
                             date,

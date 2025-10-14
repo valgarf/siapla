@@ -16,7 +16,7 @@ use crate::{
     gql::context::Context,
     scheduling::{
         db_layer::store_plan,
-        ga::{GASettings, plan_individual, run_ga},
+        ga::{GASettings, milestone_cost, plan_individual, run_ga},
     },
 };
 
@@ -105,6 +105,12 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                 println!(" {} ({}): {:?}", task.title, tid, resources);
                 println!("    {}", assignments.values().last().unwrap().range);
             }
+            println!(" -> Costs:");
+            for ms in &problem.objs.milestones {
+                let m = ms.borrow();
+                let cost = milestone_cost(&problem, &settings, &plan, &m);
+                println!(" {} ({}): {}", m.title, m.db_id, cost);
+            }
             match store_plan(&ctx, &problem, &plan).await {
                 Ok(_) => {
                     println!("Stored new plan successfully.");
@@ -113,8 +119,6 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                     println!("Error storing plan: {}", err);
                 }
             }
-            // set finished state
-            app_state.set_state(crate::app_state::CalculationState::Finished);
             drop(problem);
         }
     }
@@ -127,5 +131,6 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
         Err(err) => println!("Error committing: {}", err),
         Ok(_) => {}
     }
+    app_state.set_state(crate::app_state::CalculationState::Finished);
     Ok(())
 }
