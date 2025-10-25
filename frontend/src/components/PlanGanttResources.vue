@@ -53,7 +53,7 @@ const resourceRows = computed(() => {
     designation: TaskDesignation.Task,
     depth: 0,
     allocations: planStore.by_resource(r.dbId).map(a => ({
-      dbId: a.dbId, start: a.start, end: a.end, task: a.task
+      dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType
     }))
   }));
 });

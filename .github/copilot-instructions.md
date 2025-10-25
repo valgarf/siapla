@@ -1,0 +1,8 @@
+- Do not write explanations or summaries of what you just did, just write the code
+- Only add comments to code if the comment explains a complex part. Do not add comments to very short functions
+- Run `just quasar-build` and `just --no-deps build-backend` and parse the output to find warnings and errors. After fixing the issues run it again and iterate until all warnings and errors are fixed.
+- Try not to use eslint-disable workarounds.
+- Do not use `any` in typescript and correctly assign types
+- if you modify or add GraphQL queries or subscriptions in the frontend or modify the schema in the backend, run `just generate-frontend-gql` to update the graphql types.
+- if you add a migration file to the `siapla-migration` crate, run `just backup-db && just migrate && just generate-entity`
+- if you are unsure how to proceed, do not ask for confirmation. Select the options you believe is best and state your reasons for that decision.

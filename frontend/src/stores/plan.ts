@@ -5,7 +5,7 @@ import { computed, type ComputedRef, watch } from 'vue'; // type Ref, ref,
 import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { type Task, useTaskStore } from './task';
-import { TaskDesignation, type PlanQuery, CalculationState } from 'src/gql/graphql';
+import { TaskDesignation, type PlanQuery, CalculationState, type Exact, type MutationBookingSaveArgs, AllocationType } from 'src/gql/graphql';
 import { useIssueStore } from './issue';
 
 export interface Allocation {
@@ -14,7 +14,7 @@ export interface Allocation {
   end: Date;
   task: Task | null;
   resources: Resource[];
-  allocationType?: string;
+  allocationType: AllocationType | null;
   final?: boolean;
 }
 
@@ -46,17 +46,40 @@ const RECALC_MUT = graphql(`
   mutation recalculate { recalculateNow }
 `);
 
-function convertQueryResult(query: any): Allocation[] {
+const BOOKING_SAVE = graphql(`
+  mutation bookingSave($dbId: Int, $taskId: Int!, $start: DateTime!, $end: DateTime!, $resources: [Int!]!, $final: Boolean!) {
+    bookingSave(dbId: $dbId, taskId: $taskId, start: $start, end: $end, resources: $resources, final: $final) { dbId }
+  }
+`);
+const BOOKING_DELETE = graphql(`
+  mutation bookingDelete($dbId: Int!) { bookingDelete(dbId: $dbId) }
+`);
+
+function convertQueryResult(query: PlanQuery): Allocation[] {
   const resourceStore = useResourceStore();
   const taskStore = useTaskStore();
-  const allocations: Allocation[] = query.currentPlan.allocations.map((a: any) => ({ dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), allocationType: a.allocationType ?? undefined, final: a.final ?? false, task: taskStore.task(a.task.dbId) ?? null, resources: a.resources.map((r: any) => resourceStore.resource(r.dbId)).filter((r: any) => r != null) }));
+  const allocations: Allocation[] = query.currentPlan.allocations.map(a => {
+    const resources = a.resources.map(r => resourceStore.resource(r.dbId)).filter(r => r != null);
+    return { dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), allocationType: a.allocationType, final: a.final, task: taskStore.task(a.task.dbId) ?? null, resources: resources }
+  });
+  allocations.sort((lhs, rhs) => {
+    if (lhs.allocationType != rhs.allocationType) {
+      if (lhs.allocationType == AllocationType.Booking) {
+        return 1
+      }
+      else {
+        return -1
+      }
+    }
+    return (lhs.start.getTime() - rhs.start.getTime())
+  })
   return allocations;
 }
 
 // actual store
 export const usePlanStore = defineStore('planStore', () => {
   const issueStore = useIssueStore();
-  const queryGetAll = useQuery(PLAN_QUERY as any);
+  const queryGetAll = useQuery(PLAN_QUERY);
   const calcSub = useSubscription(CALC_SUB);
   const mutRecalculate = useMutation(RECALC_MUT);
   // const calculationState: Ref<CalculationState> = ref(CalculationState.Calculating);
@@ -84,6 +107,58 @@ export const usePlanStore = defineStore('planStore', () => {
       return convertQueryResult(queryGetAll.result.value);
     }
   });
+
+  // booking mutations
+  const mutBookingSave = useMutation(BOOKING_SAVE);
+  const mutBookingDelete = useMutation(BOOKING_DELETE);
+
+  async function createBookingFromPlan(taskId?: number | null) {
+    if (taskId == null) return;
+    // find earliest PLAN allocation for this task
+    const matching = allocations.value.filter(a => a.task?.dbId === taskId && (a.allocationType ?? 'PLAN') === 'PLAN');
+    matching.sort((l, r) => new Date(l.start).getTime() - new Date(r.start).getTime());
+    const source = matching[0];
+    const start = source ? source.start : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const end = source ? source.end : new Date(Date.now());
+    const resources = source ? source.resources.map(r => r.dbId) : [];
+    try {
+      const vars: Exact<MutationBookingSaveArgs> = { dbId: null, taskId, start: start.toISOString(), end: end.toISOString(), resources, final: false };
+      await mutBookingSave.mutate(vars);
+      await queryGetAll.refetch?.();
+    } catch (err) {
+      console.warn('Failed to create booking', err);
+    }
+  }
+
+  async function saveBooking(b: Allocation) {
+    try {
+      const taskId = b.task?.dbId;
+      if (!taskId) {
+        console.warn('Cannot save booking without a task id', b);
+        return;
+      }
+      const vars: Exact<MutationBookingSaveArgs> = { dbId: b.dbId > 0 ? b.dbId : null, taskId, start: (b.start instanceof Date) ? b.start.toISOString() : String(b.start), end: (b.end instanceof Date) ? b.end.toISOString() : String(b.end), resources: (b.resources || []).map(r => r.dbId), final: !!b.final };
+      await mutBookingSave.mutate(vars);
+      await queryGetAll.refetch?.();
+    } catch (err) {
+      console.warn('Failed to save booking', err);
+    }
+  }
+
+  async function deleteBooking(dbId?: number | null) {
+    if (!dbId) return;
+    try {
+      await mutBookingDelete.mutate({ dbId });
+      await queryGetAll.refetch?.();
+    } catch (err) {
+      console.warn('Failed to delete booking', err);
+    }
+  }
+
+  function bookingsByTask(taskId?: number | null) {
+    if (taskId == null) return [] as Allocation[];
+    return allocations.value.filter(a => a.task?.dbId === taskId && a.allocationType === AllocationType.Booking);
+  }
 
   // raw allocations grouped by task id
   const allocations_by_task_raw = computed(() => {
@@ -166,14 +241,14 @@ export const usePlanStore = defineStore('planStore', () => {
   const start = computed(() => {
     const allocStarts = allocations.value.map((a) => a.start.getTime());
     const all = [...allocStarts, ...otherDates.value];
-    if (all.length === 0 || queryGetAll.loading.value || taskStore.loading) return new Date();
+    if (all.length === 0) return new Date();
     return new Date(Math.min(...all));
   });
 
   const end = computed(() => {
     const allocEnds = allocations.value.map((a) => a.end.getTime());
     const all = [...allocEnds, ...otherDates.value];
-    if (all.length === 0 || queryGetAll.loading.value || taskStore.loading) return new Date();
+    if (all.length === 0) return new Date();
     return new Date(Math.max(...all));
   });
   const resource_ids = computed(() => { return Array.from(allocations_by_resource.value.keys()) })
@@ -184,6 +259,10 @@ export const usePlanStore = defineStore('planStore', () => {
       base.set(tid, arr.slice());
     }
     for (const [tid, comp] of allocBoundsMap.value.entries()) {
+      if (base.has(tid)) {
+        // only add bounds if the task has no own allocations (i.e. groups)
+        continue;
+      }
       const bounds = comp.value;
       if (!bounds) continue;
       const synthetic: Allocation = {
@@ -192,6 +271,7 @@ export const usePlanStore = defineStore('planStore', () => {
         end: bounds.end,
         task: taskStore.task(tid) ?? null,
         resources: [],
+        allocationType: null
       };
       const arr = base.get(tid) ?? [];
       arr.push(synthetic);
@@ -222,6 +302,11 @@ export const usePlanStore = defineStore('planStore', () => {
     by_task: (dbId: number): Allocation[] => {
       return allocations_by_task.value.get(dbId) ?? [];
     },
+    // booking helpers
+    bookingsByTask: (dbId: number) => bookingsByTask(dbId),
+    createBookingFromPlan: (taskId?: number | null) => createBookingFromPlan(taskId),
+    saveBooking: (b: Allocation) => saveBooking(b),
+    deleteBooking: (dbId?: number | null) => deleteBooking(dbId),
     recalculate: () => {
       return mutRecalculate.mutate()
     }
