@@ -93,31 +93,6 @@
                 <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
             </div>
         </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
-            <div class="row items-center q-gutter-sm">
-                <div class="col">
-                    <div class="text-subtitle2">Bookings</div>
-                    <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
-                        style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
-                        <div class="row items-center q-gutter-sm">
-                            <DateTimeInput v-model="b.start" label="Start"
-                                @update:modelValue="() => saveBookingLocal(b)" />
-                            <DateTimeInput v-model="b.end" label="End" @update:modelValue="() => saveBookingLocal(b)" />
-                            <q-checkbox v-model="b.final" label="Final"
-                                @update:modelValue="() => saveBookingLocal(b)" />
-                            <q-btn flat icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
-                        </div>
-                        <div class="q-mt-sm">
-                            <EditableResourceList :name="`booking-resources-${idx}`" v-model="b.resources"
-                                :possible="allResources" :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
-                        </div>
-                    </div>
-                </div>
-                <div>
-                    <q-btn flat icon="add" label="Add Booking" color="primary" @click="createBooking" />
-                </div>
-            </div>
-        </q-card-section>
         <q-card-section
             v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
             <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
@@ -146,6 +121,28 @@
                 <div class="text-subtitle2">Milestones</div>
                 <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
             </div>
+        </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Task && !edit">
+            <div class="col">
+                <div class="text-subtitle2">Bookings</div>
+                <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
+                    style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
+                    <div class="row items-center q-gutter-sm">
+                        <DateTimeInput v-model="b.start" label="Start" @update:modelValue="() => saveBookingLocal(b)" />
+                        <DateTimeInput v-model="b.end" label="End" @update:modelValue="() => saveBookingLocal(b)" />
+                        <q-checkbox v-model="b.final" label="Final" @update:modelValue="() => saveBookingLocal(b)" />
+                        <q-btn flat icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
+                    </div>
+                    <div class="q-mt-sm">
+                        <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
+                            :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                    </div>
+                </div>
+                <div>
+                    <q-btn flat icon="add" label="Add Booking" color="primary" @click="createBooking" />
+                </div>
+            </div>
+
         </q-card-section>
 
 
