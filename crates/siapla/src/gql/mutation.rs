@@ -2,8 +2,8 @@ use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
 use sea_orm::{ActiveValue, prelude::*};
 
+use crate::entity::{allocated_resource, allocation};
 use crate::entity::{resource, task};
-use crate::entity::{allocation, allocated_resource};
 
 use super::{
     context::Context,
@@ -86,12 +86,14 @@ impl Mutation {
         let txn = ctx.txn().await?;
         // upsert allocation
         let db_alloc = if let Some(id) = db_id {
-            let mut am = allocation::ActiveModel {
+            let am = allocation::ActiveModel {
                 id: ActiveValue::Set(id),
                 task_id: ActiveValue::Set(task_id),
                 start: ActiveValue::Set(start),
                 end: ActiveValue::Set(end),
-                allocation_type: ActiveValue::Set(<&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into()),
+                allocation_type: ActiveValue::Set(
+                    <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
+                ),
                 r#final: ActiveValue::Set(r#final),
             };
             am.update(txn).await?
@@ -101,12 +103,15 @@ impl Mutation {
                 task_id: ActiveValue::Set(task_id),
                 start: ActiveValue::Set(start),
                 end: ActiveValue::Set(end),
-                allocation_type: ActiveValue::Set(<&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into()),
+                allocation_type: ActiveValue::Set(
+                    <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
+                ),
                 r#final: ActiveValue::Set(r#final),
             };
             am.insert(txn).await?
         };
         // replace allocated resources
+        // TODO: only replace the changed ones
         allocated_resource::Entity::delete_many()
             .filter(allocated_resource::Column::AllocationId.eq(db_alloc.id))
             .exec(txn)
@@ -129,7 +134,8 @@ impl Mutation {
             .filter(allocated_resource::Column::AllocationId.eq(db_id))
             .exec(txn)
             .await?;
-        let am = allocation::ActiveModel { id: sea_orm::ActiveValue::Set(db_id), ..Default::default() };
+        let am =
+            allocation::ActiveModel { id: sea_orm::ActiveValue::Set(db_id), ..Default::default() };
         let res = am.delete(txn).await?;
         let ok = res.rows_affected > 0;
         if ok {

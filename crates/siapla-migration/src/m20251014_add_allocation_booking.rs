@@ -50,6 +50,7 @@ impl MigrationTrait for Migration {
     }
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Allocation {
     Table,

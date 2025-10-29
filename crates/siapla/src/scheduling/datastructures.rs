@@ -37,6 +37,8 @@ pub struct Task {
     // booking-related metadata (filled during query_problem)
     pub booked_until: Option<NaiveDateTime>,
     pub booked_resources: Vec<i32>,
+    // full booking history for the task: (start, end, resources, final)
+    pub bookings: Vec<(NaiveDateTime, NaiveDateTime, Vec<i32>, bool)>,
     pub booked_remaining_effort: f64,
     pub booked_final: bool,
 }
