@@ -108,7 +108,10 @@ impl task::Model {
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
         const CIDX: usize = allocation::Column::TaskId as usize;
-        ctx.load_by_col::<allocation::Entity, CIDX>(self.id).await
+        ctx.load_by_col::<allocation::Entity, CIDX>(self.id).await.map(|mut res| {
+            res.sort_by_key(|a| a.end);
+            res
+        })
     }
 }
 

@@ -62,17 +62,18 @@ function convertQueryResult(query: PlanQuery): Allocation[] {
     const resources = a.resources.map(r => resourceStore.resource(r.dbId)).filter(r => r != null);
     return { dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), allocationType: a.allocationType, final: a.final, task: taskStore.task(a.task.dbId) ?? null, resources: resources }
   });
-  allocations.sort((lhs, rhs) => {
-    if (lhs.allocationType != rhs.allocationType) {
-      if (lhs.allocationType == AllocationType.Booking) {
-        return 1
-      }
-      else {
-        return -1
-      }
-    }
-    return (lhs.start.getTime() - rhs.start.getTime())
-  })
+  // Not sure if this is necessary. Mucks up the arrows
+  // allocations.sort((lhs, rhs) => {
+  //   if (lhs.allocationType != rhs.allocationType) {
+  //     if (lhs.allocationType == AllocationType.Booking) {
+  //       return 1
+  //     }
+  //     else {
+  //       return -1
+  //     }
+  //   }
+  //   return (lhs.start.getTime() - rhs.start.getTime())
+  // })
   return allocations;
 }
 
