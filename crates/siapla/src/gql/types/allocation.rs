@@ -6,7 +6,21 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
-use juniper::graphql_object;
+use juniper::{GraphQLEnum, graphql_object};
+use strum::{EnumString, IntoStaticStr};
+
+#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum AllocationType {
+    PLAN,
+    BOOKING,
+}
+
+impl From<AllocationType> for String {
+    fn from(v: AllocationType) -> Self {
+        let s: &'static str = v.into();
+        s.into()
+    }
+}
 
 #[graphql_object]
 #[graphql(name = "Allocation")]
@@ -19,6 +33,12 @@ impl allocation::Model {
     }
     fn end(&self) -> &DateTime<Utc> {
         &self.end
+    }
+    fn allocation_type(&self) -> anyhow::Result<AllocationType> {
+        Ok(self.allocation_type.as_str().try_into()?)
+    }
+    fn r#final(&self) -> bool {
+        self.r#final
     }
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<resource::Model>> {
         resolve_many_to_many!(

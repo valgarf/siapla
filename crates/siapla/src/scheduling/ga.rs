@@ -1,6 +1,7 @@
 // anyhow not required here; planner uses PlanningIssue for errors
 use chrono::{NaiveDateTime, TimeDelta};
 use itertools::Itertools;
+use petgraph::Direction::Outgoing;
 use petgraph::{
     Direction::{self, Incoming},
     Graph,
@@ -68,11 +69,21 @@ pub struct TaskGene {
     pub task_nidx: NodeIndex,
     pub required_resource_ids: HashSet<i32>,
     pub selectable_resource_ids: Vec<i32>,
+    // booking metadata: whether this task has bookings and the first booking start
+    pub is_booked: bool,
+    pub booking_start: Option<NaiveDateTime>,
+    // sum of speeds of the constraints used for this gene
+    pub total_speed: f64,
 }
 
 #[derive(Debug, Clone)]
 pub struct Individual {
+    // booked tasks (have bookings and may have remaining effort)
+    pub booked_tasks: Vec<TaskGene>,
+    // unbooked tasks (subject to GA crossover/mutation)
     pub tasks: Vec<TaskGene>,
+    // finished tasks (single final booking) - considered done
+    pub finished_tasks: Vec<TaskGene>,
 }
 
 pub fn generate_random_individual(project: &Project) -> Individual {
@@ -107,7 +118,23 @@ pub fn generate_random_individual(project: &Project) -> Individual {
             }
         }
     }
-    Individual { tasks: task_genes }
+    // split into booked (non-final), finished (final booking) and remaining tasks
+    let mut booked_tasks: Vec<TaskGene> = Vec::new();
+    let mut finished_tasks: Vec<TaskGene> = Vec::new();
+    let mut other_tasks: Vec<TaskGene> = Vec::new();
+    for tg in task_genes.into_iter() {
+        if tg.is_booked {
+            if tg.task.borrow().booked_final {
+                finished_tasks.push(tg);
+            } else {
+                booked_tasks.push(tg);
+            }
+        } else {
+            other_tasks.push(tg);
+        }
+    }
+    booked_tasks.sort_by_key(|tg| tg.booking_start.clone());
+    Individual { booked_tasks, tasks: other_tasks, finished_tasks }
 }
 
 pub fn milestone_cost(
@@ -285,7 +312,12 @@ pub fn run_ga(project: &Project, settings: &GASettings) -> Individual {
                             break;
                         }
                     }
-                    Individual { tasks: child_tasks }
+
+                    Individual {
+                        booked_tasks: p1.booked_tasks.clone(),
+                        tasks: child_tasks,
+                        finished_tasks: p1.finished_tasks.clone(),
+                    }
                 }
             } else if take_mut {
                 // mutation-only: pick a seed and mutate
@@ -311,6 +343,10 @@ pub fn run_ga(project: &Project, settings: &GASettings) -> Individual {
             for t_idx in 0..child.tasks.len() {
                 if rng.random::<f64>() < settings.prob_mutate_resources {
                     let tg = &child.tasks[t_idx];
+                    // skip mutation for booked tasks (locked resources)
+                    if tg.is_booked {
+                        continue;
+                    }
                     let new_tg =
                         create_random_task_gene(project, Rc::clone(&tg.task), tg.task_nidx);
                     // replace resource-related fields (keep Rc pointers)
@@ -353,27 +389,74 @@ pub fn create_random_task_gene(
     nidx: NodeIndex,
 ) -> TaskGene {
     let borrowed_task = task.borrow();
-    let mut req_constraints: Vec<&ResourceConstraint> =
-        borrowed_task.constraints.iter().filter(|c| !c.optional).collect();
-    let opt_constraints: Vec<&ResourceConstraint> =
-        borrowed_task.constraints.iter().filter(|c| c.optional).collect();
+    // constraints are available via borrowed_task.constraints
     let mut rng = rand::rng();
-    let num_opt: usize = rng.random_range(..=opt_constraints.len());
-    req_constraints.extend(opt_constraints.choose_multiple(&mut rng, num_opt));
+    let mut required_resource_ids: HashSet<i32> = HashSet::new();
+    let mut used_constraint_speeds: Vec<f64> = Vec::new();
 
-    // From the required constraints, pick the one with the most entries and make it
-    // selectable (we will choose one of these resources later during planning).
+    // Build required_resource_ids and collect used constraint speeds. Booking handling
+    // should be done up-front: collect booked resource ids and if bookings exist
+    // prefer to use those resources when they match constraints. We only alter
+    // selection logic at the end based on whether bookings were present.
+    let mut booked_res_ids: HashSet<i32> = HashSet::new();
+    for (_s, _e, ress, _f) in borrowed_task.bookings.iter() {
+        for r in ress.iter() {
+            booked_res_ids.insert(*r);
+        }
+    }
+
+    // partition constraints into required and optional
+    let mut req_constraints: Vec<&ResourceConstraint> = vec![];
+    let mut opt_constraints: Vec<&ResourceConstraint> = vec![];
+
+    // If bookings exist, prefer booked resources that match constraints.
+    // Otherwise put the constraint into the required / optional vec.
+    for c in borrowed_task.constraints.iter() {
+        // try to find a booked resource matching this constraint
+        let mut chosen: Option<i32> = None;
+        if !booked_res_ids.is_empty() {
+            for entry in c.constraints.iter() {
+                let rid = Weak::upgrade(&entry.resource)
+                    .expect("resource must still exist")
+                    .borrow()
+                    .db_id;
+                if booked_res_ids.contains(&rid) {
+                    chosen = Some(rid);
+                    break;
+                }
+            }
+        }
+
+        if let Some(rid) = chosen {
+            required_resource_ids.insert(rid);
+            used_constraint_speeds.push(c.speed);
+        } else {
+            if c.optional {
+                opt_constraints.push(c);
+            } else {
+                req_constraints.push(c);
+            }
+        }
+    }
+
+    // Optionals: if no bookings exist, randomly pick some optional constraints and add them to the
+    // required constraints
+    if booked_res_ids.is_empty() && !opt_constraints.is_empty() {
+        let num_opt: usize = rng.random_range(..=opt_constraints.len());
+        req_constraints.extend(opt_constraints.choose_multiple(&mut rng, num_opt));
+    }
+
+    // Determine selectable_resource_ids: pick the largest required constraint
     let mut selectable_resource_ids: Vec<i32> = Vec::new();
     if !req_constraints.is_empty() {
-        // find index of constraint with the maximum number of entries
         let max_idx = req_constraints
             .iter()
             .enumerate()
             .max_by_key(|(_, c)| c.constraints.len())
             .map(|(i, _)| i)
             .unwrap();
-        // remove the chosen constraint from req_constraints and collect its resource ids
         let chosen = req_constraints.remove(max_idx);
+        used_constraint_speeds.push(chosen.speed);
         for entry in chosen.constraints.iter() {
             let rid =
                 Weak::upgrade(&entry.resource).expect("resource must still exist").borrow().db_id;
@@ -381,30 +464,50 @@ pub fn create_random_task_gene(
         }
     }
 
-    // For the remaining required constraints, pick exactly one resource each as before.
-    let required_resource_ids: HashSet<i32> = req_constraints
-        .iter()
-        .map(|c| {
-            Weak::upgrade(
-                &c.constraints.choose(&mut rng).expect("constraint must have an entry").resource,
-            )
-            .expect("resource must still exist")
-            .borrow()
-            .db_id
-        })
-        .collect();
-    drop(borrowed_task);
-    // for c in task.borrow().constraints
-    TaskGene { task, task_nidx: nidx, required_resource_ids, selectable_resource_ids }
+    // choose a resource randomly for the remaining required constraints
+    for c in req_constraints {
+        let entry = c.constraints.choose(&mut rng).expect("constraint must have an entry");
+        let rid = Weak::upgrade(&entry.resource).expect("resource must still exist").borrow().db_id;
+        required_resource_ids.insert(rid);
+        used_constraint_speeds.push(c.speed);
+    }
+
+    // Now finalize booking metadata (at the end as requested)
+    let mut is_booked = false;
+    let mut booking_start: Option<NaiveDateTime> = None;
+    if !borrowed_task.bookings.is_empty() {
+        is_booked = true;
+        booking_start = Some(borrowed_task.bookings.iter().map(|(s, _, _, _)| *s).min().unwrap());
+    }
+
+    let mut total_speed: f64 = used_constraint_speeds.iter().copied().sum();
+    if total_speed <= 0.0 {
+        total_speed = 1.0;
+    }
+
+    TaskGene {
+        task: Rc::clone(&task),
+        task_nidx: nidx,
+        required_resource_ids,
+        selectable_resource_ids,
+        is_booked,
+        booking_start,
+        total_speed,
+    }
 }
 
 pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
     let mut plan = Plan::default();
+    // prepare resource slots (do not truncate by booking here; query_slots already requested per-resource ranges)
     let mut resource_slots = project
         .objs
         .resources
         .iter()
-        .map(|r| (r.borrow().db_id, r.borrow().slots.clone()))
+        .map(|r| {
+            let rb = r.borrow();
+            let slots = rb.slots.clone();
+            (rb.db_id, slots)
+        })
         .collect::<HashMap<i32, _>>();
     let mut g_finished = project.g.map(
         |_, n| match n {
@@ -415,7 +518,60 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
         },
         |_, _| (),
     );
-    for task_gene in &individual.tasks {
+    // add finished tasks (final bookings) to g_finished so successors can start after them
+    for ft in &individual.finished_tasks {
+        // find the end time of the final booking
+        let end_time_opt =
+            ft.task.borrow().bookings.iter().find(|(_, _, _, f)| *f).map(|(_, e, _, _)| *e);
+        if let Some(end_time) = end_time_opt {
+            let nw = g_finished.node_weight_mut(ft.task_nidx).expect("Node must exist");
+            *nw = Some(end_time);
+        }
+    }
+
+    // schedule booked tasks first (non-final), then unbooked tasks
+    // Build initial ordered vector preserving booked/task grouping, then
+    // produce a dependency-respecting order that prefers the initial order.
+    let initial_order: Vec<TaskGene> =
+        individual.booked_tasks.iter().chain(individual.tasks.iter()).cloned().collect();
+
+    // build indegree map counting only predecessors that are in our selected set
+    let mut indegree: HashMap<NodeIndex, usize> = HashMap::new();
+    let selected: HashSet<NodeIndex> = initial_order.iter().map(|tg| tg.task_nidx).collect();
+    for tg in initial_order.iter() {
+        let count = project
+            .g
+            .neighbors_directed(tg.task_nidx, Incoming)
+            .filter(|pidx| selected.contains(pidx))
+            .count();
+        indegree.insert(tg.task_nidx, count);
+    }
+
+    let mut remaining = initial_order;
+    let mut ordered_vec: Vec<TaskGene> = Vec::with_capacity(indegree.len());
+    while !remaining.is_empty() {
+        // pick the first task in remaining with indegree == 0 to preserve original order
+        if let Some(pos) =
+            remaining.iter().position(|tg| *indegree.get(&tg.task_nidx).unwrap_or(&0) == 0)
+        {
+            let tg = remaining.remove(pos);
+            // append and decrease indegree of successors within selected set
+            for succ in project.g.neighbors_directed(tg.task_nidx, Outgoing) {
+                if indegree.contains_key(&succ) {
+                    if let Some(v) = indegree.get_mut(&succ) {
+                        *v = v.saturating_sub(1);
+                    }
+                }
+            }
+            ordered_vec.push(tg);
+        } else {
+            // cycle or unresolved dependencies among remaining: append them as-is to avoid infinite loop
+            ordered_vec.extend(remaining.into_iter());
+            break;
+        }
+    }
+
+    for task_gene in ordered_vec.iter() {
         match plan_task(project, task_gene, &mut resource_slots, &mut g_finished) {
             Ok(assignment) => {
                 plan.assignments.insert(task_gene.task.borrow().db_id, assignment);
@@ -611,7 +767,9 @@ pub fn plan_task(
     } else {
         return Err(Some(PlanningIssue {
             code: crate::gql::issue::IssueCode::PredIssue,
-            description: "Failed to determine start timestamp.".to_string(),
+            description:
+                "Failed to determine start timestamp - might be an issue in a predecessor."
+                    .to_string(),
             task_id: Some(task.db_id),
         }));
     };
@@ -622,17 +780,13 @@ pub fn plan_task(
             task_id: Some(task.db_id),
         })); // detected on creation
     }
-    let effort = TimeDelta::seconds((task.effort * 8.0 * 3600.0).round() as i64);
+    // divide effort by total_speed to account for faster/slower constraints
+    let effective_hours = task.effort / task_gene.total_speed;
+    let effort = TimeDelta::seconds((effective_hours * 8.0 * 3600.0).round() as i64);
 
-    // If there are no selectable resources, just attempt with primary iterators
+    // Determine selectable resources: prefer gene.selectable. If empty, we will
+    // try to schedule using primary resources only (no selectable iterator loop).
     let task_selectable = task_gene.selectable_resource_ids.clone();
-    if task_selectable.is_empty() {
-        return Err(Some(PlanningIssue {
-            code: crate::gql::issue::IssueCode::NoSlotFound,
-            description: format!("Task has no resource constraint"),
-            task_id: Some(task.db_id),
-        }));
-    }
 
     // Create primary slot iterators once and for all
     let mut primary_iterators: Vec<_SlotIterator> = res_ids
@@ -646,7 +800,14 @@ pub fn plan_task(
         })
         .collect();
 
-    // Create selectable iterators once
+    if task_selectable.is_empty() && primary_iterators.is_empty() {
+        return Err(Some(PlanningIssue {
+            code: crate::gql::issue::IssueCode::NoSlotFound,
+            description: format!("Task has no resource constraint"),
+            task_id: Some(task.db_id),
+        }));
+    }
+    // Create selectable iterators once (may be empty)
     let mut selectable_iterators: Vec<_SlotIterator> = task_selectable
         .iter()
         .map(|&rid| {
@@ -691,7 +852,8 @@ pub fn plan_task(
             }
         };
 
-        // Try each selectable iterator in-place (advance them as needed)
+        // Try each selectable iterator in-place (advance them as needed). If there
+        // are no selectable iterators, we'll attempt a primary-only candidate below.
         let mut best_candidate: Option<(HashMap<i32, Slot>, HashMap<i32, usize>, NaiveDateTime)> =
             None;
         for sel_iter in selectable_iterators.iter_mut() {
@@ -760,6 +922,30 @@ pub fn plan_task(
                 } else {
                     break;
                 }
+            }
+        }
+
+        // If there are no selectable iterators (and thus no best_candidate so far) try primary-only candidate
+        if best_candidate.is_none() && selectable_iterators.is_empty() {
+            // We need a contiguous intersection among primary_iterators of length >= effort
+            if primary_intervals.length().unwrap_or_default() >= effort {
+                let assigned_intervals = _reduce_intervals(primary_intervals.clone(), effort);
+                let hull = assigned_intervals.hull().expect("Cannot be empty");
+                let end_ts = hull.end().value().expect("no unbounded intervals");
+                let assigned_slot = Slot {
+                    range: hull,
+                    extensible: false,
+                    duration: effort,
+                    intervals: assigned_intervals,
+                };
+                let mut result_map: HashMap<i32, Slot> = HashMap::new();
+                let mut removals: HashMap<i32, usize> = HashMap::new();
+                for pi in primary_iterators.iter() {
+                    let idx = pi.current_idx;
+                    removals.insert(pi.resource_id, idx);
+                    result_map.insert(pi.resource_id, assigned_slot.clone());
+                }
+                best_candidate = Some((result_map, removals, end_ts));
             }
         }
 

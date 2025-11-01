@@ -122,6 +122,28 @@
                 <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
             </div>
         </q-card-section>
+        <q-card-section v-show="local_task.designation == TaskDesignation.Task && !edit">
+            <div class="col">
+                <div class="text-subtitle2">Bookings</div>
+                <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
+                    style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
+                    <div class="row items-center q-gutter-sm">
+                        <DateTimeInput v-model="b.start" label="Start" @update:modelValue="() => saveBookingLocal(b)" />
+                        <DateTimeInput v-model="b.end" label="End" @update:modelValue="() => saveBookingLocal(b)" />
+                        <q-checkbox v-model="b.final" label="Final" @update:modelValue="() => saveBookingLocal(b)" />
+                        <q-btn flat icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
+                    </div>
+                    <div class="q-mt-sm">
+                        <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
+                            :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                    </div>
+                </div>
+                <div>
+                    <q-btn flat icon="add" label="Add Booking" color="primary" @click="createBooking" />
+                </div>
+            </div>
+
+        </q-card-section>
 
 
     </DialogLayout>
@@ -143,10 +165,12 @@ import EditableResourceList from './EditableResourceList.vue';
 import EditableTaskList from './EditableTaskList.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import TaskChip from './TaskChip.vue';
+import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();
 const dialogStore = useDialogStore();
 const resourceStore = useResourceStore();
+const planStore = usePlanStore();
 
 const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [] };
 const local_task = ref<TaskInput>(local_task_default)
@@ -332,6 +356,20 @@ async function deleteTask() {
 
 const allResources = computed(() => resourceStore.resources);
 
+const issueStore = useIssueStore();
+const taskIssues = computed(() => {
+    const tid = local_task.value.dbId;
+    if (tid == null) return [] as Issue[];
+    return issueStore.issues.filter((i) => i.taskId === tid);
+});
+
+
+function taskBookings(): Allocation[] {
+    const tid = local_task.value.dbId;
+    if (tid == null) return [];
+    return planStore.bookingsByTask(tid);
+}
+
 function addResourceSlot() {
     if (!local_task.value.resourceConstraints) local_task.value.resourceConstraints = [];
     local_task.value.resourceConstraints.push({ resources: [], optional: false, speed: 1 });
@@ -341,13 +379,20 @@ function removeResourceSlot(idx: number) {
     local_task.value.resourceConstraints.splice(idx, 1);
 }
 
-const issueStore = useIssueStore();
-const taskIssues = computed(() => {
-    const tid = local_task.value.dbId;
-    if (tid == null) return [];
-    return issueStore.issues.filter((i: Issue) => i.taskId === tid);
-});
+async function saveBookingLocal(b: Allocation) {
+    // delegate to plan store
+    await planStore.saveBooking(b);
+}
 
+async function deleteBookingLocal(b: Allocation) {
+    await planStore.deleteBooking(b.dbId);
+}
+
+function createBooking() {
+    void planStore.createBookingFromPlan(local_task.value.dbId ?? null);
+}
+
+// ...existing code...
 </script>
 
 <style scoped>

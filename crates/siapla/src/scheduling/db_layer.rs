@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::{Rc, Weak};
@@ -44,6 +45,64 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
 
     let db_task_map = db_task_vec.into_iter().map(|t| (t.id, t)).collect::<HashMap<i32, _>>();
 
+    // Load existing bookings (allocations with type BOOKING)
+    use crate::gql::allocation::AllocationType as _GqlAllocType; // re-exported
+    let booking_allocs = allocation::Entity::find()
+        .filter(allocation::Column::AllocationType.eq(<&'static str>::from(_GqlAllocType::BOOKING)))
+        .all(db)
+        .await?;
+    let alloc_ids: Vec<i32> = booking_allocs.iter().map(|a| a.id).collect();
+    let booking_allocated: Vec<allocated_resource::Model> = if alloc_ids.is_empty() {
+        vec![]
+    } else {
+        allocated_resource::Entity::find()
+            .filter(allocated_resource::Column::AllocationId.is_in(alloc_ids.clone()))
+            .all(db)
+            .await?
+    };
+    // build maps
+    use std::collections::HashMap as StdMap;
+    let mut task_bookings: StdMap<i32, Vec<(NaiveDateTime, NaiveDateTime, Vec<i32>, bool)>> =
+        StdMap::new();
+    let mut resource_last_booking: StdMap<i32, NaiveDateTime> = StdMap::new();
+    for a in booking_allocs.iter() {
+        let start = a.start.naive_utc();
+        let end = a.end.naive_utc();
+        let final_flag = a.r#final;
+        let resources: Vec<i32> = booking_allocated
+            .iter()
+            .filter(|ar| ar.allocation_id == a.id)
+            .map(|ar| ar.resource_id)
+            .collect();
+        if let Some(tid) = Some(a.task_id) {
+            task_bookings.entry(tid).or_default().push((start, end, resources.clone(), final_flag));
+        }
+        for rid in resources {
+            let entry = resource_last_booking.entry(rid).or_insert(start);
+            if *entry < end {
+                *entry = end;
+            }
+        }
+    }
+
+    // Build a helper map from constraint id -> list of resource ids (entries)
+    let mut constraint_entries_map: HashMap<i32, Vec<i32>> = HashMap::new();
+    for ce in db_constraint_entries_vec.iter() {
+        constraint_entries_map.entry(ce.resource_constraint_id).or_default().push(ce.resource_id);
+    }
+
+    // Build task -> constraints info map: task_id -> Vec<(constraint_id, speed, entries_vec, optional)>
+    let mut task_constraints_map: HashMap<i32, Vec<(i32, f64, Vec<i32>, bool)>> = HashMap::new();
+    for c in db_constraints_vec.iter() {
+        let entries = constraint_entries_map.get(&c.id).cloned().unwrap_or_default();
+        task_constraints_map.entry(c.task_id).or_default().push((
+            c.id,
+            c.speed as f64,
+            entries,
+            c.optional,
+        ));
+    }
+
     // Build all Task, Requirement, and Milestone objects
     let mut project_objects = ProjectObjects::default();
 
@@ -72,12 +131,66 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
             project_objects.milestones.push(Rc::clone(&new_ref));
             Node::Milestone(new_ref.into())
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Task) {
+            let base_effort = t.effort.unwrap_or(0.0) as f64;
+            let mut booked_until: Option<NaiveDateTime> = None;
+            let mut booked_resources_vec: Vec<i32> = Vec::new();
+            let mut booked_amount_days: f64 = 0.0;
+            let mut booked_final = false;
+            if let Some(bks) = task_bookings.get(&t.id) {
+                // store full booking history on the task and compute booked amount based on constraint speeds
+                for (s, e, ress, final_flag) in bks.iter() {
+                    let dur_secs = e.signed_duration_since(*s).num_seconds() as f64;
+                    let work_days = dur_secs / (8.0 * 3600.0);
+                    // sum speeds of matching constraints for the resources in this booking
+                    let mut total_speed = 0.0f64;
+                    // get constraints for this task (if any)
+                    if let Some(constraints) = task_constraints_map.get(&t.id) {
+                        for r in ress.iter() {
+                            // find last matching constraint that references this resource
+                            let mut speed_for_r = 1.0f64;
+                            for (_cid, speed, entries, _opt) in constraints.iter() {
+                                if entries.contains(r) {
+                                    speed_for_r = *speed;
+                                    // prefer the first match
+                                    break;
+                                }
+                            }
+                            total_speed += speed_for_r;
+                            if !booked_resources_vec.contains(r) {
+                                booked_resources_vec.push(*r);
+                            }
+                        }
+                    } else {
+                        // no constraints defined: assume speed 1 per resource
+                        total_speed = ress.len() as f64;
+                        for r in ress.iter() {
+                            if !booked_resources_vec.contains(r) {
+                                booked_resources_vec.push(*r);
+                            }
+                        }
+                    }
+                    booked_amount_days += work_days * total_speed;
+                    if *final_flag {
+                        booked_final = true;
+                    }
+                    if booked_until.map_or(true, |bt| bt < *e) {
+                        booked_until = Some(*e);
+                    }
+                }
+            }
+            let remaining_effort = (base_effort - booked_amount_days).max(1.0).min(base_effort);
             let new_ref = Rc::new(RefCell::new(Task {
                 db_id: t.id,
                 parent: None,
                 title: t.title.clone(),
-                effort: t.effort.unwrap_or(0.0) as f64,
+                effort: remaining_effort,
                 constraints: Vec::new(), // filled later
+                booked_until,
+                booked_resources: booked_resources_vec,
+                // attach booking history if present
+                bookings: task_bookings.get(&t.id).cloned().unwrap_or_default(),
+                booked_remaining_effort: remaining_effort,
+                booked_final,
             }));
             project_objects.tasks.push(Rc::clone(&new_ref));
             Node::Task(new_ref.into())
@@ -169,11 +282,13 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     project_objects.resources = db_resource_vec
         .into_iter()
         .map(|rm| {
+            let last = resource_last_booking.get(&rm.id).cloned();
             Rc::new(RefCell::new(Resource {
                 db_id: rm.id,
                 name: rm.name,
                 timezone: rm.timezone,
                 slots: vec![],
+                last_booking_end: last,
             }))
         })
         .collect();
@@ -422,7 +537,9 @@ pub async fn query_slots(
     let mut set: JoinSet<(usize, anyhow::Result<Intervals<NaiveDateTime>>)> = JoinSet::new();
     for (idx, r) in resources.iter().enumerate() {
         let rid = r.borrow().db_id;
-        let fut = ctx.load_combined_availability(rid, start, end);
+        // start availability query at resource.last_booking_end if present so earlier slots are excluded
+        let resource_start = cmp::max(start, r.borrow().last_booking_end.unwrap_or(start));
+        let fut = ctx.load_combined_availability(rid, resource_start, end);
         set.spawn(async move { (idx, fut.await) });
     }
 
@@ -477,8 +594,25 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
 
 pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    allocated_resource::Entity::delete_many().exec(txn).await?;
-    allocation::Entity::delete_many().exec(txn).await?;
+    // only remove previous planning allocations and their allocated_resource entries
+    use crate::gql::allocation::AllocationType;
+    let plan_allocs: Vec<i32> = allocation::Entity::find()
+        .filter(allocation::Column::AllocationType.eq(<&'static str>::from(AllocationType::PLAN)))
+        .all(txn)
+        .await?
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
+    if !plan_allocs.is_empty() {
+        allocated_resource::Entity::delete_many()
+            .filter(allocated_resource::Column::AllocationId.is_in(plan_allocs.clone()))
+            .exec(txn)
+            .await?;
+        allocation::Entity::delete_many()
+            .filter(allocation::Column::Id.is_in(plan_allocs))
+            .exec(txn)
+            .await?;
+    }
     // remove previous planning issues
     crate::entity::issue::Entity::delete_many()
         .filter(
@@ -503,6 +637,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(*task_id),
             start: ActiveValue::Set(range.start().value().expect("No unbound intervals").and_utc()),
             end: ActiveValue::Set(range.end().value().expect("No unbound intervals").and_utc()),
+            allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
+            r#final: ActiveValue::Set(false),
         };
         let db_alloc = am.insert(txn).await?;
         for (res_id, _) in assignment {
@@ -521,6 +657,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(fm.task_id),
             start: ActiveValue::Set(fm.date.and_utc()),
             end: ActiveValue::Set(fm.date.and_utc()),
+            allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
+            r#final: ActiveValue::Set(false),
         };
         am.insert(txn).await?;
     }

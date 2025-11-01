@@ -65,7 +65,7 @@ const ganttRows = computed(() => {
         name: r.task.title,
         depth: r.depth,
         designation: r.task.designation,
-        allocations: planStore.by_task(r.task.dbId).map((a) => ({ dbId: a.dbId, start: a.start, end: a.end, task: r.task })),
+        allocations: planStore.by_task(r.task.dbId).map((a) => ({ dbId: a.dbId, start: a.start, end: a.end, task: r.task, allocationType: a.allocationType })),
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
     }));

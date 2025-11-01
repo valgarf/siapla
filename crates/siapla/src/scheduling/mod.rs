@@ -90,7 +90,7 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
             let individual = run_ga(&mut problem, &settings);
             let task_order =
                 individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
-            println!("Problem recalculated successfully. Random order: {:?}", &task_order);
+            println!("Problem recalculated successfully. Task order: {:?}", &task_order);
             let plan = plan_individual(&problem, &individual);
             let tasks = problem
                 .objs

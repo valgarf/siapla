@@ -18,6 +18,8 @@ pub struct Model {
     pub task_id: i32,
     pub start: DateTimeUtc,
     pub end: DateTimeUtc,
+    pub allocation_type: String,
+    pub r#final: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -26,6 +28,8 @@ pub enum Column {
     TaskId,
     Start,
     End,
+    AllocationType,
+    Final,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -54,6 +58,8 @@ impl ColumnTrait for Column {
             Self::TaskId => ColumnType::Integer.def(),
             Self::Start => ColumnType::Timestamp.def(),
             Self::End => ColumnType::Timestamp.def(),
+            Self::AllocationType => ColumnType::String(StringLen::None).def(),
+            Self::Final => ColumnType::Boolean.def(),
         }
     }
 }

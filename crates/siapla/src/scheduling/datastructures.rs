@@ -34,6 +34,13 @@ pub struct Task {
     pub title: String,
     pub effort: f64,
     pub constraints: Vec<ResourceConstraint>,
+    // booking-related metadata (filled during query_problem)
+    pub booked_until: Option<NaiveDateTime>,
+    pub booked_resources: Vec<i32>,
+    // full booking history for the task: (start, end, resources, final)
+    pub bookings: Vec<(NaiveDateTime, NaiveDateTime, Vec<i32>, bool)>,
+    pub booked_remaining_effort: f64,
+    pub booked_final: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +84,8 @@ pub struct Resource {
     pub name: String,
     pub timezone: String,
     pub slots: Vec<Slot>,
+    // last booking end time (if any)
+    pub last_booking_end: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Clone)]

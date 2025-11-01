@@ -8,6 +8,20 @@ default:
 
 [working-directory(".")]
 [positional-arguments]
+backup-db *args='':
+    #!/usr/bin/env bash
+    db_file="{{db}}"
+    if [[ $db_file == *sqlite ]]
+    then
+        db_file=${db_file#sqlite:}
+        db_file_target=${db_file%.sqlite}_$(date +"%Y-%m-%d_%H-%M-%S").sqlite
+        echo "Backing up db file '${db_file}' to ${db_file_target}"
+        cp "${db_file}" "${db_file_target}"
+    fi
+
+
+[working-directory(".")]
+[positional-arguments]
 migrate *args='':
     DATABASE_URL="{{db}}" sea-orm-cli migrate -d ./crates/siapla-migration {{args}}
 
@@ -39,8 +53,13 @@ serve-frontend:
 
 
 [working-directory("./frontend")]
-build-frontend:
-    # build the quasar frontend and copy the built files into the siapla crate's bundled_frontend
+quasar-build:
+    # build the quasar frontend
+    quasar build
+
+[working-directory("./frontend")]
+build-frontend: quasar-build
+    # copy the built files into the siapla crate's bundled_frontend
     quasar build
     mkdir -p ../crates/siapla/src/bundled_frontend
     rsync -rcvh dist/spa/* ../crates/siapla/src/bundled_frontend/

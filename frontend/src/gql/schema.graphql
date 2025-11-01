@@ -1,9 +1,16 @@
 type Allocation {
+  allocationType: AllocationType!
   dbId: Int!
   end: DateTime!
+  final: Boolean!
   resources: [Resource!]!
   start: DateTime!
   task: Task!
+}
+
+enum AllocationType {
+  BOOKING
+  PLAN
 }
 
 type Availability {
@@ -115,6 +122,8 @@ See also [`chrono::NaiveDate`][2] for details.
 scalar LocalDate
 
 type Mutation {
+  bookingDelete(dbId: Int!): Boolean!
+  bookingSave(dbId: Int, end: DateTime!, final: Boolean!, resources: [Int!]!, start: DateTime!, taskId: Int!): Allocation!
   new: Mutation!
 
   """Trigger a manual recalculation now"""
