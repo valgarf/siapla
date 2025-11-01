@@ -15,7 +15,7 @@ jobs:
     name: Generate version and tag
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.gitversion.outputs.fullSemVer }}
+      version: ${{ steps.gitversion.outputs.SemVer }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,8 +37,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create and push tag
+        runs-on: startsWith(github.ref, 'refs/heads/release/')
         env:
-          TAG: v${{ steps.gitversion.outputs.fullSemVer }}
+          TAG: v${{ steps.gitversion.outputs.SemVer }}
         run: |
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
@@ -51,8 +52,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -91,13 +90,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Download frontend artifact
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
+          path: frontend-dist
 
       - name: Copy frontend into crate
         run: |
@@ -132,12 +130,29 @@ jobs:
 
   test:
     name: Test
-    needs: generate-version
+    needs: [generate-version, frontend-build]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
 
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
@@ -155,13 +170,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Download frontend artifact
         uses: actions/download-artifact@v4
         with:
           name: frontend-dist
+          path: frontend-dist
 
       - name: Copy frontend into crate
         run: |
@@ -201,6 +215,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: siapla-serve-binary
+          path: siapla-serve-binary
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -229,6 +244,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: siapla-serve-binary
+          path: siapla-serve-binary
 
       - name: Create Draft GitHub Release (auto-generated notes)
         id: create_release
