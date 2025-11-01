@@ -32,12 +32,13 @@ jobs:
         uses: gittools/actions/gitversion/execute@v4.1.0
 
       - name: Configure git for tagging
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create and push tag
-        runs-on: startsWith(github.ref, 'refs/heads/release/')
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
         env:
           TAG: v${{ steps.gitversion.outputs.SemVer }}
         run: |
