@@ -92,6 +92,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
       - name: Download frontend artifact
         uses: actions/download-artifact@v4
         with:
@@ -110,15 +115,13 @@ jobs:
             exit 1
           fi
 
-      - name: Apply version to crate Cargo.toml
-        run: |
-          ver="${{ needs.generate-version.outputs.version }}"
-          sed -i -E "s/^version\s*=\s*\"[^"]*\"/version = \"${ver}\"/" crates/siapla/Cargo.toml
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
 
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - name: Apply version to crate Cargo.toml
+        run: 
+          ver="${{ needs.generate-version.outputs.version }}"
+          cargo ws version custom "${ver}" --no-git-commit --exact --yes
 
       - name: Build backend (just build-backend)
         run: cargo build --release -p siapla
