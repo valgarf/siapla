@@ -115,3 +115,6 @@ docker-run tag='siapla:latest' db_path='./run-data/test.sqlite' port='8890':
     docker rm siapla
     docker run -d --name siapla -p {{port}}:80 -v {{db_path}}:/data/default.sqlite {{tag}}
 
+[working-directory(".")]
+test:
+    cargo test
