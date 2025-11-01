@@ -22,11 +22,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4.1.0
+        with:
+          versionSpec: '6.4.x'
+
       - name: GitVersion
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v0.9.13
-        with:
-          useConfigFile: false
+        uses: gittools/actions/gitversion/execute@v4.1.0
 
       - name: Configure git for tagging
         run: |
@@ -142,11 +145,11 @@ jobs:
           toolchain: stable
 
       - name: Run tests (just test)
-        run: cargo tetst
+        run: cargo test
 
   publish-cratesio:
     name: Publish to crates.io
-    needs: [generate-version, frontend-build]
+    needs: [generate-version, test, frontend-build]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
     steps:
@@ -187,7 +190,7 @@ jobs:
 
   docker-image:
     name: Docker image
-    needs: backend-build
+    needs: [backend-build, test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
     steps:
