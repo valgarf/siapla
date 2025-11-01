@@ -57,7 +57,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
 
       - name: Set version in package.json
         working-directory: frontend
@@ -119,9 +119,10 @@ jobs:
         run: cargo install cargo-workspaces --locked
 
       - name: Apply version to crate Cargo.toml
-        run: 
-          ver="${{ needs.generate-version.outputs.version }}"
-          cargo ws version custom "${ver}" --no-git-commit --exact --yes
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
 
       - name: Build backend (just build-backend)
         run: cargo build --release -p siapla
@@ -196,9 +197,10 @@ jobs:
         run: cargo install cargo-workspaces --locked
 
       - name: Apply version to crate Cargo.toml
-        run: 
-          ver="${{ needs.generate-version.outputs.version }}"
-          cargo ws version custom "${ver}" --no-git-commit --exact --yes
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
 
       - name: Publish crates
         env:
