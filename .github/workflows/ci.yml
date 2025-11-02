@@ -267,20 +267,11 @@ jobs:
 
       - name: Create Draft GitHub Release (auto-generated notes)
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.generate-version.outputs.version }}
-          release_name: v${{ needs.generate-version.outputs.version }}
+          name: v${{ needs.generate-version.outputs.version }}
           draft: true
           generate_release_notes: true
           prerelease: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload binary to release
-        uses: actions/upload-release-asset@v2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: siapla-serve-binary/siapla-serve
-          asset_name: siapla-serve
-          asset_content_type: application/octet-stream
+          files: siapla-serve-binary/siapla-serve
