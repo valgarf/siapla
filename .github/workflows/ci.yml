@@ -109,9 +109,8 @@ jobs:
       - name: Copy frontend into crate
         run: |
           mkdir -p crates/siapla/src/bundled_frontend
-          # artifact is unpacked into the workspace root path 'frontend-dist'
+          rm -rf crates/siapla/src/bundled_frontend/*
           if [ -d "frontend-dist" ]; then
-            rm -rf crates/siapla/src/bundled_frontend/*
             cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
           else
             echo "frontend-dist not found"
@@ -199,8 +198,8 @@ jobs:
       - name: Copy frontend into crate
         run: |
           mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
           if [ -d "frontend-dist" ]; then
-            rm -rf crates/siapla/src/bundled_frontend/*
             cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
           else
             echo "frontend-dist not found"
@@ -224,7 +223,7 @@ jobs:
 
   docker-image:
     name: Docker image
-    needs: [backend-build, test]
+    needs: [generate-version, backend-build, test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
     steps:
