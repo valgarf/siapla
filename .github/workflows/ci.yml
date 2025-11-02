@@ -242,7 +242,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (main)
+        if: startsWith(github.ref, 'refs/heads/main')
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker build --build-arg BINARY="siapla-serve-binary/siapla-serve" -t ${DOCKERHUB_USERNAME}/siapla:${VERSION} -t ${DOCKERHUB_USERNAME}/siapla:latest -f image/Dockerfile .
+          docker push ${DOCKERHUB_USERNAME}/siapla:${VERSION}
+          docker push ${DOCKERHUB_USERNAME}/siapla:latest
+      
+      - name: Build and push Docker image (beta)
+        if: startsWith(github.ref, 'refs/heads/release')
         env:
           VERSION: ${{ needs.generate-version.outputs.version }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
