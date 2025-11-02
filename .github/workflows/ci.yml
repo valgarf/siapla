@@ -1,0 +1,288 @@
+name: CI
+
+permissions:
+  contents: write
+  packages: write
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  generate-version:
+    name: Generate version and tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.gitversion.outputs.SemVer }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4.1.0
+        with:
+          versionSpec: '6.4.x'
+
+      - name: GitVersion
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4.1.0
+
+      - name: Configure git for tagging
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+        env:
+          TAG: v${{ steps.gitversion.outputs.SemVer }}
+        run: |
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+  frontend-build:
+    name: Build frontend
+    needs: generate-version
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Set version in package.json
+        working-directory: frontend
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2));"
+
+      - name: Install project dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Quasar CLI
+        run: npm install -g @quasar/cli
+
+      - name: Build Quasar
+        working-directory: frontend
+        run: quasar build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/spa
+
+  backend-build:
+    name: Build backend
+    needs: [generate-version, frontend-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
+
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
+
+      - name: Apply version to crate Cargo.toml
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
+
+      - name: Build backend (just build-backend)
+        run: cargo build --release -p siapla
+
+      - name: Upload backend binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: siapla-serve-binary
+          path: target/release/siapla-serve
+
+  test:
+    name: Test
+    needs: [generate-version, frontend-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
+
+      - name: Run tests (just test)
+        run: cargo test
+
+  publish-cratesio:
+    name: Publish to crates.io
+    needs: [generate-version, test, frontend-build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+          
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
+      
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
+
+      - name: Apply version to crate Cargo.toml
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
+
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          cargo publish --workspace --allow-dirty --token "$CARGO_REGISTRY_TOKEN"
+
+  docker-image:
+    name: Docker image
+    needs: [generate-version, backend-build, test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: siapla-serve-binary
+          path: siapla-serve-binary
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image (main)
+        if: startsWith(github.ref, 'refs/heads/main')
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker build --build-arg BINARY="siapla-serve-binary/siapla-serve" -t ${DOCKERHUB_USERNAME}/siapla:${VERSION} -t ${DOCKERHUB_USERNAME}/siapla:latest -f image/Dockerfile .
+          docker push ${DOCKERHUB_USERNAME}/siapla:${VERSION}
+          docker push ${DOCKERHUB_USERNAME}/siapla:latest
+      
+      - name: Build and push Docker image (beta)
+        if: startsWith(github.ref, 'refs/heads/release')
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker build --build-arg BINARY="siapla-serve-binary/siapla-serve" -t ${DOCKERHUB_USERNAME}/siapla:${VERSION} -f image/Dockerfile .
+          docker push ${DOCKERHUB_USERNAME}/siapla:${VERSION}
+
+  create-release:
+    name: Create GitHub release
+    needs: [generate-version, docker-image, publish-cratesio, backend-build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: siapla-serve-binary
+          path: siapla-serve-binary
+
+      - name: Create Draft GitHub Release (auto-generated notes)
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.generate-version.outputs.version }}
+          name: v${{ needs.generate-version.outputs.version }}
+          draft: true
+          generate_release_notes: true
+          prerelease: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+          files: siapla-serve-binary/siapla-serve
