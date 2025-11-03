@@ -27,9 +27,17 @@ jobs:
         with:
           versionSpec: '6.4.x'
 
+      - name: Display GitVersion config
+        uses: gittools/actions/gitversion/command@v4.1.0
+        with:
+          arguments: '/showConfig'
+
       - name: GitVersion
         id: gitversion
         uses: gittools/actions/gitversion/execute@v4.1.0
+
+      - name: Fail on purpose
+        run: exit 1
 
       - name: Configure git for tagging
         if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
@@ -44,6 +52,7 @@ jobs:
         run: |
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
+          
 
   frontend-build:
     name: Build frontend
@@ -86,7 +95,7 @@ jobs:
   backend-build:
     name: Build backend
     needs: [generate-version, frontend-build]
-    if: always()
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
