@@ -57,7 +57,6 @@ jobs:
   frontend-build:
     name: Build frontend
     needs: generate-version
-    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -91,6 +90,43 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist/spa
+
+  
+  test:
+    name: Test
+    needs: [generate-version, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
+
+      - name: Run tests (just test)
+        run: cargo test
 
   backend-build:
     name: Build backend
@@ -143,43 +179,6 @@ jobs:
         with:
           name: siapla-serve-binary
           path: target/release/siapla-serve
-
-  test:
-    name: Test
-    needs: [generate-version, frontend-build]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        run: rustup toolchain install stable --profile minimal && rustup default stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend-dist
-
-      - name: Copy frontend into crate
-        run: |
-          mkdir -p crates/siapla/src/bundled_frontend
-          rm -rf crates/siapla/src/bundled_frontend/*
-          if [ -d "frontend-dist" ]; then
-            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
-          else
-            echo "frontend-dist not found"
-            exit 1
-          fi
-
-      - name: Run tests (just test)
-        run: cargo test
 
   publish-cratesio:
     name: Publish to crates.io
