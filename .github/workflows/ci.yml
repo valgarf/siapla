@@ -36,8 +36,6 @@ jobs:
         id: gitversion
         uses: gittools/actions/gitversion/execute@v4.1.0
 
-      - name: Fail on purpose
-        run: exit 1
 
       - name: Configure git for tagging
         if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
