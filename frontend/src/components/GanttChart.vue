@@ -211,7 +211,7 @@
 
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 type Row = {
@@ -373,6 +373,43 @@ function onPanMoveY(e: MouseEvent) {
 function onPanEnd() {
     isPanning.value = false
 }
+
+let clamping_interval: NodeJS.Timeout | null = null
+
+function autoClampScroll() {
+    if (scrollCell.value) {
+        const rect = scrollCell.value.getBoundingClientRect();
+        const visibleWidth = rect.width;
+        scrollX.value = Math.max(0, Math.min(scrollX.value, Math.max(0, timelineWidth.value - visibleWidth)));
+
+        let visibleHeight = rect.height;
+        const viewportHeight = window.innerHeight;
+        if (rect.bottom > viewportHeight) {
+            visibleHeight -= (rect.bottom - viewportHeight);
+        }
+        scrollY.value = Math.max(0, Math.min(scrollY.value, Math.max(0, chartHeight.value - visibleHeight)));
+    }
+}
+
+function startClamping() {
+    clamping_interval = setInterval(autoClampScroll, 5)
+}
+
+function stopClamping() {
+    if (clamping_interval != null) {
+        clearInterval(clamping_interval)
+    }
+    autoClampScroll()
+}
+
+onMounted(() => {
+    window.addEventListener('sidebarClosing', startClamping);
+    window.addEventListener('sidebarClosed', stopClamping);
+});
+onUnmounted(() => {
+    window.removeEventListener('sidebarClosing', startClamping);
+    window.removeEventListener('sidebarClosed', stopClamping);
+});
 
 function dateToX(d: string | Date | undefined) {
     if (!d) return 0

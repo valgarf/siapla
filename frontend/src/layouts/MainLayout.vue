@@ -31,7 +31,8 @@
       <router-view />
     </q-page-container>
     <q-drawer side="right" :model-value="sidebarStore.isOpen" bordered :elevated="false"
-      :width="sidebarStore.isExpanded ? windowSize.width - 57 : 560">
+      :width="sidebarStore.isExpanded ? windowSize.width - 57 : DEFAULT_SIDEBAR_WIDTH" @before-hide="sidebarStartHiding"
+      @hide="sidebarHidden">
       <div class="q-pa-md">
         <SidebarComponentSelector />
       </div>
@@ -121,6 +122,8 @@ const sidebarStore = useSidebarStore();
 
 import { onMounted, onUnmounted } from 'vue';
 
+const DEFAULT_SIDEBAR_WIDTH = 560;
+
 const windowSize = ref({ width: typeof window !== 'undefined' ? window.innerWidth : 1024, height: typeof window !== 'undefined' ? window.innerHeight : 768 });
 
 function updateWindowSize() {
@@ -139,6 +142,14 @@ onUnmounted(() => {
     window.removeEventListener('resize', updateWindowSize);
   }
 });
+
+function sidebarStartHiding() {
+  window.dispatchEvent(new CustomEvent('sidebarClosing'));
+}
+
+function sidebarHidden() {
+  window.dispatchEvent(new CustomEvent('sidebarClosed'));
+}
 
 function toggleSidebar() {
   sidebarStore.toggleOpen();
