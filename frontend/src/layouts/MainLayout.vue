@@ -8,7 +8,7 @@
           SIAPLA
         </q-toolbar-title>
 
-        <!-- :icon="dialogStore.isOpen ? 'expand_circle_up' : 'expand_circle_down'"  (expand_circle_up does not work)-->
+        <!-- :icon="sidebarStore.isOpen ? 'expand_circle_up' : 'expand_circle_down'"  (expand_circle_up does not work)-->
         <q-btn flat dense round icon="info" aria-label="Toggle sidebar" @click="toggleSidebar" />
       </q-toolbar>
     </q-header>
@@ -30,10 +30,10 @@
     <q-page-container>
       <router-view />
     </q-page-container>
-    <q-drawer side="right" :model-value="dialogStore.isOpen" bordered :elevated="false"
-      :width="dialogStore.isExpanded ? windowSize.width - 57 : 560">
+    <q-drawer side="right" :model-value="sidebarStore.isOpen" bordered :elevated="false"
+      :width="sidebarStore.isExpanded ? windowSize.width - 57 : 560">
       <div class="q-pa-md">
-        <DialogHandler />
+        <SidebarComponentSelector />
       </div>
     </q-drawer>
   </q-layout>
@@ -43,8 +43,8 @@
 import { ref } from 'vue';
 // import EssentialLink, { type EssentialLinkProps } from 'components/EssentialLink.vue';
 import PageLink, { type PageLinkProps } from 'components/PageLink.vue';
-import DialogHandler from 'components/DialogHandler.vue';
-import { useDialogStore } from 'src/stores/dialog';
+import SidebarComponentSelector from 'components/SidebarComponentSelector.vue';
+import { useSidebarStore } from 'src/stores/sidebar';
 
 // const linksList: EssentialLinkProps[] = [
 //   {
@@ -117,7 +117,7 @@ const pages: PageLinkProps[] = [
 const leftDrawerOpen = ref(false);
 const leftDrawerMini = ref(true);
 
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 import { onMounted, onUnmounted } from 'vue';
 
@@ -141,7 +141,7 @@ onUnmounted(() => {
 });
 
 function toggleSidebar() {
-  dialogStore.toggleOpen();
+  sidebarStore.toggleOpen();
 }
 
 function toggleLeftDrawer() {

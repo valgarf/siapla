@@ -24,14 +24,14 @@
 
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
-import { useDialogStore, ResourceDialogData, TaskDialogData, NewTaskDialogData, NewResourceDialogData } from 'src/stores/dialog';
+import { useSidebarStore, ResourceSidebarData, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 import { computed } from 'vue';
 import GanttChart from './GanttChart.vue';
 import { TaskDesignation } from 'src/gql/graphql';
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 
 const startDay = computed(() => {
@@ -70,27 +70,27 @@ const availability = computed(() => {
 });
 
 function onResourceClick(rid: number) {
-  dialogStore.selectedRow = rid;
-  dialogStore.selectedElements = [{ type: 'resource', id: rid }];
-  dialogStore.pushDialog(new ResourceDialogData(rid));
+  sidebarStore.selectedRow = rid;
+  sidebarStore.selectedElements = [{ type: 'resource', id: rid }];
+  sidebarStore.pushSidebar(new ResourceSidebarData(rid));
 }
 
 function onAllocClick(data: { taskId: number | null }) {
   if (data.taskId != null) {
-    dialogStore.selectedRow = data.taskId;
-    dialogStore.selectedElements = [{ type: 'task', id: data.taskId }];
-    dialogStore.pushDialog(new TaskDialogData(data.taskId));
+    sidebarStore.selectedRow = data.taskId;
+    sidebarStore.selectedElements = [{ type: 'task', id: data.taskId }];
+    sidebarStore.pushSidebar(new TaskSidebarData(data.taskId));
   }
 }
 
 function onNewTask() {
-  dialogStore.selectedRow = null;
-  dialogStore.selectedElements = [{ type: 'new' }];
-  dialogStore.pushDialog(new NewTaskDialogData());
+  sidebarStore.selectedRow = null;
+  sidebarStore.selectedElements = [{ type: 'new' }];
+  sidebarStore.pushSidebar(new NewTaskSidebarData());
 }
 
 function onNewResource() {
-  dialogStore.pushDialog(new NewResourceDialogData());
+  sidebarStore.pushSidebar(new NewResourceSidebarData());
 }
 
 </script>

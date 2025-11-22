@@ -4,11 +4,11 @@ import { computed, ref, type Ref } from 'vue';
 import { useTaskStore } from './task';
 import { useResourceStore } from './resource';
 
-export interface DialogData {
+export interface SidebarData {
   valid(): boolean;
 }
 
-export class TaskDialogData implements DialogData {
+export class TaskSidebarData implements SidebarData {
   taskId: number;
   constructor(task_id: number) {
     this.taskId = task_id;
@@ -18,14 +18,14 @@ export class TaskDialogData implements DialogData {
   }
 }
 
-export class NewTaskDialogData implements DialogData {
+export class NewTaskSidebarData implements SidebarData {
   constructor() { }
   valid(): boolean {
     return true;
   }
 }
 
-export class ResourceDialogData implements DialogData {
+export class ResourceSidebarData implements SidebarData {
   resourceId: number;
   constructor(resourceId: number) {
     this.resourceId = resourceId;
@@ -35,21 +35,21 @@ export class ResourceDialogData implements DialogData {
   }
 }
 
-export class NewResourceDialogData implements DialogData {
+export class NewResourceSidebarData implements SidebarData {
   constructor() { }
   valid(): boolean {
     return true;
   }
 }
 
-// We keep DialogData classes but simplify the store model to a single sidebar stack
+// We keep SidebarData classes but simplify the store model to a single sidebar stack
 // The stack holds opened items; back/pop moves to the previous item. The sidebar
 // can be opened/closed and expanded (full screen).
 
 // actual store
-export const useDialogStore = defineStore('dialogStore', () => {
+export const useSidebarStore = defineStore('sidebarStore', () => {
   // single stack of opened items in the sidebar
-  const stack: Ref<DialogData[]> = ref([]);
+  const stack: Ref<SidebarData[]> = ref([]);
 
   // sidebar UI state
   const isOpen = ref(false);
@@ -59,16 +59,16 @@ export const useDialogStore = defineStore('dialogStore', () => {
   const selectedRow: Ref<number | null> = ref(null);
   const selectedElements: Ref<Array<Record<string, unknown>>> = ref([]);
 
-  const activeDialogs = computed(() => stack.value.slice());
-  const activeDialog = computed(() => stack.value[stack.value.length - 1]);
+  const activeSidebars = computed(() => stack.value.slice());
+  const activeSidebar = computed(() => stack.value[stack.value.length - 1]);
 
   // NOTE: selection population is moved out of the store (to the caller components).
   // selection population is done by the caller components (PlanGantt*).
 
   // forward stack for next()
-  const forwardStack: Ref<DialogData[]> = ref([]);
+  const forwardStack: Ref<SidebarData[]> = ref([]);
 
-  function isSameDialog(a: DialogData | null, b: DialogData | null): boolean {
+  function isSameSidebar(a: SidebarData | null, b: SidebarData | null): boolean {
     if (a == null || b == null) return false;
     // task
     if (isObjectWithNumberProp(a, 'taskId') && isObjectWithNumberProp(b, 'taskId')) {
@@ -88,15 +88,15 @@ export const useDialogStore = defineStore('dialogStore', () => {
     return typeof x === 'object' && x !== null && prop in r && typeof r[prop] === 'number';
   }
 
-  function pushDialog(dialog: DialogData) {
+  function pushSidebar(sidebar: SidebarData) {
     // if same as last, do nothing
     const last = stack.value[stack.value.length - 1] ?? null;
-    if (last != null && isSameDialog(last, dialog)) {
+    if (last != null && isSameSidebar(last, sidebar)) {
       isOpen.value = true;
       return;
     }
     // push new top, clear forward history
-    stack.value.push(dialog);
+    stack.value.push(sidebar);
     forwardStack.value = [];
     // limit stack to 20 entries
     while (stack.value.length > 20) {
@@ -105,28 +105,28 @@ export const useDialogStore = defineStore('dialogStore', () => {
     isOpen.value = true;
   }
 
-  function replaceDialog(dialog: DialogData) {
+  function replaceSidebar(sidebar: SidebarData) {
     if (stack.value.length == 0) {
-      pushDialog(dialog);
+      pushSidebar(sidebar);
       return;
     }
-    stack.value[stack.value.length - 1] = dialog;
+    stack.value[stack.value.length - 1] = sidebar;
     isOpen.value = true;
   }
 
-  function popDialog() {
+  function popSidebar() {
     if (stack.value.length <= 1) {
       // keep the stack but hide sidebar
       isOpen.value = false;
       return;
     }
-    const popped = stack.value.pop() as DialogData;
+    const popped = stack.value.pop() as SidebarData;
     // push into forward stack so next() can restore
     forwardStack.value.push(popped);
   }
 
   function back() {
-    popDialog();
+    popSidebar();
   }
 
   function next() {
@@ -138,9 +138,9 @@ export const useDialogStore = defineStore('dialogStore', () => {
     }
   }
 
-  function openDialog(dialog: DialogData) {
-    // alias for pushDialog
-    pushDialog(dialog);
+  function openSidebar(sidebar: SidebarData) {
+    // alias for pushSidebar
+    pushSidebar(sidebar);
   }
 
   function closeLayer() {
@@ -156,10 +156,10 @@ export const useDialogStore = defineStore('dialogStore', () => {
     return forwardStack.value.length == 0;
   }
 
-  function reset(dialog: DialogData | null = null) {
+  function reset(sidebar: SidebarData | null = null) {
     stack.value = [];
     isOpen.value = false;
-    if (dialog != null) pushDialog(dialog);
+    if (sidebar != null) pushSidebar(sidebar);
   }
 
   function toggleOpen() {
@@ -173,20 +173,20 @@ export const useDialogStore = defineStore('dialogStore', () => {
   return {
     // state
     stack,
-    activeDialogs,
-    activeDialog,
+    activeSidebars,
+    activeSidebar,
     isOpen,
     isExpanded,
     selectedRow,
     selectedElements,
     // actions (keeps previous names for compatibility)
-    pushDialog,
-    openDialog,
+    pushSidebar,
+    openSidebar,
     back,
     next,
     closeLayer,
-    popDialog,
-    replaceDialog,
+    popSidebar,
+    replaceSidebar,
     atFirst,
     atLast,
     reset,
@@ -197,5 +197,5 @@ export const useDialogStore = defineStore('dialogStore', () => {
 });
 
 if (import.meta.hot) {
-  import.meta.hot.accept(acceptHMRUpdate(useDialogStore, import.meta.hot));
+  import.meta.hot.accept(acceptHMRUpdate(useSidebarStore, import.meta.hot));
 }

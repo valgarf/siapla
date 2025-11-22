@@ -1,5 +1,5 @@
 <template>
-    <DialogLayout>
+    <SidebarLayout>
         <template #toolbar>
             <div class="col"></div>
             <q-btn flat @click="toggleEdit()" :loading="resourceStore.saving" color="primary"
@@ -85,7 +85,7 @@
                 <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
             </div>
         </q-card-section>
-    </DialogLayout>
+    </SidebarLayout>
 </template>
 
 
@@ -94,14 +94,14 @@ import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
-import { useDialogStore } from 'src/stores/dialog';
+import { useSidebarStore } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
 import DateTimeInput from './DateTimeInput.vue';
-import DialogLayout from './DialogLayout.vue';
+import SidebarLayout from './SidebarLayout.vue';
 
 const resourceStore = useResourceStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 const groupedWorkingHours = computed(() => {
     if (!localResource.value) return [];
@@ -330,7 +330,7 @@ async function save(): Promise<string | null> {
 async function deleteResource() {
     const resourceId = localResource.value.dbId
     if (resourceId == null) {
-        dialogStore.popDialog()
+        sidebarStore.popSidebar()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {

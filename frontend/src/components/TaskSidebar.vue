@@ -1,10 +1,10 @@
 <template>
-    <DialogLayout>
+    <SidebarLayout>
         <template #toolbar>
             <q-breadcrumbs class="col">
                 <q-breadcrumbs-el disable label="Task" />
                 <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
-                    @click="!edit && dialogStore.pushDialog(new TaskDialogData(p.dbId))" />
+                    @click="!edit && sidebarStore.pushSidebar(new TaskSidebarData(p.dbId))" />
                 <q-breadcrumbs-el :label="local_task.title" />
             </q-breadcrumbs>
             <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
@@ -149,7 +149,7 @@
         </q-card-section>
 
 
-    </DialogLayout>
+    </SidebarLayout>
 </template>
 
 
@@ -157,13 +157,13 @@
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
 import { TaskDesignation } from 'src/gql/graphql';
-import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
+import { TaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
 import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
 import { type Issue, useIssueStore } from 'src/stores/issue';
 import DateTimeInput from './DateTimeInput.vue';
-import DialogLayout from './DialogLayout.vue';
+import SidebarLayout from './SidebarLayout.vue';
 import EditableResourceList from './EditableResourceList.vue';
 import EditableTaskList from './EditableTaskList.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
@@ -171,7 +171,7 @@ import TaskChip from './TaskChip.vue';
 import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 const resourceStore = useResourceStore();
 const planStore = usePlanStore();
 
@@ -344,7 +344,7 @@ async function save(): Promise<string | null> {
 async function deleteTask() {
     const taskId = local_task.value.dbId
     if (taskId == null) {
-        dialogStore.popDialog()
+        sidebarStore.popSidebar()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {

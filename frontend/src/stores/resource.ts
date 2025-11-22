@@ -4,7 +4,7 @@ import { useMutation, useQuery, type UseQueryReturn } from '@vue/apollo-composab
 import { Weekday } from 'src/gql/graphql';
 import type { CombinedAvailabilityQuery, ResourceSaveInput, ResourcesQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
-import { ResourceDialogData, useDialogStore } from './dialog';
+import { ResourceSidebarData, useSidebarStore } from './sidebar';
 import { ApolloError } from '@apollo/client/core';
 
 export interface Availability {
@@ -252,7 +252,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
 
   // Returns any mutation error as a string, or null on success
   async function saveResource(resource: Ref<ResourceInput>): Promise<string | null> {
-    const dialog = useDialogStore();
+    const sidebarStore = useSidebarStore();
     try {
       const resp = await mutSaveResource.mutate({ resource: resourceToObj(resource) });
       const gqlErrors = resp?.errors ?? [];
@@ -267,7 +267,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
           resource.value.dbId = dbId;
           await refetch(dbId);
           // TODO: generic error handling?
-          dialog.replaceDialog(new ResourceDialogData(dbId));
+          sidebarStore.replaceSidebar(new ResourceSidebarData(dbId));
         } else {
           resource.value.dbId = dbId;
           await refetch(dbId);
@@ -281,17 +281,17 @@ export const useResourceStore = defineStore('resourceStore', () => {
   }
 
   async function deleteResource(resourceId: number, pop: boolean = true) {
-    const dialog = useDialogStore();
+    const sidebarStore = useSidebarStore();
     const resp = await mutDeleteResource.mutate({ resourceId: resourceId });
     const result = resp?.data?.resourceDelete;
     if (result) {
-      // TODO: a 'filter' that removes all corresponding dialogs would be better
+      // TODO: a 'filter' that removes all corresponding sidebars would be better
       if (
         pop &&
-        dialog.activeDialog instanceof ResourceDialogData &&
-        dialog.activeDialog.resourceId == resourceId
+        sidebarStore.activeSidebar instanceof ResourceSidebarData &&
+        sidebarStore.activeSidebar.resourceId == resourceId
       ) {
-        dialog.popDialog();
+        sidebarStore.popSidebar();
       }
       await refetch(resourceId);
     }

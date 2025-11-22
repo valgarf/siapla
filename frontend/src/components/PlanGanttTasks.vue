@@ -18,32 +18,32 @@ import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
-import { useDialogStore, TaskDialogData, NewTaskDialogData, NewResourceDialogData } from 'src/stores/dialog';
+import { useSidebarStore, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 
 // collapse state moved to GanttChart component
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
-        dialogStore.selectedRow = tid;
-        dialogStore.selectedElements = [{ type: 'task', id: tid }];
-        dialogStore.pushDialog(new TaskDialogData(tid));
+        sidebarStore.selectedRow = tid;
+        sidebarStore.selectedElements = [{ type: 'task', id: tid }];
+        sidebarStore.pushSidebar(new TaskSidebarData(tid));
     }
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
 function onNewTask() {
-    dialogStore.selectedRow = null;
-    dialogStore.selectedElements = [{ type: 'new' }];
-    dialogStore.pushDialog(new NewTaskDialogData());
+    sidebarStore.selectedRow = null;
+    sidebarStore.selectedElements = [{ type: 'new' }];
+    sidebarStore.pushSidebar(new NewTaskSidebarData());
 }
 function onNewResource() {
-    dialogStore.pushDialog(new NewResourceDialogData());
+    sidebarStore.pushSidebar(new NewResourceSidebarData());
 }
 
 // Build flattened rows for the left list and the Gantt rows structure

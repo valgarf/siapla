@@ -22,11 +22,11 @@
 import { computed } from 'vue';
 import ResourceCard from './ResourceCard.vue';
 import { useResourceStore } from 'src/stores/resource';
-import { NewResourceDialogData, useDialogStore } from 'src/stores/dialog';
+import { NewResourceSidebarData, useSidebarStore } from 'src/stores/sidebar';
 
 
 const resourceStore = useResourceStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 const resources = computed(() => {
   const result = [...resourceStore.resources];
@@ -41,9 +41,8 @@ withDefaults(defineProps<Props>(), {
   issuesOnly: true
 });
 
-// details dialog
 function showDetailsNew() {
-  dialogStore.pushDialog(new NewResourceDialogData())
+  sidebarStore.pushSidebar(new NewResourceSidebarData())
 }
 
 </script>
