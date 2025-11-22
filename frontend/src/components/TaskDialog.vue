@@ -1,5 +1,5 @@
 <template>
-    <DialogLayout :dialogLayer="dialogLayer">
+    <DialogLayout>
         <template #toolbar>
             <q-breadcrumbs class="col">
                 <q-breadcrumbs-el disable label="Task" />
@@ -8,9 +8,9 @@
                 <q-breadcrumbs-el :label="local_task.title" />
             </q-breadcrumbs>
             <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
-                :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
-                    : null }}
+                :icon="edit ? 'save' : 'edit'" class="q-ma-xs">
             </q-btn>
+            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
             <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                 :disable="taskStore.saving" class="q-ma-xs"></q-btn>
         </template>
@@ -127,15 +127,18 @@
                 <div class="text-subtitle2">Bookings</div>
                 <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
                     style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
-                    <div class="row items-center q-gutter-sm">
-                        <DateTimeInput v-model="b.start" label="Start" @update:modelValue="() => saveBookingLocal(b)" />
-                        <DateTimeInput v-model="b.end" label="End" @update:modelValue="() => saveBookingLocal(b)" />
-                        <q-checkbox v-model="b.final" label="Final" @update:modelValue="() => saveBookingLocal(b)" />
-                        <q-btn flat icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
-                    </div>
-                    <div class="q-mt-sm">
-                        <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
-                            :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                    <div class="row items-center q-gutter-sm" style="align-items: center;">
+                        <q-btn flat dense icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
+                        <q-checkbox dense v-model="b.final" label="Final"
+                            @update:modelValue="() => saveBookingLocal(b)" />
+                        <div class="col resource-list">
+                            <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
+                                :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                        </div>
+                        <DateTimeInput v-model="b.start" label="Start" :maxWidth="218"
+                            @update:modelValue="() => saveBookingLocal(b)" />
+                        <DateTimeInput v-model="b.end" label="End" :maxWidth="218"
+                            @update:modelValue="() => saveBookingLocal(b)" />
                     </div>
                 </div>
                 <div>
@@ -178,7 +181,6 @@ const edit = ref(local_task.value.dbId == null)
 
 
 interface Props {
-    dialogLayer: number;
     task: TaskInput;
 };
 
@@ -324,6 +326,13 @@ async function toggleEdit() {
     }
 }
 
+function cancelEdit() {
+    // reset local values from props
+    local_task.value = { ...local_task_default, ...props.task };
+    saveError.value = null;
+    edit.value = false;
+}
+
 
 async function save(): Promise<string | null> {
     // reset error before saving
@@ -409,5 +418,9 @@ function createBooking() {
 
 .issue-item {
     padding: 4px 0;
+}
+
+.resource-list {
+    min-width: 200px;
 }
 </style>

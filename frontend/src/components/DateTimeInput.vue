@@ -1,6 +1,6 @@
 <template>
-  <div class="" style="max-width: 300px">
-    <q-input filled stack-label :label="label" v-model="input_model">
+  <div :style="`max-width: ${props.maxWidth}px`">
+    <q-input :dense="props.dense" filled stack-label :label="props.label" v-model="input_model">
       <template v-slot:prepend>
         <q-icon name="event" class="cursor-pointer">
           <q-popup-proxy cover transition-show="scale" transition-hide="scale">
@@ -30,14 +30,17 @@
 
 <script setup lang="ts">
 import { date } from 'quasar';
-import { computed, type Ref } from 'vue'
+import { computed, watchEffect, type Ref } from 'vue'
 
 interface Props {
   label: string
+  maxWidth?: number
+  dense?: boolean
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { maxWidth: 300, dense: false })
 
+watchEffect(() => { console.log(props.dense) })
 const model: Ref<Date | null> = defineModel({ required: true })
 
 const input_model = computed({

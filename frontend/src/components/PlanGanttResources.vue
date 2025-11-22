@@ -70,14 +70,22 @@ const availability = computed(() => {
 });
 
 function onResourceClick(rid: number) {
+  dialogStore.selectedRow = rid;
+  dialogStore.selectedElements = [{ type: 'resource', id: rid }];
   dialogStore.pushDialog(new ResourceDialogData(rid));
 }
 
 function onAllocClick(data: { taskId: number | null }) {
-  if (data.taskId != null) dialogStore.pushDialog(new TaskDialogData(data.taskId));
+  if (data.taskId != null) {
+    dialogStore.selectedRow = data.taskId;
+    dialogStore.selectedElements = [{ type: 'task', id: data.taskId }];
+    dialogStore.pushDialog(new TaskDialogData(data.taskId));
+  }
 }
 
 function onNewTask() {
+  dialogStore.selectedRow = null;
+  dialogStore.selectedElements = [{ type: 'new' }];
   dialogStore.pushDialog(new NewTaskDialogData());
 }
 

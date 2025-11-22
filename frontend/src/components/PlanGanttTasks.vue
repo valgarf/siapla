@@ -29,6 +29,8 @@ const dialogStore = useDialogStore();
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
+        dialogStore.selectedRow = tid;
+        dialogStore.selectedElements = [{ type: 'task', id: tid }];
         dialogStore.pushDialog(new TaskDialogData(tid));
     }
 }
@@ -36,6 +38,8 @@ function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
 function onNewTask() {
+    dialogStore.selectedRow = null;
+    dialogStore.selectedElements = [{ type: 'new' }];
     dialogStore.pushDialog(new NewTaskDialogData());
 }
 function onNewResource() {

@@ -19,7 +19,7 @@ export class TaskDialogData implements DialogData {
 }
 
 export class NewTaskDialogData implements DialogData {
-  constructor() {}
+  constructor() { }
   valid(): boolean {
     return true;
   }
@@ -36,146 +36,150 @@ export class ResourceDialogData implements DialogData {
 }
 
 export class NewResourceDialogData implements DialogData {
-  constructor() {}
+  constructor() { }
   valid(): boolean {
     return true;
   }
 }
 
-export class DialogLayer {
-  dialogs: DialogData[];
-  idx: number;
-  active: number;
-  constructor(idx: number, dialog: DialogData) {
-    this.dialogs = [dialog];
-    this.idx = idx;
-    this.active = 0;
-  }
-
-  activeDialog(): DialogData {
-    return this.dialogs[this.active] as DialogData;
-  }
-
-  pushDialog(dialog: DialogData) {
-    this.dialogs = this.dialogs.slice(0, this.active + 1);
-    this.dialogs.push(dialog);
-    this.active += 1;
-  }
-
-  back() {
-    if (this.active > 0) {
-      this.active--;
-    }
-  }
-
-  popDialog() {
-    if (this.active > 0) {
-      this.dialogs = this.dialogs.slice(0, this.active);
-      this.active--;
-    }
-  }
-
-  replaceDialog(dialog: DialogData) {
-    this.dialogs[this.active] = dialog;
-  }
-
-  next() {
-    if (this.active < this.dialogs.length - 1) {
-      this.active++;
-    }
-  }
-
-  atFirst() {
-    return this.active == 0;
-  }
-
-  atLast() {
-    return this.active == this.dialogs.length - 1;
-  }
-}
+// We keep DialogData classes but simplify the store model to a single sidebar stack
+// The stack holds opened items; back/pop moves to the previous item. The sidebar
+// can be opened/closed and expanded (full screen).
 
 // actual store
 export const useDialogStore = defineStore('dialogStore', () => {
-  // all dialogs (layer,idx in layer -> DialogData)
-  const layers: Ref<DialogLayer[]> = ref([]);
+  // single stack of opened items in the sidebar
+  const stack: Ref<DialogData[]> = ref([]);
 
-  const activeDialogs = computed(() => {
-    return layers.value.map((l) => l.activeDialog());
-  });
+  // sidebar UI state
+  const isOpen = ref(false);
+  const isExpanded = ref(false);
 
-  const activeDialog = computed(() => {
-    return layers.value[layers.value.length - 1]?.activeDialog();
-  });
+  // selection inputs: filled from the element shown in the sidebar
+  const selectedRow: Ref<number | null> = ref(null);
+  const selectedElements: Ref<Array<Record<string, unknown>>> = ref([]);
 
-  function pushDialog(dialog: DialogData, layer_idx: number | null = null) {
-    if (layers.value.length == 0) {
-      openDialog(dialog);
+  const activeDialogs = computed(() => stack.value.slice());
+  const activeDialog = computed(() => stack.value[stack.value.length - 1]);
+
+  // NOTE: selection population is moved out of the store (to the caller components).
+  // selection population is done by the caller components (PlanGantt*).
+
+  // forward stack for next()
+  const forwardStack: Ref<DialogData[]> = ref([]);
+
+  function isSameDialog(a: DialogData | null, b: DialogData | null): boolean {
+    if (a == null || b == null) return false;
+    // task
+    if (isObjectWithNumberProp(a, 'taskId') && isObjectWithNumberProp(b, 'taskId')) {
+      return a['taskId'] === b['taskId'];
+    }
+    // resource
+    if (isObjectWithNumberProp(a, 'resourceId') && isObjectWithNumberProp(b, 'resourceId')) {
+      return a['resourceId'] === b['resourceId'];
+    }
+    // new items
+    if (a.constructor.name === b.constructor.name) return true;
+    return false;
+  }
+
+  function isObjectWithNumberProp(x: unknown, prop: string): x is Record<string, number> {
+    const r = x as Record<string, unknown>;
+    return typeof x === 'object' && x !== null && prop in r && typeof r[prop] === 'number';
+  }
+
+  function pushDialog(dialog: DialogData) {
+    // if same as last, do nothing
+    const last = stack.value[stack.value.length - 1] ?? null;
+    if (last != null && isSameDialog(last, dialog)) {
+      isOpen.value = true;
       return;
     }
-    if (layer_idx == null || layer_idx < 0 || layer_idx > layers.value.length - 1) {
-      layer_idx = layers.value.length - 1;
+    // push new top, clear forward history
+    stack.value.push(dialog);
+    forwardStack.value = [];
+    // limit stack to 20 entries
+    while (stack.value.length > 20) {
+      stack.value.shift();
     }
-    const layer = layers.value[layer_idx] as DialogLayer;
-    layer.pushDialog(dialog);
-  }
-  function openDialog(dialog: DialogData) {
-    layers.value.push(new DialogLayer(layers.value.length, dialog));
-  }
-  const activeLayer = computed(() => {
-    return layers.value[layers.value.length - 1];
-  });
-
-  function popDialog() {
-    if (activeLayer.value?.dialogs.length == 1) {
-      closeLayer();
-    } else {
-      activeLayer.value?.popDialog();
-    }
+    isOpen.value = true;
   }
 
   function replaceDialog(dialog: DialogData) {
-    activeLayer.value?.replaceDialog(dialog);
+    if (stack.value.length == 0) {
+      pushDialog(dialog);
+      return;
+    }
+    stack.value[stack.value.length - 1] = dialog;
+    isOpen.value = true;
   }
 
-  function back(layerIdx: number | null = null) {
-    layerIdx = layerIdx ?? layers.value.length - 1;
-    layers.value[layerIdx]?.back();
+  function popDialog() {
+    if (stack.value.length <= 1) {
+      // keep the stack but hide sidebar
+      isOpen.value = false;
+      return;
+    }
+    const popped = stack.value.pop() as DialogData;
+    // push into forward stack so next() can restore
+    forwardStack.value.push(popped);
   }
 
-  function next(layerIdx: number | null = null) {
-    layerIdx = layerIdx ?? layers.value.length - 1;
-    layers.value[layerIdx]?.next();
+  function back() {
+    popDialog();
   }
 
-  function closeLayer(layerIdx: number | null = null) {
-    layerIdx = layerIdx ?? layers.value.length - 1;
-    const num_close = layers.value.length - layerIdx;
-    for (let i = 0; i < num_close; i++) {
-      layers.value.pop();
+  function next() {
+    // restore from forwardStack if available
+    const f = forwardStack.value.pop();
+    if (f) {
+      stack.value.push(f);
+      isOpen.value = true;
     }
   }
 
-  function atFirst(layerIdx: number | null = null): boolean {
-    layerIdx = layerIdx ?? layers.value.length - 1;
-    return layers.value[layerIdx]?.atFirst() ?? false;
+  function openDialog(dialog: DialogData) {
+    // alias for pushDialog
+    pushDialog(dialog);
   }
-  function atLast(layerIdx: number | null = null): boolean {
-    layerIdx = layerIdx ?? layers.value.length - 1;
-    return layers.value[layerIdx]?.atLast() ?? false;
+
+  function closeLayer() {
+    // hide sidebar but keep stack intact
+    isOpen.value = false;
+  }
+
+  function atFirst(): boolean {
+    return stack.value.length <= 1;
+  }
+  function atLast(): boolean {
+    // atLast means there's no forward history
+    return forwardStack.value.length == 0;
   }
 
   function reset(dialog: DialogData | null = null) {
-    layers.value = [];
-    if (dialog != null) {
-      pushDialog(dialog);
-    }
+    stack.value = [];
+    isOpen.value = false;
+    if (dialog != null) pushDialog(dialog);
+  }
+
+  function toggleOpen() {
+    isOpen.value = !isOpen.value;
+  }
+
+  function toggleExpand() {
+    isExpanded.value = !isExpanded.value;
   }
 
   return {
-    layers: layers,
+    // state
+    stack,
     activeDialogs,
-    activeLayer,
     activeDialog,
+    isOpen,
+    isExpanded,
+    selectedRow,
+    selectedElements,
+    // actions (keeps previous names for compatibility)
     pushDialog,
     openDialog,
     back,
@@ -186,6 +190,9 @@ export const useDialogStore = defineStore('dialogStore', () => {
     atFirst,
     atLast,
     reset,
+    // new actions
+    toggleOpen,
+    toggleExpand,
   };
 });
 

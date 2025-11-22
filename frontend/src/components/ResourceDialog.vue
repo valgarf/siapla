@@ -1,11 +1,12 @@
 <template>
-    <DialogLayout :dialogLayer="dialogLayer">
+    <DialogLayout>
         <template #toolbar>
             <div class="col"></div>
             <q-btn flat @click="toggleEdit()" :loading="resourceStore.saving" color="primary"
                 :disable="resourceStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
                     : null }}
             </q-btn>
+            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
             <q-btn flat @click="deleteResource()" :loading="resourceStore.deleting" color="negative" icon="delete"
                 :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
         </template>
@@ -70,8 +71,8 @@
             <div v-if="edit" class="q-gutter-y-md">
                 <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-edit'"
                     class="row items-center q-gutter-sm">
-                    <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
-                    <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
+                    <DateTimeInput v-model="vacation.from" label="From" outlined class="col" />
+                    <DateTimeInput v-model="vacation.until" label="Until" outlined class="col" />
                     <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
                 </div>
                 <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
@@ -250,7 +251,6 @@ onRegionsResult((result) => {
 // holiday logic end
 
 interface Props {
-    dialogLayer: number;
     resource: ResourceInput;
 };
 
@@ -286,6 +286,12 @@ async function toggleEdit() {
         saveError.value = null
         edit.value = true
     }
+}
+
+function cancelEdit() {
+    localResource.value = { ...localResourceDefault, ...props.resource };
+    saveError.value = null;
+    edit.value = false;
 }
 
 function addVacation() {
