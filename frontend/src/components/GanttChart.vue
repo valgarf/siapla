@@ -44,14 +44,17 @@
             overflow: 'hidden'
         }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
-                <div v-for="rw in visibleRows" :key="rw.row.id" class="gantt-row-description"
-                    :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }">
+                <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
+                    'gantt-row-description': true, 'gantt-row-description-highlight': selectedRowIdsSet.has(rw.row.id),
+                    'clickable': true
+                }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
+                    @click.stop="emitRowClick(rw.row.id)">
                     <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
                         :style="{ padding: '0px' }" />
                     <span :style="{ marginLeft: rw.row.designation != TaskDesignation.Group ? '17.15px' : '0px' }"
-                        class="clickable row-name" @click.stop="emitRowClick(rw.row.id)">{{
+                        class="row-name">{{
                             rw.row.name
                         }}</span>
                     <span v-if="rw.row.symbol != null" class="row-symbol" :title="rw.row.symbol.title || ''">
@@ -92,6 +95,25 @@
                     </template>
                 </g>
 
+
+                <!-- vertical day lines -->
+                <g>
+                    <template v-for="(day, i) in days" :key="i">
+                        <line :x1="day.x + dayWidth" :y1="0" :x2="day.x + dayWidth" :y2="chartHeight" stroke="#ddd"
+                            stroke-width="1" />
+                    </template>
+                </g>
+
+                <!-- highlighted row-->
+                <g>
+                    <template v-for="(rw, ri) in visibleRows" :key="ri">
+                        <rect v-if="selectedRowIdsSet.has(rw.row.id)" :x="dateToX(startDate)" :y="ri * rowHeight"
+                            :width="dateToX(endDate) - dateToX(startDate)" :height="rowHeight" fill="#0074d330"
+                            stroke="none" />
+                    </template>
+
+                </g>
+
                 <!-- row separators -->
                 <g>
                     <template v-for="(row, i) in visibleRows" :key="i">
@@ -102,12 +124,8 @@
                         stroke="#ddd" stroke-width="1" />
                 </g>
 
-                <!-- vertical day lines -->
-                <g>
-                    <template v-for="(day, i) in days" :key="i">
-                        <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#ddd" stroke-width="1" />
-                    </template>
-                </g>
+
+
 
                 <!-- Milestone indication lines -->
                 <g>
@@ -138,8 +156,7 @@
                             <rect :x="dateToX(firstAllocStart(rw.row)!)" :y="i * rowHeight + barPadding"
                                 :width="dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)"
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
-                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable"
-                                :class="{ 'selected-row': selectedRowIdsSet.has(rw.row.id) }" />
+                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
                             <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
                                 :height="barHeight">
@@ -189,8 +206,7 @@
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
-                                class="clickable"
-                                :class="{ 'selected-alloc': selectedAllocIdsSet.has(alloc.dbId), 'selected-row': selectedRowIdsSet.has(rw.row.id) }" />
+                                class="clickable" :class="{ 'selected-alloc': selectedAllocIdsSet.has(alloc.dbId) }" />
                             <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
                                 :height="barHeight">
@@ -702,7 +718,8 @@ function toggleGroup(id: number) {
     padding-left: 8px;
     font-size: 12px;
     color: #333;
-    border-bottom: 1px solid #f0f0f0;
+    border-top: 0.5px solid #f0f0f0;
+    border-bottom: 0.5px solid #f0f0f0;
 }
 
 /* visual highlight for selected rows and allocations */
@@ -710,8 +727,12 @@ function toggleGroup(id: number) {
     filter: drop-shadow(0 0 6px rgba(66, 165, 245, 0.7));
 }
 
+.gantt-row-description-highlight {
+    background-color: #0074d330;
+}
+
 .selected-alloc {
-    stroke-width: 2 !important;
-    filter: drop-shadow(0 0 8px rgba(102, 187, 106, 0.8));
+    stroke-width: 2.5 !important;
+    filter: drop-shadow(2px 2px 2px #555a)
 }
 </style>
