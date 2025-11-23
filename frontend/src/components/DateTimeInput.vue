@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { date } from 'quasar';
-import { computed, watchEffect, type Ref } from 'vue'
+import { computed, type Ref } from 'vue'
 
 interface Props {
   label: string
@@ -40,7 +40,6 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { maxWidth: 300, dense: false })
 
-watchEffect(() => { console.log(props.dense) })
 const model: Ref<Date | null> = defineModel({ required: true })
 
 const input_model = computed({

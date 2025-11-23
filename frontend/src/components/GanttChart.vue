@@ -45,7 +45,7 @@
         }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
-                    'gantt-row-description': true, 'gantt-row-description-highlight': selectedRowIdsSet.has(rw.row.id),
+                    'gantt-row-description': true, 'gantt-row-description-highlight': rowIsSelected(rw),
                     'clickable': true
                 }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
                     @click.stop="emitRowClick(rw.row.id)">
@@ -107,7 +107,7 @@
                 <!-- highlighted row-->
                 <g>
                     <template v-for="(rw, ri) in visibleRows" :key="ri">
-                        <rect v-if="selectedRowIdsSet.has(rw.row.id)" :x="dateToX(startDate)" :y="ri * rowHeight"
+                        <rect v-if="rowIsSelected(rw)" :x="dateToX(startDate)" :y="ri * rowHeight"
                             :width="dateToX(endDate) - dateToX(startDate)" :height="rowHeight" fill="#0074d330"
                             stroke="none" />
                     </template>
@@ -156,7 +156,8 @@
                             <rect :x="dateToX(firstAllocStart(rw.row)!)" :y="i * rowHeight + barPadding"
                                 :width="dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)"
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
-                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
+                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable"
+                                :class="{ 'selected-alloc': allocationInGroupIsSelected(rw) }" />
                             <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
                                 :height="barHeight">
@@ -206,7 +207,7 @@
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
-                                class="clickable" :class="{ 'selected-alloc': selectedAllocIdsSet.has(alloc.dbId) }" />
+                                class="clickable" :class="{ 'selected-alloc': allocationIsSelected(rw, alloc) }" />
                             <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
                                 :height="barHeight">
@@ -316,6 +317,44 @@ const months = computed(() => {
 
 const selectedRowIdsSet = computed(() => new Set((props.selectedRowIds) ?? []));
 const selectedAllocIdsSet = computed(() => new Set((props.selectedAllocIds) ?? []));
+
+function* iterateHidden(rw: RowWrapper): IterableIterator<RowWrapper> {
+    if (collapsedGroups.value.has(rw.row.id)) {
+        let idx = rw.idx + 1
+        let value = rowMap.value.get(props.rows[idx]?.id ?? -1);
+        while (!value?.visible) {
+            yield value!
+            idx += 1
+            value = rowMap.value.get(props.rows[idx]?.id ?? -1);
+        }
+    }
+}
+
+function rowIsSelected(rw: RowWrapper): boolean {
+    if (selectedRowIdsSet.value.has(rw.row.id)) {
+        return true
+    }
+    for (const hiddenRw of iterateHidden(rw)) {
+        if (selectedRowIdsSet.value.has(hiddenRw.row.id)) {
+            return true
+        }
+    }
+    return false
+}
+
+function allocationInGroupIsSelected(rw: RowWrapper): boolean {
+    for (const hiddenRw of iterateHidden(rw)) {
+        const alloc_ids = new Set(hiddenRw.row.allocations?.map(a => a.dbId) ?? [])
+        if (selectedAllocIdsSet.value.intersection(alloc_ids).size > 0) {
+            return true
+        }
+    }
+    return false
+}
+
+function allocationIsSelected(rw: RowWrapper, alloc: Allocation): boolean {
+    return selectedAllocIdsSet.value.has(alloc.dbId)
+}
 
 // internal collapsed groups state (moved from parent)
 const collapsedGroups = ref(new Set<number>())
