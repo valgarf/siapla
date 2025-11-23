@@ -1,6 +1,7 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
-        :rowSymbols="rowSymbols" @alloc-click="onAllocClick" @row-click="onTaskClick">
+        :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
+        @alloc-click="onAllocClick" @row-click="onTaskClick">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -18,7 +19,7 @@ import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
-import { useSidebarStore, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
+import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
@@ -85,6 +86,26 @@ const ganttRows = computed(() => {
         availability: [],
         symbol: rowSymbols.value[r.task.dbId]
     }));
+});
+
+// compute selections based on sidebar
+const selectedRowIds = computed(() => {
+    const active = sidebarStore.activeSidebar;
+    if (!active) return [] as number[];
+    if (active instanceof TaskSidebarData) {
+        return [active.taskId];
+    }
+    return [] as number[];
+});
+
+const selectedAllocIds = computed(() => {
+    const active = sidebarStore.activeSidebar;
+    if (!active) return [] as number[];
+    if (active instanceof ResourceSidebarData) {
+        const resId = active.resourceId;
+        return planStore.by_resource(resId).map(a => a.dbId);
+    }
+    return [] as number[];
 });
 
 

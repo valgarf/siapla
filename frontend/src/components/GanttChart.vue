@@ -138,7 +138,8 @@
                             <rect :x="dateToX(firstAllocStart(rw.row)!)" :y="i * rowHeight + barPadding"
                                 :width="dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)"
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
-                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
+                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable"
+                                :class="{ 'selected-row': selectedRowIdsSet.has(rw.row.id) }" />
                             <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
                                 :height="barHeight">
@@ -188,7 +189,8 @@
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
-                                class="clickable" />
+                                class="clickable"
+                                :class="{ 'selected-alloc': selectedAllocIdsSet.has(alloc.dbId), 'selected-row': selectedRowIdsSet.has(rw.row.id) }" />
                             <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
                                 :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
                                 :height="barHeight">
@@ -236,6 +238,10 @@ interface Props {
     rowHeight?: number
     dayWidth?: number
     barPadding?: number
+    // ids of rows that should be highlighted
+    selectedRowIds?: number[]
+    // ids of allocations that should be highlighted
+    selectedAllocIds?: number[]
 }
 
 const props = defineProps<Props>()
@@ -291,6 +297,9 @@ const months = computed(() => {
     })
     return Array.from(map.values())
 })
+
+const selectedRowIdsSet = computed(() => new Set((props.selectedRowIds) ?? []));
+const selectedAllocIdsSet = computed(() => new Set((props.selectedAllocIds) ?? []));
 
 // internal collapsed groups state (moved from parent)
 const collapsedGroups = ref(new Set<number>())
@@ -694,5 +703,15 @@ function toggleGroup(id: number) {
     font-size: 12px;
     color: #333;
     border-bottom: 1px solid #f0f0f0;
+}
+
+/* visual highlight for selected rows and allocations */
+.selected-row {
+    filter: drop-shadow(0 0 6px rgba(66, 165, 245, 0.7));
+}
+
+.selected-alloc {
+    stroke-width: 2 !important;
+    filter: drop-shadow(0 0 8px rgba(102, 187, 106, 0.8));
 }
 </style>

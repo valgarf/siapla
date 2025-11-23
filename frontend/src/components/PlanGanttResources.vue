@@ -1,7 +1,8 @@
 <template>
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
-    @alloc-click="onAllocClick" @row-click="onResourceClick">
+    :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" @alloc-click="onAllocClick"
+    @row-click="onResourceClick">
     <template #corner>
       <div class="corner-buttons">
         <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -69,6 +70,28 @@ const resourceRows = computed(() => {
     })),
     availability: availability.value[r.dbId] ?? []
   }));
+});
+
+// compute selections from sidebar
+const selectedRowIds = computed(() => {
+  const active = sidebarStore.activeSidebar;
+  if (!active) return [] as number[];
+  // if active sidebar is a resource, highlight that row
+  if (active instanceof ResourceSidebarData) {
+    return [active.resourceId];
+  }
+  return [] as number[];
+});
+
+const selectedAllocIds = computed(() => {
+  const active = sidebarStore.activeSidebar;
+  if (!active) return [] as number[];
+  // if active sidebar is a task, highlight allocations for that task
+  if (active instanceof TaskSidebarData) {
+    const taskId = active.taskId;
+    return planStore.by_task(taskId).map(a => a.dbId);
+  }
+  return [] as number[];
 });
 
 
