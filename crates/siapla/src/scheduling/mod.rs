@@ -109,7 +109,18 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
             for ms in &problem.objs.milestones {
                 let m = ms.borrow();
                 let cost = milestone_cost(&problem, &settings, &plan, &m);
-                println!(" {} ({}): {}", m.title, m.db_id, cost);
+                if let Some(fulfilled_milestone) = plan.fulfilled_milestones.get(&m.db_id) {
+                    println!(
+                        " {} ({}): {} (target:{} finished:{})",
+                        m.title, m.db_id, cost, m.schedule_target, fulfilled_milestone.date
+                    );
+                } else {
+                    // milestone not fulfilled: penalize as if finished at calculation_end + (end - start)
+                    println!(
+                        " {} ({}): {} (target:{} unfinished!)",
+                        m.title, m.db_id, cost, m.schedule_target
+                    );
+                }
             }
             match store_plan(&ctx, &problem, &plan).await {
                 Ok(_) => {
