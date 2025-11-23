@@ -1,6 +1,6 @@
 <template>
-    <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :availability="availability"
-        :dependencies="dependencies" :rowSymbols="rowSymbols" @alloc-click="onAllocClick" @row-click="onTaskClick">
+    <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
+        :rowSymbols="rowSymbols" @alloc-click="onAllocClick" @row-click="onTaskClick">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -46,6 +46,20 @@ function onNewResource() {
     sidebarStore.pushSidebar(new NewResourceSidebarData());
 }
 
+
+const issueStore = useIssueStore();
+const rowSymbols = computed(() => {
+    const map: { [rowid: number]: { symbolUTF8: string; title?: string } } = {};
+    for (const i of issueStore.issues) {
+        if (i.taskId != null) {
+            const existing = map[i.taskId];
+            const desc = existing ? existing.title + '\n' + i.description : i.description;
+            map[i.taskId] = { symbolUTF8: '⚠', title: desc };
+        }
+    }
+    return map;
+});
+
 // Build flattened rows for the left list and the Gantt rows structure
 const rows = computed(() => {
     const tasks = taskStore.tasks.slice();
@@ -72,26 +86,11 @@ const ganttRows = computed(() => {
         allocations: planStore.by_task(r.task.dbId).map((a) => ({ dbId: a.dbId, start: a.start, end: a.end, task: r.task, allocationType: a.allocationType })),
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
+        availability: [],
+        symbol: rowSymbols.value[r.task.dbId]
     }));
 });
 
-const issueStore = useIssueStore();
-const rowSymbols = computed(() => {
-    const map = new Map<number, { rowId: number; symbol: string; title?: string }>();
-    for (const i of issueStore.issues) {
-        if (i.taskId != null) {
-            const existing = map.get(i.taskId);
-            const desc = existing ? existing.title + '\n' + i.description : i.description;
-            map.set(i.taskId, { rowId: i.taskId, symbol: '⚠', title: desc });
-        }
-    }
-    return Array.from(map.values());
-});
-
-// availability per row: tasks do not have availability in this view; provide empty
-const availability = computed(() => {
-    return [] as { rowId: number; segments: { start: string | Date; end: string | Date }[] }[];
-});
 
 // dependencies: extract predecessor relationships
 const dependencies = computed(() => {

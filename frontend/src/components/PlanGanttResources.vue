@@ -1,7 +1,7 @@
 <template>
 
-  <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" :availability="availability"
-    :dependencies="[]" @alloc-click="onAllocClick" @row-click="onResourceClick">
+  <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
+    @alloc-click="onAllocClick" @row-click="onResourceClick">
     <template #corner>
       <div class="corner-buttons">
         <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -46,6 +46,18 @@ const endDay = computed(() => {
 
 const combinedAvailabiltyQuery = resourceStore.fetchCombinedAvailability(startDay, endDay);
 
+
+const availability = computed(() => {
+  const out: { [rowid: number]: { start: string | Date; end: string | Date }[] } = {}
+  const q = combinedAvailabiltyQuery;
+  if (!q || !q.result || q.result.value == null) return out;
+  const data = q.result.value;
+  for (const r of data.resources) {
+    out[r.dbId] = r.combinedAvailability.map(s => ({ start: s.start, end: s.end }));
+  }
+  return out;
+});
+
 const resourceRows = computed(() => {
   return Array.from(resourceStore.resources).map(r => ({
     id: r.dbId,
@@ -54,20 +66,11 @@ const resourceRows = computed(() => {
     depth: 0,
     allocations: planStore.by_resource(r.dbId).map(a => ({
       dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType
-    }))
+    })),
+    availability: availability.value[r.dbId] ?? []
   }));
 });
 
-const availability = computed(() => {
-  const out: { rowId: number; segments: { start: string | Date; end: string | Date }[] }[] = [];
-  const q = combinedAvailabiltyQuery;
-  if (!q || !q.result || q.result.value == null) return out;
-  const data = q.result.value;
-  for (const r of data.resources) {
-    out.push({ rowId: r.dbId, segments: r.combinedAvailability.map(s => ({ start: s.start, end: s.end })) });
-  }
-  return out;
-});
 
 function onResourceClick(rid: number) {
   sidebarStore.selectedRow = rid;

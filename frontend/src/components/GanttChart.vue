@@ -54,9 +54,8 @@
                         class="clickable row-name" @click.stop="emitRowClick(rw.row.id)">{{
                             rw.row.name
                         }}</span>
-                    <span v-if="props.rowSymbols && props.rowSymbols.find(s => s.rowId === rw.row.id)"
-                        class="row-symbol" :title="(props.rowSymbols.find(s => s.rowId === rw.row.id)?.title) || ''">
-                        {{props.rowSymbols.find(s => s.rowId === rw.row.id)?.symbol}}
+                    <span v-if="rw.row.symbol != null" class="row-symbol" :title="rw.row.symbol.title || ''">
+                        {{ rw.row.symbol.symbolUTF8 }}
                     </span>
                 </div>
             </div>
@@ -84,7 +83,7 @@
                 <!-- availability segments -->
                 <g>
                     <template v-for="(rw, ri) in visibleRows" :key="'avail'+rw.row.id">
-                        <template v-for="seg in availabilityForRow(rw.row.id)"
+                        <template v-for="seg in rw.row.availability"
                             :key="rw.row.id + '-' + (seg.start as any) + '-' + (seg.end as any)">
                             <rect :x="dateToX(seg.start)" :y="ri * rowHeight"
                                 :width="dateToX(seg.end) - dateToX(seg.start)" :height="rowHeight" fill="#fff"
@@ -221,14 +220,25 @@ type Row = {
     allocations?: Allocation[];
     scheduleTarget?: string | Date | null;
     earliestStart?: string | Date | null;
+    symbol?: { symbolUTF8: string; title?: string } | undefined | null
+    availability: Availability[]
     depth: number
 }
-type AvailabilitySegment = { start: string | Date; end: string | Date }
-type Availability = { rowId: number; segments: AvailabilitySegment[] }
+type Availability = { start: string | Date; end: string | Date }
 type Dependency = { predId: number; succId: number }
 type RowWrapper = { visible: boolean, lastVisibleId: number, visibleIdx: number, idx: number, row: Row };
+interface Props {
+    start: string | Date
+    end: string | Date
+    rows: Row[]
+    hasAvailability?: boolean,
+    dependencies?: Dependency[]
+    rowHeight?: number
+    dayWidth?: number
+    barPadding?: number
+}
 
-const props = defineProps<{ start: string | Date; end: string | Date; rows: Row[]; availability?: Availability[]; dependencies?: Dependency[]; rowHeight?: number; dayWidth?: number; barPadding?: number, rowSymbols?: { rowId: number; symbol: string; title?: string }[] }>()
+const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
@@ -441,12 +451,6 @@ function allocBeforeTarget(row: Row) {
     return parseDate(first).getTime() <= parseDate(row.scheduleTarget).getTime()
 }
 
-function availabilityForRow(rowId: number) {
-    const avail = props.availability ?? []
-    const found = avail.find(a => a.rowId === rowId)
-    return found ? found.segments : []
-}
-
 function allocArrow(predId: number, succId: number): string {
     // get allocations or build pseudo allocations for milestones/requirements when missing
     const predRw = rowMap.value.get(predId);
@@ -650,7 +654,7 @@ function toggleGroup(id: number) {
 .gantt-chart-scroll {
     overflow: hidden;
     cursor: grab;
-    background: v-bind('(props.availability?.length ?? 0) > 0 ? "#f1f2f3" : "#fff"');
+    background: v-bind('props.hasAvailability ? "#f1f2f3" : "#fff"');
     position: relative;
 }
 
