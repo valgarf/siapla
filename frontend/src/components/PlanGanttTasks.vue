@@ -1,7 +1,7 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
-        @alloc-click="onAllocClick" @row-click="onTaskClick">
+        @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-plan">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />

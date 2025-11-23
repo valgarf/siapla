@@ -9,6 +9,7 @@
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
                 <svg :width="timelineWidth" :height="headerHeight">
+                    <!-- months -->
                     <g>
                         <template v-for="(month, i) in months" :key="i">
                             <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
@@ -20,6 +21,7 @@
                             </foreignObject>
                         </template>
                     </g>
+                    <!-- days -->
                     <g>
                         <template v-for="(day, i) in days" :key="i">
                             <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x"
@@ -33,6 +35,11 @@
                                     day.label }}</div>
                             </foreignObject>
                         </template>
+                    </g>
+                    <!-- current datetime indicator -->
+                    <g>
+                        <line v-if="now > startDate && now < endDate" :x1="dateToX(now)" :y1="0" :x2="dateToX(now)"
+                            :y2="headerHeight" stroke="#d77b7b" stroke-width="2" />
                     </g>
                 </svg>
             </div>
@@ -124,7 +131,11 @@
                         stroke="#ddd" stroke-width="1" />
                 </g>
 
-
+                <!-- current datetime indicator -->
+                <g>
+                    <line v-if="now > startDate && now < endDate" :x1="dateToX(now)" :y1="0" :x2="dateToX(now)"
+                        :y2="chartHeight" stroke="#d77b7b" stroke-width="2" />
+                </g>
 
 
                 <!-- Milestone indication lines -->
@@ -229,7 +240,7 @@
 
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 type Row = {
@@ -276,6 +287,7 @@ const barHeight = computed(() => rowHeight.value - barPadding.value * 2);
 const monthRowHeight = computed(() => 28);
 const dayRowHeight = computed(() => 22);
 const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
+const now = ref<Date>(new Date(Date.now()));
 
 function parseDate(d: string | Date) {
     return d instanceof Date ? new Date(d) : new Date(d)
@@ -406,8 +418,10 @@ let panStartY = 0
 let panOrigX = 0
 let panOrigY = 0
 const scrollCell = ref<HTMLElement | null>(null);
+const panInitialized = ref<boolean>(false);
 
 function onPanStart(e: MouseEvent) {
+    panInitialized.value = true
     isPanning.value = true
     panStartX = e.clientX
     panStartY = e.clientY
@@ -419,6 +433,16 @@ function onPanMove(e: MouseEvent) {
     onPanMoveY(e);
 }
 
+function initPan() {
+    if (scrollCell.value && !panInitialized.value) {
+        const rect = scrollCell.value.getBoundingClientRect();
+        const visibleWidth = rect.width;
+        const xnow = dateToX(now.value);
+        _assignClampedScrollX(xnow - visibleWidth / 2);
+    }
+}
+
+watch([timelineWidth, panInitialized, scrollCell], initPan)
 
 function _assignClampedScrollX(value: number) {
     if (scrollCell.value) {
