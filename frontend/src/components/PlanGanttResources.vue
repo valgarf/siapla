@@ -1,8 +1,8 @@
 <template>
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
-    :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" @alloc-click="onAllocClick"
-    @row-click="onResourceClick" key="gantt-resources">
+    :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" scrollYKey="resources"
+    @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
       <div class="corner-buttons">
         <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />

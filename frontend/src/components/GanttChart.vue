@@ -241,6 +241,8 @@
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { scrollX, scrollYMap, panInitialized } from './ganttShared'
+import { nextTick } from 'process';
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 type Row = {
@@ -270,6 +272,7 @@ interface Props {
     selectedRowIds?: number[]
     // ids of allocations that should be highlighted
     selectedAllocIds?: number[]
+    scrollYKey: string
 }
 
 const props = defineProps<Props>()
@@ -410,15 +413,28 @@ const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.v
 
 
 // panning logic
-const scrollX = ref(0)
-const scrollY = ref(0)
+
+const scrollY = computed({
+    // getter
+    get(): number {
+        let result = scrollYMap.value[props.scrollYKey]
+        if (result == null) {
+            result = 0
+            scrollYMap.value[props.scrollYKey] = result
+        }
+        return result
+    },
+    // setter
+    set(newValue) {
+        scrollYMap.value[props.scrollYKey] = newValue
+    }
+})
 const isPanning = ref(false)
 let panStartX = 0
 let panStartY = 0
 let panOrigX = 0
 let panOrigY = 0
 const scrollCell = ref<HTMLElement | null>(null);
-const panInitialized = ref<boolean>(false);
 
 function onPanStart(e: MouseEvent) {
     panInitialized.value = true
@@ -503,6 +519,11 @@ onMounted(() => {
     window.addEventListener('sidebarClosing', startAutoClamping);
     window.addEventListener('sidebarClosed', stopAutoClamping);
     window.addEventListener('resize', autoClampScroll);
+    nextTick(() => {
+        if (panInitialized.value) {
+            autoClampScroll()
+        }
+    })
 });
 onUnmounted(() => {
     window.removeEventListener('sidebarClosing', startAutoClamping);
