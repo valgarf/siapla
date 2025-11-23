@@ -91,7 +91,7 @@ const ganttRows = computed(() => {
 // compute selections based on sidebar
 const selectedRowIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active) return [] as number[];
+    if (!active || !sidebarStore.isSelected) return [] as number[];
     if (active instanceof TaskSidebarData) {
         return [active.taskId];
     }
@@ -100,7 +100,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active) return [] as number[];
+    if (!active || !sidebarStore.isSelected) return [] as number[];
     if (active instanceof ResourceSidebarData) {
         const resId = active.resourceId;
         return planStore.by_resource(resId).map(a => a.dbId);

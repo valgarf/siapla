@@ -53,6 +53,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
 
   // sidebar UI state
   const isOpen = ref(false);
+  const isSelected = ref(false);
   const isExpanded = ref(false);
 
   const activeSidebars = computed(() => stack.value.slice());
@@ -88,6 +89,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     const last = stack.value[stack.value.length - 1] ?? null;
     if (last != null && isSameSidebar(last, sidebar) && isOpen.value) {
       isOpen.value = false;
+      isSelected.value = false;
     }
     else {
       pushSidebar(sidebar);
@@ -98,6 +100,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     const last = stack.value[stack.value.length - 1] ?? null;
     if (last != null && isSameSidebar(last, sidebar)) {
       isOpen.value = true;
+      isSelected.value = true;
       return;
     }
     // push new top, clear forward history
@@ -108,6 +111,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
       stack.value.shift();
     }
     isOpen.value = true;
+    isSelected.value = true;
   }
 
   function replaceSidebar(sidebar: SidebarData) {
@@ -117,12 +121,14 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     }
     stack.value[stack.value.length - 1] = sidebar;
     isOpen.value = true;
+    isSelected.value = true;
   }
 
   function popSidebar() {
     if (stack.value.length <= 1) {
       // keep the stack but hide sidebar
       isOpen.value = false;
+      isSelected.value = false;
       return;
     }
     const popped = stack.value.pop() as SidebarData;
@@ -140,6 +146,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     if (f) {
       stack.value.push(f);
       isOpen.value = true;
+      isSelected.value = true;
     }
   }
 
@@ -159,11 +166,15 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   function reset(sidebar: SidebarData | null = null) {
     stack.value = [];
     isOpen.value = false;
+    isSelected.value = false;
     if (sidebar != null) pushSidebar(sidebar);
   }
 
   function toggleOpen() {
     isOpen.value = !isOpen.value;
+    if (isOpen.value) {
+      isSelected.value = true;
+    }
   }
 
   function toggleExpand() {
@@ -176,6 +187,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     activeSidebars,
     activeSidebar,
     isOpen,
+    isSelected,
     isExpanded,
     // actions (keeps previous names for compatibility)
     pushSidebar,

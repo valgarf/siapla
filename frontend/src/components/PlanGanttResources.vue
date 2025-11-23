@@ -75,7 +75,7 @@ const resourceRows = computed(() => {
 // compute selections from sidebar
 const selectedRowIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active) return [] as number[];
+  if (!active || !sidebarStore.isSelected) return [] as number[];
   // if active sidebar is a resource, highlight that row
   if (active instanceof ResourceSidebarData) {
     return [active.resourceId];
@@ -85,7 +85,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active) return [] as number[];
+  if (!active || !sidebarStore.isSelected) return [] as number[];
   // if active sidebar is a task, highlight allocations for that task
   if (active instanceof TaskSidebarData) {
     const taskId = active.taskId;
