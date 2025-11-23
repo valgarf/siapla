@@ -73,22 +73,16 @@ const resourceRows = computed(() => {
 
 
 function onResourceClick(rid: number) {
-  sidebarStore.selectedRow = rid;
-  sidebarStore.selectedElements = [{ type: 'resource', id: rid }];
-  sidebarStore.pushSidebar(new ResourceSidebarData(rid));
+  sidebarStore.toggleSidebar(new ResourceSidebarData(rid));
 }
 
 function onAllocClick(data: { taskId: number | null }) {
   if (data.taskId != null) {
-    sidebarStore.selectedRow = data.taskId;
-    sidebarStore.selectedElements = [{ type: 'task', id: data.taskId }];
-    sidebarStore.pushSidebar(new TaskSidebarData(data.taskId));
+    sidebarStore.toggleSidebar(new TaskSidebarData(data.taskId));
   }
 }
 
 function onNewTask() {
-  sidebarStore.selectedRow = null;
-  sidebarStore.selectedElements = [{ type: 'new' }];
   sidebarStore.pushSidebar(new NewTaskSidebarData());
 }
 

@@ -55,10 +55,6 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   const isOpen = ref(false);
   const isExpanded = ref(false);
 
-  // selection inputs: filled from the element shown in the sidebar
-  const selectedRow: Ref<number | null> = ref(null);
-  const selectedElements: Ref<Array<Record<string, unknown>>> = ref([]);
-
   const activeSidebars = computed(() => stack.value.slice());
   const activeSidebar = computed(() => stack.value[stack.value.length - 1]);
 
@@ -88,6 +84,15 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     return typeof x === 'object' && x !== null && prop in r && typeof r[prop] === 'number';
   }
 
+  function toggleSidebar(sidebar: SidebarData) {
+    const last = stack.value[stack.value.length - 1] ?? null;
+    if (last != null && isSameSidebar(last, sidebar) && isOpen.value) {
+      isOpen.value = false;
+    }
+    else {
+      pushSidebar(sidebar);
+    }
+  }
   function pushSidebar(sidebar: SidebarData) {
     // if same as last, do nothing
     const last = stack.value[stack.value.length - 1] ?? null;
@@ -138,11 +143,6 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     }
   }
 
-  function openSidebar(sidebar: SidebarData) {
-    // alias for pushSidebar
-    pushSidebar(sidebar);
-  }
-
   function closeLayer() {
     // hide sidebar but keep stack intact
     isOpen.value = false;
@@ -177,11 +177,9 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     activeSidebar,
     isOpen,
     isExpanded,
-    selectedRow,
-    selectedElements,
     // actions (keeps previous names for compatibility)
     pushSidebar,
-    openSidebar,
+    toggleSidebar,
     back,
     next,
     closeLayer,

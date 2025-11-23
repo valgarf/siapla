@@ -29,17 +29,13 @@ const sidebarStore = useSidebarStore();
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
-        sidebarStore.selectedRow = tid;
-        sidebarStore.selectedElements = [{ type: 'task', id: tid }];
-        sidebarStore.pushSidebar(new TaskSidebarData(tid));
+        sidebarStore.toggleSidebar(new TaskSidebarData(tid));
     }
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
 function onNewTask() {
-    sidebarStore.selectedRow = null;
-    sidebarStore.selectedElements = [{ type: 'new' }];
     sidebarStore.pushSidebar(new NewTaskSidebarData());
 }
 function onNewResource() {
