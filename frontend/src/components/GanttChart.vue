@@ -115,8 +115,8 @@
                 <g>
                     <template v-for="(rw, ri) in visibleRows" :key="ri">
                         <rect v-if="rowIsSelected(rw)" :x="dateToX(startDate)" :y="ri * rowHeight"
-                            :width="dateToX(endDate) - dateToX(startDate)" :height="rowHeight" fill="#0074d330"
-                            stroke="none" />
+                            :width="dateToX(endDate) - dateToX(startDate) + dayWidth" :height="rowHeight"
+                            fill="#0074d330" stroke="none" />
                     </template>
 
                 </g>
@@ -456,6 +456,7 @@ function initPan() {
         const xnow = dateToX(now.value);
         _assignClampedScrollX(xnow - visibleWidth / 2);
     }
+    autoClampScroll()
 }
 
 watch([timelineWidth, panInitialized, scrollCell], initPan)
