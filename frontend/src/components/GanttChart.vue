@@ -344,21 +344,17 @@ function onPanMove(e: MouseEvent) {
     onPanMoveX(e);
     onPanMoveY(e);
 }
-function onPanMoveX(e: MouseEvent) {
-    if (!isPanning.value) return;
-    const dx = e.clientX - panStartX;
-    let newX = panOrigX - dx;
+
+
+function _assignClampedScrollX(value: number) {
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         const visibleWidth = rect.width;
-        newX = Math.max(0, Math.min(newX, timelineWidth.value - visibleWidth));
+        scrollX.value = Math.max(0, Math.min(value, Math.max(0, timelineWidth.value - visibleWidth)));
     }
-    scrollX.value = newX;
 }
-function onPanMoveY(e: MouseEvent) {
-    if (!isPanning.value) return;
-    const dy = e.clientY - panStartY;
-    let newY = panOrigY - dy;
+
+function _assignClampedScrollY(value: number) {
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         let visibleHeight = rect.height;
@@ -366,49 +362,54 @@ function onPanMoveY(e: MouseEvent) {
         if (rect.bottom > viewportHeight) {
             visibleHeight -= (rect.bottom - viewportHeight);
         }
-        newY = Math.max(0, Math.min(newY, chartHeight.value - visibleHeight));
+        scrollY.value = Math.max(0, Math.min(value, Math.max(0, chartHeight.value - visibleHeight)));
     }
-    scrollY.value = newY;
+
+}
+
+function onPanMoveX(e: MouseEvent) {
+    if (!isPanning.value) return;
+    const dx = e.clientX - panStartX;
+    const newX = panOrigX - dx;
+    _assignClampedScrollX(newX);
+}
+function onPanMoveY(e: MouseEvent) {
+    if (!isPanning.value) return;
+    const dy = e.clientY - panStartY;
+    const newY = panOrigY - dy;
+    _assignClampedScrollY(newY)
 }
 function onPanEnd() {
     isPanning.value = false
 }
 
-let clamping_interval: NodeJS.Timeout | null = null
+let clampingInterval: NodeJS.Timeout | null = null
 
 function autoClampScroll() {
-    if (scrollCell.value) {
-        const rect = scrollCell.value.getBoundingClientRect();
-        const visibleWidth = rect.width;
-        scrollX.value = Math.max(0, Math.min(scrollX.value, Math.max(0, timelineWidth.value - visibleWidth)));
-
-        let visibleHeight = rect.height;
-        const viewportHeight = window.innerHeight;
-        if (rect.bottom > viewportHeight) {
-            visibleHeight -= (rect.bottom - viewportHeight);
-        }
-        scrollY.value = Math.max(0, Math.min(scrollY.value, Math.max(0, chartHeight.value - visibleHeight)));
-    }
+    _assignClampedScrollX(scrollX.value)
+    _assignClampedScrollY(scrollY.value)
 }
 
-function startClamping() {
-    clamping_interval = setInterval(autoClampScroll, 5)
+function startAutoClamping() {
+    clampingInterval = setInterval(autoClampScroll, 5)
 }
 
-function stopClamping() {
-    if (clamping_interval != null) {
-        clearInterval(clamping_interval)
+function stopAutoClamping() {
+    if (clampingInterval != null) {
+        clearInterval(clampingInterval)
     }
     autoClampScroll()
 }
 
 onMounted(() => {
-    window.addEventListener('sidebarClosing', startClamping);
-    window.addEventListener('sidebarClosed', stopClamping);
+    window.addEventListener('sidebarClosing', startAutoClamping);
+    window.addEventListener('sidebarClosed', stopAutoClamping);
+    window.addEventListener('resize', autoClampScroll);
 });
 onUnmounted(() => {
-    window.removeEventListener('sidebarClosing', startClamping);
-    window.removeEventListener('sidebarClosed', stopClamping);
+    window.removeEventListener('sidebarClosing', startAutoClamping);
+    window.removeEventListener('sidebarClosed', stopAutoClamping);
+    window.removeEventListener('resize', autoClampScroll);
 });
 
 function dateToX(d: string | Date | undefined) {
