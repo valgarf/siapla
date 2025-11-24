@@ -169,13 +169,17 @@
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
                                 @click.stop="() => emitRowClick(rw.row.id)" class="clickable"
                                 :class="{ 'selected-alloc': allocationInGroupIsSelected(rw) }" />
-                            <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
-                                :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
-                                :height="barHeight">
-                                <div class="svg-text-ellipsis svg-text-bar clickable"
-                                    xmlns="http://www.w3.org/1999/xhtml" @click.stop="() => emitRowClick(rw.row.id)">{{
-                                        rw.row.name }}</div>
-                            </foreignObject>
+                            <!-- only render text when there's enough space -->
+                            <template v-if="(dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 23">
+                                <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4"
+                                    :y="i * rowHeight + barPadding"
+                                    :width="(dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8)"
+                                    :height="barHeight">
+                                    <div class="svg-text-ellipsis svg-text-bar clickable"
+                                        xmlns="http://www.w3.org/1999/xhtml"
+                                        @click.stop="() => emitRowClick(rw.row.id)">{{ rw.row.name }}</div>
+                                </foreignObject>
+                            </template>
                         </template>
                         <template v-else>
                             <polygon
@@ -219,14 +223,16 @@
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
                                 class="clickable" :class="{ 'selected-alloc': allocationIsSelected(rw, alloc) }" />
-                            <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
-                                :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
-                                :height="barHeight">
-                                <div class="svg-text-ellipsis svg-text-alloc clickable"
-                                    xmlns="http://www.w3.org/1999/xhtml"
-                                    @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
-                                    {{ alloc.task?.title ?? '' }}</div>
-                            </foreignObject>
+                            <!-- only render allocation text if the bar is wide enough -->
+                            <template v-if="(dateToX(alloc.end) - dateToX(alloc.start)) > 23">
+                                <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
+                                    :width="(dateToX(alloc.end) - dateToX(alloc.start) - 8)" :height="barHeight">
+                                    <div class="svg-text-ellipsis svg-text-alloc clickable"
+                                        xmlns="http://www.w3.org/1999/xhtml"
+                                        @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
+                                        {{ alloc.task?.title ?? '' }}</div>
+                                </foreignObject>
+                            </template>
                         </template>
                     </template>
                 </template>
@@ -728,6 +734,19 @@ function toggleGroup(id: number) {
 .svg-text-alloc {
     font-size: 11px;
     color: #fff;
+}
+
+/* prevent text selection inside the gantt chart */
+.svg-text-ellipsis,
+.svg-text-month,
+.svg-text-day,
+.svg-text-bar,
+.svg-text-alloc,
+.row-name,
+.row-symbol {
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
 }
 
 .row-name {

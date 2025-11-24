@@ -33,7 +33,7 @@
     <q-drawer side="right" :model-value="sidebarStore.isOpen" bordered :elevated="false"
       :width="sidebarStore.isExpanded ? windowSize.width - 57 : DEFAULT_SIDEBAR_WIDTH" @before-hide="sidebarStartHiding"
       @hide="sidebarHidden">
-      <div class="q-pa-md">
+      <div class="q-pa-md sidebar-content">
         <SidebarComponentSelector />
       </div>
     </q-drawer>
@@ -163,5 +163,12 @@ function toggleLeftDrawer() {
 <style scoped>
 .sidebar-expanded {
   width: 100% !important;
+}
+
+/* ensure drawer inner content is scrollable and can reach last element */
+.sidebar-content {
+  max-height: calc(100vh - 56px);
+  /* account for header */
+  overflow: auto;
 }
 </style>

@@ -135,10 +135,13 @@
                             <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
                                 :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
                         </div>
+                        <!-- previous solution:
                         <DateTimeInput v-model="b.start" label="Start" :maxWidth="218"
                             @update:modelValue="() => saveBookingLocal(b)" />
                         <DateTimeInput v-model="b.end" label="End" :maxWidth="218"
-                            @update:modelValue="() => saveBookingLocal(b)" />
+                            @update:modelValue="() => saveBookingLocal(b)" /> -->
+                        <DateTimeRangeInput :model-value="(b as any)" label="Range" :maxWidth="440"
+                            @update:modelValue="(val: any) => { if (val) { (b as any).start = val.start; (b as any).end = val.end; } saveBookingLocal(b) }" />
                     </div>
                 </div>
                 <div>
@@ -163,6 +166,7 @@ import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
 import { type Issue, useIssueStore } from 'src/stores/issue';
 import DateTimeInput from './DateTimeInput.vue';
+import DateTimeRangeInput from './DateTimeRangeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
 import EditableResourceList from './EditableResourceList.vue';
 import EditableTaskList from './EditableTaskList.vue';
