@@ -135,13 +135,10 @@
                             <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
                                 :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
                         </div>
-                        <!-- previous solution:
-                        <DateTimeInput v-model="b.start" label="Start" :maxWidth="218"
-                            @update:modelValue="() => saveBookingLocal(b)" />
-                        <DateTimeInput v-model="b.end" label="End" :maxWidth="218"
-                            @update:modelValue="() => saveBookingLocal(b)" /> -->
-                        <DateTimeRangeInput :model-value="(b as any)" label="Range" :maxWidth="440"
-                            @update:modelValue="(val: any) => { if (val) { (b as any).start = val.start; (b as any).end = val.end; } saveBookingLocal(b) }" />
+                        <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218"
+                            @update:modelValue="(start) => saveBookingLocal(b, start, null)" />
+                        <DateTimeInput :modelValue="b.end" label="End" :maxWidth="218"
+                            @update:modelValue="(end) => saveBookingLocal(b, null, end)" />
                     </div>
                 </div>
                 <div>
@@ -166,7 +163,6 @@ import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
 import { type Issue, useIssueStore } from 'src/stores/issue';
 import DateTimeInput from './DateTimeInput.vue';
-import DateTimeRangeInput from './DateTimeRangeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
 import EditableResourceList from './EditableResourceList.vue';
 import EditableTaskList from './EditableTaskList.vue';
@@ -392,8 +388,16 @@ function removeResourceSlot(idx: number) {
     local_task.value.resourceConstraints.splice(idx, 1);
 }
 
-async function saveBookingLocal(b: Allocation) {
+async function saveBookingLocal(b: Allocation, overwriteStart: Date | null = null, overwriteEnd: Date | null = null) {
     // delegate to plan store
+    if (overwriteStart != null || overwriteEnd != null) {
+        const s = overwriteStart || b.start
+        const e = overwriteEnd || b.end
+        if (Math.abs(e.getTime() - s.getTime()) <= 365 * 24 * 3600 * 1000) {
+            b.start = s
+            b.end = e
+        }
+    }
     await planStore.saveBooking(b);
 }
 
