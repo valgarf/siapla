@@ -9,7 +9,8 @@
         </q-toolbar-title>
 
         <!-- :icon="sidebarStore.isOpen ? 'expand_circle_up' : 'expand_circle_down'"  (expand_circle_up does not work)-->
-        <q-btn flat dense round icon="info" aria-label="Toggle sidebar" @click="toggleSidebar" />
+        <q-btn flat dense round :icon="sidebarStore.isOpen ? 'expand_less' : 'expand_more'" aria-label="Toggle sidebar"
+          @click="toggleSidebar" />
       </q-toolbar>
     </q-header>
 
