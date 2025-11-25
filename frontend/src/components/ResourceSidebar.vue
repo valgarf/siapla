@@ -1,11 +1,12 @@
 <template>
-    <DialogLayout :dialogLayer="dialogLayer">
+    <SidebarLayout>
         <template #toolbar>
             <div class="col"></div>
             <q-btn flat @click="toggleEdit()" :loading="resourceStore.saving" color="primary"
                 :disable="resourceStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
                     : null }}
             </q-btn>
+            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
             <q-btn flat @click="deleteResource()" :loading="resourceStore.deleting" color="negative" icon="delete"
                 :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
         </template>
@@ -70,8 +71,8 @@
             <div v-if="edit" class="q-gutter-y-md">
                 <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-edit'"
                     class="row items-center q-gutter-sm">
-                    <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
-                    <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
+                    <DateTimeInput v-model="vacation.from" label="From" outlined class="col" />
+                    <DateTimeInput v-model="vacation.until" label="Until" outlined class="col" />
                     <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
                 </div>
                 <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
@@ -84,7 +85,7 @@
                 <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
             </div>
         </q-card-section>
-    </DialogLayout>
+    </SidebarLayout>
 </template>
 
 
@@ -93,14 +94,14 @@ import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
-import { useDialogStore } from 'src/stores/dialog';
+import { useSidebarStore } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
 import DateTimeInput from './DateTimeInput.vue';
-import DialogLayout from './DialogLayout.vue';
+import SidebarLayout from './SidebarLayout.vue';
 
 const resourceStore = useResourceStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 const groupedWorkingHours = computed(() => {
     if (!localResource.value) return [];
@@ -250,7 +251,6 @@ onRegionsResult((result) => {
 // holiday logic end
 
 interface Props {
-    dialogLayer: number;
     resource: ResourceInput;
 };
 
@@ -286,6 +286,12 @@ async function toggleEdit() {
         saveError.value = null
         edit.value = true
     }
+}
+
+function cancelEdit() {
+    localResource.value = { ...localResourceDefault, ...props.resource };
+    saveError.value = null;
+    edit.value = false;
 }
 
 function addVacation() {
@@ -324,7 +330,7 @@ async function save(): Promise<string | null> {
 async function deleteResource() {
     const resourceId = localResource.value.dbId
     if (resourceId == null) {
-        dialogStore.popDialog()
+        sidebarStore.popSidebar()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {

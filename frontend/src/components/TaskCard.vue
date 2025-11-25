@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import type { Task } from 'src/stores/task';
-import { TaskDialogData, useDialogStore } from 'src/stores/dialog';
+import { TaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
 import { computed } from 'vue';
 import { type Issue, useIssueStore } from 'src/stores/issue';
 
@@ -30,7 +30,7 @@ interface Props {
 };
 
 const props = withDefaults(defineProps<Props>(), {});
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 
 const parents = computed(() => {
@@ -48,7 +48,7 @@ const taskIssues = computed(() => issueStore.issues.filter((i: Issue) => i.taskI
 const issueClass = computed(() => taskIssues.value.length > 0 ? 'task-has-issue' : '');
 
 function showDetails() {
-    dialogStore.pushDialog(new TaskDialogData(props.task.dbId))
+    sidebarStore.pushSidebar(new TaskSidebarData(props.task.dbId))
 }
 
 </script>

@@ -124,6 +124,7 @@ impl Mutation {
             };
             arm.insert(txn).await?;
         }
+
         ctx.app_state().notify_modified("graphql".to_string());
         Ok(db_alloc)
     }

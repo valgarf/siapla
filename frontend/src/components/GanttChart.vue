@@ -9,30 +9,37 @@
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
                 <svg :width="timelineWidth" :height="headerHeight">
+                    <!-- months -->
                     <g>
                         <template v-for="(month, i) in months" :key="i">
                             <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
                                 stroke="#ccc" stroke-width="1" />
-                            <foreignObject v-if="month.width > dayWidth * 4" :x="month.x + 4" :y="0"
+                            <foreignObject v-if="month.width > widthForDays(month.startDate, 4)" :x="month.x + 4" :y="0"
                                 :width="month.width - 8" :height="monthRowHeight">
                                 <div class="svg-text-ellipsis svg-text-month" xmlns="http://www.w3.org/1999/xhtml">{{
                                     month.label }}</div>
                             </foreignObject>
                         </template>
                     </g>
+                    <!-- days -->
                     <g>
                         <template v-for="(day, i) in days" :key="i">
-                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x"
-                                :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" :fill="weekendColor"
-                                stroke="#ccc" stroke-width="1" />
-                            <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
-                                fill="#fff" stroke="#ccc" stroke-width="1" />
-                            <foreignObject :x="day.x + 2" :y="monthRowHeight" :width="dayWidth - 4"
-                                :height="dayRowHeight">
+                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="dateToX(day.date)"
+                                :y="monthRowHeight" :width="dayWidthAtDate(day.date)" :height="dayRowHeight"
+                                :fill="weekendColor" stroke="#ccc" stroke-width="1" />
+                            <rect v-else :x="dateToX(day.date)" :y="monthRowHeight" :width="dayWidthAtDate(day.date)"
+                                :height="dayRowHeight" fill="#fff" stroke="#ccc" stroke-width="1" />
+                            <foreignObject :x="dateToX(day.date) + 2" :y="monthRowHeight"
+                                :width="dayWidthAtDate(day.date) - 4" :height="dayRowHeight">
                                 <div class="svg-text-ellipsis svg-text-day" xmlns="http://www.w3.org/1999/xhtml">{{
                                     day.label }}</div>
                             </foreignObject>
                         </template>
+                    </g>
+                    <!-- current datetime indicator -->
+                    <g>
+                        <line v-if="now > startDate && now < endDate" :x1="dateToX(now)" :y1="0" :x2="dateToX(now)"
+                            :y2="headerHeight" stroke="#d77b7b" stroke-width="2" />
                     </g>
                 </svg>
             </div>
@@ -44,19 +51,21 @@
             overflow: 'hidden'
         }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
-                <div v-for="rw in visibleRows" :key="rw.row.id" class="gantt-row-description"
-                    :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }">
+                <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
+                    'gantt-row-description': true, 'gantt-row-description-highlight': rowIsSelected(rw),
+                    'clickable': true
+                }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
+                    @click.stop="emitRowClick(rw.row.id)">
                     <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
                         :style="{ padding: '0px' }" />
                     <span :style="{ marginLeft: rw.row.designation != TaskDesignation.Group ? '17.15px' : '0px' }"
-                        class="clickable row-name" @click.stop="emitRowClick(rw.row.id)">{{
+                        class="row-name">{{
                             rw.row.name
                         }}</span>
-                    <span v-if="props.rowSymbols && props.rowSymbols.find(s => s.rowId === rw.row.id)"
-                        class="row-symbol" :title="(props.rowSymbols.find(s => s.rowId === rw.row.id)?.title) || ''">
-                        {{props.rowSymbols.find(s => s.rowId === rw.row.id)?.symbol}}
+                    <span v-if="rw.row.symbol != null" class="row-symbol" :title="rw.row.symbol.title || ''">
+                        {{ rw.row.symbol.symbolUTF8 }}
                     </span>
                 </div>
             </div>
@@ -76,21 +85,40 @@
                 <!-- weekend background -->
                 <g>
                     <template v-for="(day, i) in days" :key="'w'+i">
-                        <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" y="0"
-                            :width="dayWidth" :height="chartHeight" :fill="weekendColor" opacity="1" stroke="none" />
+                        <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="dateToX(day.date)" y="0"
+                            :width="dayWidthAtDate(day.date)" :height="chartHeight" :fill="weekendColor" opacity="1"
+                            stroke="none" />
                     </template>
                 </g>
 
                 <!-- availability segments -->
                 <g>
                     <template v-for="(rw, ri) in visibleRows" :key="'avail'+rw.row.id">
-                        <template v-for="seg in availabilityForRow(rw.row.id)"
+                        <template v-for="seg in rw.row.availability"
                             :key="rw.row.id + '-' + (seg.start as any) + '-' + (seg.end as any)">
                             <rect :x="dateToX(seg.start)" :y="ri * rowHeight"
                                 :width="dateToX(seg.end) - dateToX(seg.start)" :height="rowHeight" fill="#fff"
                                 opacity="0.7" stroke="none" />
                         </template>
                     </template>
+                </g>
+
+
+                <!-- vertical day lines -->
+                <g>
+                    <template v-for="(day, i) in days" :key="i">
+                        <line :x1="dateToX(nextDayDate(day.date))" :y1="0" :x2="dateToX(nextDayDate(day.date))"
+                            :y2="chartHeight" stroke="#ddd" stroke-width="1" />
+                    </template>
+                </g>
+
+                <!-- highlighted row-->
+                <g>
+                    <template v-for="(rw, ri) in visibleRows" :key="ri">
+                        <rect v-if="rowIsSelected(rw)" :x="dateToX(startDate)" :y="ri * rowHeight"
+                            :width="timelineWidth" :height="rowHeight" fill="#0074d330" stroke="none" />
+                    </template>
+
                 </g>
 
                 <!-- row separators -->
@@ -103,12 +131,12 @@
                         stroke="#ddd" stroke-width="1" />
                 </g>
 
-                <!-- vertical day lines -->
+                <!-- current datetime indicator -->
                 <g>
-                    <template v-for="(day, i) in days" :key="i">
-                        <line :x1="day.x" :y1="0" :x2="day.x" :y2="chartHeight" stroke="#ddd" stroke-width="1" />
-                    </template>
+                    <line v-if="now > startDate && now < endDate" :x1="dateToX(now)" :y1="0" :x2="dateToX(now)"
+                        :y2="chartHeight" stroke="#d77b7b" stroke-width="2" />
                 </g>
+
 
                 <!-- Milestone indication lines -->
                 <g>
@@ -139,14 +167,19 @@
                             <rect :x="dateToX(firstAllocStart(rw.row)!)" :y="i * rowHeight + barPadding"
                                 :width="dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)"
                                 :height="barHeight" fill="#6a1b9a" stroke="#2c0b41" rx="3"
-                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
-                            <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4" :y="i * rowHeight + barPadding"
-                                :width="((dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 20) ? (dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8) : 20"
-                                :height="barHeight">
-                                <div class="svg-text-ellipsis svg-text-bar clickable"
-                                    xmlns="http://www.w3.org/1999/xhtml" @click.stop="() => emitRowClick(rw.row.id)">{{
-                                        rw.row.name }}</div>
-                            </foreignObject>
+                                @click.stop="() => emitRowClick(rw.row.id)" class="clickable"
+                                :class="{ 'selected-alloc': allocationInGroupIsSelected(rw) }" />
+                            <!-- only render text when there's enough space -->
+                            <template v-if="(dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!)) > 23">
+                                <foreignObject :x="dateToX(firstAllocStart(rw.row)!) + 4"
+                                    :y="i * rowHeight + barPadding"
+                                    :width="(dateToX(lastAllocEnd(rw.row)!) - dateToX(firstAllocStart(rw.row)!) - 8)"
+                                    :height="barHeight">
+                                    <div class="svg-text-ellipsis svg-text-bar clickable"
+                                        xmlns="http://www.w3.org/1999/xhtml"
+                                        @click.stop="() => emitRowClick(rw.row.id)">{{ rw.row.name }}</div>
+                                </foreignObject>
+                            </template>
                         </template>
                         <template v-else>
                             <polygon
@@ -189,15 +222,17 @@
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
-                                class="clickable" />
-                            <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
-                                :width="((dateToX(alloc.end) - dateToX(alloc.start)) > 20) ? (dateToX(alloc.end) - dateToX(alloc.start) - 8) : 20"
-                                :height="barHeight">
-                                <div class="svg-text-ellipsis svg-text-alloc clickable"
-                                    xmlns="http://www.w3.org/1999/xhtml"
-                                    @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
-                                    {{ alloc.task?.title ?? '' }}</div>
-                            </foreignObject>
+                                class="clickable" :class="{ 'selected-alloc': allocationIsSelected(rw, alloc) }" />
+                            <!-- only render allocation text if the bar is wide enough -->
+                            <template v-if="(dateToX(alloc.end) - dateToX(alloc.start)) > 23">
+                                <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
+                                    :width="(dateToX(alloc.end) - dateToX(alloc.start) - 8)" :height="barHeight">
+                                    <div class="svg-text-ellipsis svg-text-alloc clickable"
+                                        xmlns="http://www.w3.org/1999/xhtml"
+                                        @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
+                                        {{ alloc.task?.title ?? '' }}</div>
+                                </foreignObject>
+                            </template>
                         </template>
                     </template>
                 </template>
@@ -211,7 +246,9 @@
 
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { scrollX, scrollYMap, panInitialized } from './ganttShared'
+import { nextTick } from 'process';
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 type Row = {
@@ -221,14 +258,30 @@ type Row = {
     allocations?: Allocation[];
     scheduleTarget?: string | Date | null;
     earliestStart?: string | Date | null;
+    symbol?: { symbolUTF8: string; title?: string } | undefined | null
+    availability: Availability[]
     depth: number
 }
-type AvailabilitySegment = { start: string | Date; end: string | Date }
-type Availability = { rowId: number; segments: AvailabilitySegment[] }
+type Availability = { start: string | Date; end: string | Date }
 type Dependency = { predId: number; succId: number }
 type RowWrapper = { visible: boolean, lastVisibleId: number, visibleIdx: number, idx: number, row: Row };
+interface Props {
+    start: string | Date
+    end: string | Date
+    rows: Row[]
+    hasAvailability?: boolean,
+    dependencies?: Dependency[]
+    rowHeight?: number
+    dayWidth?: number
+    barPadding?: number
+    // ids of rows that should be highlighted
+    selectedRowIds?: number[]
+    // ids of allocations that should be highlighted
+    selectedAllocIds?: number[]
+    scrollYKey: string
+}
 
-const props = defineProps<{ start: string | Date; end: string | Date; rows: Row[]; availability?: Availability[]; dependencies?: Dependency[]; rowHeight?: number; dayWidth?: number; barPadding?: number, rowSymbols?: { rowId: number; symbol: string; title?: string }[] }>()
+const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
@@ -243,9 +296,10 @@ const barHeight = computed(() => rowHeight.value - barPadding.value * 2);
 const monthRowHeight = computed(() => 28);
 const dayRowHeight = computed(() => 22);
 const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
+const now = ref<Date>(new Date(Date.now()));
 
 function parseDate(d: string | Date) {
-    return d instanceof Date ? new Date(d) : new Date(d)
+    return d instanceof Date ? d : new Date(d)
 }
 
 const startDate = computed(() => {
@@ -258,29 +312,93 @@ const endDate = computed(() => {
 })
 const msPerDay = 24 * 60 * 60 * 1000
 
+// helper: return the next calendar day (preserving local date semantics)
+function nextDayDate(d: Date | string) {
+    const dt = parseDate(d)
+    const nd = new Date(dt)
+    nd.setDate(nd.getDate() + 1)
+    return nd
+}
+
+function dayWidthAtDate(d: Date | string) {
+    const dt = parseDate(d)
+    const nd = nextDayDate(dt)
+    return dateToX(nd) - dateToX(dt)
+}
+
+function widthForDays(start: Date | string, n: number) {
+    const s = parseDate(start)
+    const nd = new Date(s)
+    nd.setDate(nd.getDate() + n)
+    return dateToX(nd) - dateToX(s)
+}
+
 const days = computed(() => {
     const arr: { date: Date; x: number; label: string }[] = []
     const cur = new Date(startDate.value)
-    let idx = 0
     while (cur <= endDate.value) {
-        arr.push({ date: new Date(cur), x: idx * dayWidth.value, label: `${cur.getDate()}` })
+        arr.push({ date: new Date(cur), x: dateToX(cur), label: `${cur.getDate()}` })
         cur.setDate(cur.getDate() + 1)
-        idx++
     }
     return arr
 })
 
-const timelineWidth = computed(() => days.value.length * dayWidth.value)
+const timelineWidth = computed(() => {
+    // width up to (endDate + 1 day) so the last day column is included
+    const endNext = nextDayDate(endDate.value)
+    return dateToX(endNext)
+})
 
 const months = computed(() => {
-    const map = new Map<string, { x: number; width: number; label: string }>()
+    const map = new Map<string, { x: number; width: number; label: string; startDate: Date }>()
     days.value.forEach((d) => {
         const key = `${d.date.getFullYear()}-${d.date.getMonth()}`
-        if (!map.has(key)) map.set(key, { x: d.x, width: dayWidth.value, label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
-        else map.get(key)!.width += dayWidth.value
+        if (!map.has(key)) map.set(key, { x: d.x, startDate: d.date, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
+        else map.get(key)!.width += dayWidthAtDate(d.date)
     })
     return Array.from(map.values())
 })
+
+const selectedRowIdsSet = computed(() => new Set((props.selectedRowIds) ?? []));
+const selectedAllocIdsSet = computed(() => new Set((props.selectedAllocIds) ?? []));
+
+function* iterateHidden(rw: RowWrapper): IterableIterator<RowWrapper> {
+    if (collapsedGroups.value.has(rw.row.id)) {
+        let idx = rw.idx + 1
+        let value = rowMap.value.get(props.rows[idx]?.id ?? -1);
+        while (!value?.visible) {
+            yield value!
+            idx += 1
+            value = rowMap.value.get(props.rows[idx]?.id ?? -1);
+        }
+    }
+}
+
+function rowIsSelected(rw: RowWrapper): boolean {
+    if (selectedRowIdsSet.value.has(rw.row.id)) {
+        return true
+    }
+    for (const hiddenRw of iterateHidden(rw)) {
+        if (selectedRowIdsSet.value.has(hiddenRw.row.id)) {
+            return true
+        }
+    }
+    return false
+}
+
+function allocationInGroupIsSelected(rw: RowWrapper): boolean {
+    for (const hiddenRw of iterateHidden(rw)) {
+        const alloc_ids = new Set(hiddenRw.row.allocations?.map(a => a.dbId) ?? [])
+        if (selectedAllocIdsSet.value.intersection(alloc_ids).size > 0) {
+            return true
+        }
+    }
+    return false
+}
+
+function allocationIsSelected(rw: RowWrapper, alloc: Allocation): boolean {
+    return selectedAllocIdsSet.value.has(alloc.dbId)
+}
 
 // internal collapsed groups state (moved from parent)
 const collapsedGroups = ref(new Set<number>())
@@ -324,8 +442,22 @@ const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.v
 
 
 // panning logic
-const scrollX = ref(0)
-const scrollY = ref(0)
+
+const scrollY = computed({
+    // getter
+    get(): number {
+        let result = scrollYMap.value[props.scrollYKey]
+        if (result == null) {
+            result = 0
+            scrollYMap.value[props.scrollYKey] = result
+        }
+        return result
+    },
+    // setter
+    set(newValue) {
+        scrollYMap.value[props.scrollYKey] = newValue
+    }
+})
 const isPanning = ref(false)
 let panStartX = 0
 let panStartY = 0
@@ -334,6 +466,7 @@ let panOrigY = 0
 const scrollCell = ref<HTMLElement | null>(null);
 
 function onPanStart(e: MouseEvent) {
+    panInitialized.value = true
     isPanning.value = true
     panStartX = e.clientX
     panStartY = e.clientY
@@ -344,21 +477,28 @@ function onPanMove(e: MouseEvent) {
     onPanMoveX(e);
     onPanMoveY(e);
 }
-function onPanMoveX(e: MouseEvent) {
-    if (!isPanning.value) return;
-    const dx = e.clientX - panStartX;
-    let newX = panOrigX - dx;
+
+function initPan() {
+    if (scrollCell.value && !panInitialized.value) {
+        const rect = scrollCell.value.getBoundingClientRect();
+        const visibleWidth = rect.width;
+        const xnow = dateToX(now.value);
+        _assignClampedScrollX(xnow - visibleWidth / 2);
+    }
+    autoClampScroll()
+}
+
+watch([timelineWidth, panInitialized, scrollCell], initPan)
+
+function _assignClampedScrollX(value: number) {
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         const visibleWidth = rect.width;
-        newX = Math.max(0, Math.min(newX, timelineWidth.value - visibleWidth));
+        scrollX.value = Math.max(0, Math.min(value, Math.max(0, timelineWidth.value - visibleWidth)));
     }
-    scrollX.value = newX;
 }
-function onPanMoveY(e: MouseEvent) {
-    if (!isPanning.value) return;
-    const dy = e.clientY - panStartY;
-    let newY = panOrigY - dy;
+
+function _assignClampedScrollY(value: number) {
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         let visibleHeight = rect.height;
@@ -366,13 +506,60 @@ function onPanMoveY(e: MouseEvent) {
         if (rect.bottom > viewportHeight) {
             visibleHeight -= (rect.bottom - viewportHeight);
         }
-        newY = Math.max(0, Math.min(newY, chartHeight.value - visibleHeight));
+        scrollY.value = Math.max(0, Math.min(value, Math.max(0, chartHeight.value - visibleHeight)));
     }
-    scrollY.value = newY;
+
+}
+
+function onPanMoveX(e: MouseEvent) {
+    if (!isPanning.value) return;
+    const dx = e.clientX - panStartX;
+    const newX = panOrigX - dx;
+    _assignClampedScrollX(newX);
+}
+function onPanMoveY(e: MouseEvent) {
+    if (!isPanning.value) return;
+    const dy = e.clientY - panStartY;
+    const newY = panOrigY - dy;
+    _assignClampedScrollY(newY)
 }
 function onPanEnd() {
     isPanning.value = false
 }
+
+let clampingInterval: NodeJS.Timeout | null = null
+
+function autoClampScroll() {
+    _assignClampedScrollX(scrollX.value)
+    _assignClampedScrollY(scrollY.value)
+}
+
+function startAutoClamping() {
+    clampingInterval = setInterval(autoClampScroll, 5)
+}
+
+function stopAutoClamping() {
+    if (clampingInterval != null) {
+        clearInterval(clampingInterval)
+    }
+    autoClampScroll()
+}
+
+onMounted(() => {
+    window.addEventListener('sidebarClosing', startAutoClamping);
+    window.addEventListener('sidebarClosed', stopAutoClamping);
+    window.addEventListener('resize', autoClampScroll);
+    nextTick(() => {
+        if (panInitialized.value) {
+            autoClampScroll()
+        }
+    })
+});
+onUnmounted(() => {
+    window.removeEventListener('sidebarClosing', startAutoClamping);
+    window.removeEventListener('sidebarClosed', stopAutoClamping);
+    window.removeEventListener('resize', autoClampScroll);
+});
 
 function dateToX(d: string | Date | undefined) {
     if (!d) return 0
@@ -401,12 +588,6 @@ function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
     if (!row.scheduleTarget || !first) return false
     return parseDate(first).getTime() <= parseDate(row.scheduleTarget).getTime()
-}
-
-function availabilityForRow(rowId: number) {
-    const avail = props.availability ?? []
-    const found = avail.find(a => a.rowId === rowId)
-    return found ? found.segments : []
 }
 
 function allocArrow(predId: number, succId: number): string {
@@ -578,6 +759,19 @@ function toggleGroup(id: number) {
     color: #fff;
 }
 
+/* prevent text selection inside the gantt chart */
+.svg-text-ellipsis,
+.svg-text-month,
+.svg-text-day,
+.svg-text-bar,
+.svg-text-alloc,
+.row-name,
+.row-symbol {
+    user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+}
+
 .row-name {
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -612,7 +806,7 @@ function toggleGroup(id: number) {
 .gantt-chart-scroll {
     overflow: hidden;
     cursor: grab;
-    background: v-bind('(props.availability?.length ?? 0) > 0 ? "#f1f2f3" : "#fff"');
+    background: v-bind('props.hasAvailability ? "#f1f2f3" : "#fff"');
     position: relative;
 }
 
@@ -651,6 +845,21 @@ function toggleGroup(id: number) {
     padding-left: 8px;
     font-size: 12px;
     color: #333;
-    border-bottom: 1px solid #f0f0f0;
+    border-top: 0.5px solid #f0f0f0;
+    border-bottom: 0.5px solid #f0f0f0;
+}
+
+/* visual highlight for selected rows and allocations */
+.selected-row {
+    filter: drop-shadow(0 0 6px rgba(66, 165, 245, 0.7));
+}
+
+.gantt-row-description-highlight {
+    background-color: #0074d330;
+}
+
+.selected-alloc {
+    stroke-width: 2.5 !important;
+    filter: drop-shadow(2px 2px 2px #555a)
 }
 </style>

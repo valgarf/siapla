@@ -598,23 +598,34 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
         if let Node::Milestone(m_rc) = project.g.node_weight(nidx).expect("node must exist") {
             let milestone = m_rc.borrow();
             // collect predecessor task ids
-            let pred_task_ids: Vec<i32> = project
+            let pred_tasks: Vec<Rc<RefCell<Task>>> = project
                 .g
                 .neighbors_directed(nidx, Direction::Incoming)
                 .filter_map(|pidx| match project.g.node_weight(pidx) {
-                    Some(Node::Task(t)) => Some(t.borrow().db_id),
+                    Some(Node::Task(t)) => Some(Rc::clone(t)),
                     _ => None,
                 })
                 .collect();
 
-            if pred_task_ids.is_empty() {
+            if pred_tasks.is_empty() {
                 continue;
             }
 
             let mut max_end: Option<NaiveDateTime> = None;
             let mut all_assigned = true;
-            for tid in pred_task_ids.iter() {
-                if let Some(assign_map) = plan.assignments.get(tid) {
+            for t in pred_tasks.iter() {
+                let borrowd_task = t.borrow();
+                let tid = borrowd_task.db_id;
+                let booked_finishes =
+                    if borrowd_task.booked_final { borrowd_task.booked_until } else { None };
+                drop(borrowd_task);
+                if let Some(finished_at) = booked_finishes {
+                    max_end = match max_end {
+                        None => Some(finished_at),
+                        Some(prev) => Some(std::cmp::max(prev, finished_at)),
+                    };
+                }
+                else if let Some(assign_map) = plan.assignments.get(&tid) {
                     // flatten the assign_map into an iterator of end timestamps and take the max
                     let task_max_end = itertools::max(
                         assign_map
