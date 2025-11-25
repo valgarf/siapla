@@ -14,7 +14,7 @@
                         <template v-for="(month, i) in months" :key="i">
                             <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
                                 stroke="#ccc" stroke-width="1" />
-                            <foreignObject v-if="month.width > dayWidth * 4" :x="month.x + 4" :y="0"
+                            <foreignObject v-if="month.width > widthForDays(month.startDate, 4)" :x="month.x + 4" :y="0"
                                 :width="month.width - 8" :height="monthRowHeight">
                                 <div class="svg-text-ellipsis svg-text-month" xmlns="http://www.w3.org/1999/xhtml">{{
                                     month.label }}</div>
@@ -24,13 +24,13 @@
                     <!-- days -->
                     <g>
                         <template v-for="(day, i) in days" :key="i">
-                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x"
-                                :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight" :fill="weekendColor"
-                                stroke="#ccc" stroke-width="1" />
-                            <rect v-else :x="day.x" :y="monthRowHeight" :width="dayWidth" :height="dayRowHeight"
-                                fill="#fff" stroke="#ccc" stroke-width="1" />
-                            <foreignObject :x="day.x + 2" :y="monthRowHeight" :width="dayWidth - 4"
-                                :height="dayRowHeight">
+                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="dateToX(day.date)"
+                                :y="monthRowHeight" :width="dayWidthAtDate(day.date)" :height="dayRowHeight"
+                                :fill="weekendColor" stroke="#ccc" stroke-width="1" />
+                            <rect v-else :x="dateToX(day.date)" :y="monthRowHeight" :width="dayWidthAtDate(day.date)"
+                                :height="dayRowHeight" fill="#fff" stroke="#ccc" stroke-width="1" />
+                            <foreignObject :x="dateToX(day.date) + 2" :y="monthRowHeight"
+                                :width="dayWidthAtDate(day.date) - 4" :height="dayRowHeight">
                                 <div class="svg-text-ellipsis svg-text-day" xmlns="http://www.w3.org/1999/xhtml">{{
                                     day.label }}</div>
                             </foreignObject>
@@ -85,8 +85,9 @@
                 <!-- weekend background -->
                 <g>
                     <template v-for="(day, i) in days" :key="'w'+i">
-                        <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="day.x" y="0"
-                            :width="dayWidth" :height="chartHeight" :fill="weekendColor" opacity="1" stroke="none" />
+                        <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="dateToX(day.date)" y="0"
+                            :width="dayWidthAtDate(day.date)" :height="chartHeight" :fill="weekendColor" opacity="1"
+                            stroke="none" />
                     </template>
                 </g>
 
@@ -106,8 +107,8 @@
                 <!-- vertical day lines -->
                 <g>
                     <template v-for="(day, i) in days" :key="i">
-                        <line :x1="day.x + dayWidth" :y1="0" :x2="day.x + dayWidth" :y2="chartHeight" stroke="#ddd"
-                            stroke-width="1" />
+                        <line :x1="dateToX(nextDayDate(day.date))" :y1="0" :x2="dateToX(nextDayDate(day.date))"
+                            :y2="chartHeight" stroke="#ddd" stroke-width="1" />
                     </template>
                 </g>
 
@@ -115,8 +116,7 @@
                 <g>
                     <template v-for="(rw, ri) in visibleRows" :key="ri">
                         <rect v-if="rowIsSelected(rw)" :x="dateToX(startDate)" :y="ri * rowHeight"
-                            :width="dateToX(endDate) - dateToX(startDate) + dayWidth" :height="rowHeight"
-                            fill="#0074d330" stroke="none" />
+                            :width="timelineWidth" :height="rowHeight" fill="#0074d330" stroke="none" />
                     </template>
 
                 </g>
@@ -299,7 +299,7 @@ const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
 const now = ref<Date>(new Date(Date.now()));
 
 function parseDate(d: string | Date) {
-    return d instanceof Date ? new Date(d) : new Date(d)
+    return d instanceof Date ? d : new Date(d)
 }
 
 const startDate = computed(() => {
@@ -312,26 +312,49 @@ const endDate = computed(() => {
 })
 const msPerDay = 24 * 60 * 60 * 1000
 
+// helper: return the next calendar day (preserving local date semantics)
+function nextDayDate(d: Date | string) {
+    const dt = parseDate(d)
+    const nd = new Date(dt)
+    nd.setDate(nd.getDate() + 1)
+    return nd
+}
+
+function dayWidthAtDate(d: Date | string) {
+    const dt = parseDate(d)
+    const nd = nextDayDate(dt)
+    return dateToX(nd) - dateToX(dt)
+}
+
+function widthForDays(start: Date | string, n: number) {
+    const s = parseDate(start)
+    const nd = new Date(s)
+    nd.setDate(nd.getDate() + n)
+    return dateToX(nd) - dateToX(s)
+}
+
 const days = computed(() => {
     const arr: { date: Date; x: number; label: string }[] = []
     const cur = new Date(startDate.value)
-    let idx = 0
     while (cur <= endDate.value) {
-        arr.push({ date: new Date(cur), x: idx * dayWidth.value, label: `${cur.getDate()}` })
+        arr.push({ date: new Date(cur), x: dateToX(cur), label: `${cur.getDate()}` })
         cur.setDate(cur.getDate() + 1)
-        idx++
     }
     return arr
 })
 
-const timelineWidth = computed(() => days.value.length * dayWidth.value)
+const timelineWidth = computed(() => {
+    // width up to (endDate + 1 day) so the last day column is included
+    const endNext = nextDayDate(endDate.value)
+    return dateToX(endNext)
+})
 
 const months = computed(() => {
-    const map = new Map<string, { x: number; width: number; label: string }>()
+    const map = new Map<string, { x: number; width: number; label: string; startDate: Date }>()
     days.value.forEach((d) => {
         const key = `${d.date.getFullYear()}-${d.date.getMonth()}`
-        if (!map.has(key)) map.set(key, { x: d.x, width: dayWidth.value, label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
-        else map.get(key)!.width += dayWidth.value
+        if (!map.has(key)) map.set(key, { x: d.x, startDate: d.date, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
+        else map.get(key)!.width += dayWidthAtDate(d.date)
     })
     return Array.from(map.values())
 })
