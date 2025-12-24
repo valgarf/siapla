@@ -1,12 +1,14 @@
 <template>
     <SidebarLayout>
         <template #toolbar>
-            <q-breadcrumbs class="col">
-                <q-breadcrumbs-el disable label="Task" />
-                <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
-                    @click="!edit && sidebarStore.pushSidebar(new TaskSidebarData(p.dbId))" />
-                <q-breadcrumbs-el :label="local_task.title" />
-            </q-breadcrumbs>
+            <div class="col">
+                <q-breadcrumbs>
+                    <q-breadcrumbs-el disable label="Tasks" />
+                    <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
+                        class="clickable" @click="!edit && sidebarStore.pushSidebar(new TaskSidebarData(p.dbId))" />
+                    <q-breadcrumbs-el disable label="" />
+                </q-breadcrumbs>
+            </div>
             <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
                 :icon="edit ? 'save' : 'edit'" class="q-ma-xs">
             </q-btn>
@@ -15,140 +17,135 @@
                 :disable="taskStore.saving" class="q-ma-xs"></q-btn>
         </template>
         <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
-        <q-card-section>
-            <q-input v-if="edit" outlined placeholder="Title" class="text-h5" v-model="local_task.title" />
-            <div v-else class="text-h5">{{ local_task.title }}</div>
 
-        </q-card-section>
+        <div class="sidebar-content">
 
-        <q-card-section class="q-pt-none">
-            <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
-            <q-markdown v-else :src="local_task.description" />
-        </q-card-section>
+            <section class="sidebar-section">
+                <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="secondary"
+                    class="q-mb-sm" text-color="secondary" color="white" :options="[
+                        { label: 'Requirement', value: TaskDesignation.Requirement },
+                        { label: 'Task', value: TaskDesignation.Task },
+                        { label: 'Group', value: TaskDesignation.Group },
+                        { label: 'Milestone', value: TaskDesignation.Milestone }
+                    ]" />
+                <q-input v-if="edit" outlined placeholder="Title" class="text-h5 responsive-field q-mb-sm"
+                    v-model="local_task.title" />
+                <div v-else class="text-h5 q-mb-sm">{{ local_task.title }}
+                    <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ local_task.designation
+                        }}</q-chip>
+                </div>
+                <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
+                <q-markdown v-else-if="local_task.description" :src="local_task.description" />
+                <div v-else><i>No description</i></div>
+            </section>
 
-        <q-card-section>
-            <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="secondary"
-                text-color="secondary" color="white" :options="[
-                    { label: 'Requirement', value: TaskDesignation.Requirement },
-                    { label: 'Task', value: TaskDesignation.Task },
-                    { label: 'Group', value: TaskDesignation.Group },
-                    { label: 'Milestone', value: TaskDesignation.Milestone }
-                ]" />
-            <q-chip v-else color="secondary" text-color="white" class="q-pa-md">{{
-                local_task.designation }}</q-chip>
-        </q-card-section>
+            <section v-if="local_task.designation == TaskDesignation.Task && taskIssues.length > 0"
+                class="sidebar-section">
+                <div class="issue-list">
+                    <div class="issue-list-title">Issues</div>
+                    <div v-for="(iss, idx) in taskIssues" :key="idx" class="issue-item">⚠ {{ iss.description }}</div>
+                </div>
+            </section>
 
-        <q-card-section v-if="local_task.designation == TaskDesignation.Task && taskIssues.length > 0">
-            <div class="issue-list">
-                <div class="issue-list-title">Issues</div>
-                <div v-for="(iss, idx) in taskIssues" :key="idx" class="issue-item">⚠ {{ iss.description }}</div>
-            </div>
-        </q-card-section>
+            <section v-show="local_task.designation == TaskDesignation.Requirement"
+                class="sidebar-section responsive-row">
+                <DateTimeInput v-if="edit" label="Start" class="responsive-field" v-model="local_task.earliestStart" />
+                <div v-else class="row items-baseline">
+                    <div class="text-subtitle2 q-pr-md">Start:</div>
+                    <div>{{ formatDatetime(local_task.earliestStart) }}</div>
+                </div>
+            </section>
+            <section v-show="local_task.designation == TaskDesignation.Milestone"
+                class="sidebar-section responsive-row">
+                <DateTimeInput v-if="edit" label="Schedule" class="responsive-field"
+                    v-model="local_task.scheduleTarget" />
+                <div v-else class="row items-baseline">
+                    <div class="text-subtitle2 q-pr-md">Schedule:</div>
+                    <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
+                </div>
+            </section>
 
-        <q-card-section v-show="local_task.designation == TaskDesignation.Requirement">
-            <DateTimeInput v-if="edit" label="Start" v-model="local_task.earliestStart" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Start:</div>
-                <div>{{ formatDatetime(local_task.earliestStart) }}</div>
-            </div>
-        </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Milestone">
-            <DateTimeInput v-if="edit" label="Schedule" v-model="local_task.scheduleTarget" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Schedule:</div>
-                <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
-            </div>
-        </q-card-section>
-
-        <q-card-section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)">
-            <div class="q-gutter-y-sm">
-                <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
-                    <div class="col">
-                        <EditableResourceList v-model="option.resources"
-                            :name="`Resource Constraint ${idx + 1}${(local_task.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
-                            :possible="allResources" :edit="edit" class="full-width" />
-                        <div class="row q-gutter-sm items-center">
-                            <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
-                            <div v-else class="q-ml-md text-subtitle2">
-                                {{ option.optional ? "Optional" : "Required" }}
-                            </div>
-                            <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
-                                label="Speed" dense style="max-width: 120px;" />
-                            <div v-else class="q-ml-lg text-subtitle2">
-                                Speed: {{ option.speed.toFixed(2) }}
+            <section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)"
+                class="sidebar-section">
+                <div class="q-gutter-y-sm">
+                    <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
+                        <div class="col">
+                            <EditableResourceList v-model="option.resources"
+                                :name="`Resource Constraint ${idx + 1}${(local_task.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
+                                :possible="allResources" :edit="edit" class="full-width" />
+                            <div class="row q-gutter-sm items-center responsive-row">
+                                <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
+                                <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
+                                    }}
+                                </div>
+                                <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
+                                    label="Speed" dense class="responsive-field" style="max-width: 160px;" />
+                                <div v-else class="q-ml-lg text-subtitle2">Speed: {{ option.speed.toFixed(2) }}</div>
                             </div>
                         </div>
+                        <q-btn flat round v-show="edit" icon="remove" color="negative"
+                            @click="removeResourceSlot(idx)" />
                     </div>
-                    <q-btn flat round v-show="edit" icon="remove" color="negative" @click="removeResourceSlot(idx)" />
+                    <q-btn flat v-show="edit" icon="add" color="primary" label="Add Resource Constraint"
+                        @click="addResourceSlot" />
                 </div>
-                <q-btn flat v-show="edit" icon="add" color="primary" label="Add Resource Constraint"
-                    @click="addResourceSlot" />
-            </div>
-        </q-card-section>
+            </section>
 
-        <q-card-section v-show="local_task.designation == TaskDesignation.Task">
-            <q-input v-if="edit" label="effort (days)" stack-label type="number" v-model.number="local_task.effort" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Effort:</div>
-                <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
-            </div>
-        </q-card-section>
-        <q-card-section
-            v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)">
-            <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
-                :edit="edit" />
-        </q-card-section>
-        <q-card-section
-            v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)">
-            <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
-                :edit="edit" />
-        </q-card-section>
-        <q-card-section v-show="edit">
-            <q-select filled v-model="parent" :options="possibleParents" use-chips stack-label label="parent" />
-        </q-card-section>
-        <q-card-section
-            v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)">
-            <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren" :edit="edit" />
-        </q-card-section>
-        <q-card-section v-show="effective_requirements.length > 0">
-            <div class="col">
-                <div class="text-subtitle2">Requirements</div>
-                <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
-            </div>
-        </q-card-section>
-        <q-card-section v-show="effective_milestones.length > 0">
-            <div class="col">
-                <div class="text-subtitle2">Milestones</div>
-                <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
-            </div>
-        </q-card-section>
-        <q-card-section v-show="local_task.designation == TaskDesignation.Task && !edit">
-            <div class="col">
-                <div class="text-subtitle2">Bookings</div>
-                <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="q-pa-sm"
-                    style="border:1px solid #eee;border-radius:6px;margin-bottom:6px;">
-                    <div class="row items-center q-gutter-sm" style="align-items: center;">
-                        <q-btn flat dense icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
-                        <q-checkbox dense v-model="b.final" label="Final"
-                            @update:modelValue="() => saveBookingLocal(b)" />
-                        <div class="col resource-list">
-                            <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
-                                :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+            <section v-show="local_task.designation == TaskDesignation.Task" class="sidebar-section responsive-row">
+                <q-input v-if="edit" label="effort (days)" stack-label type="number" class="responsive-field"
+                    v-model.number="local_task.effort" />
+                <div v-else class="row items-baseline">
+                    <div class="text-subtitle2 q-pr-md">Effort:</div>
+                    <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
+                </div>
+            </section>
+            <section class="sidebar-section column q-gutter-xs">
+                <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
+                    v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)"
+                    :edit="edit" />
+                <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
+                    v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)"
+                    :edit="edit" />
+                <q-select filled v-show="edit" v-model="parent" :options="possibleParents" use-chips stack-label
+                    label="parent" class="responsive-field" />
+                <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren"
+                    v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)"
+                    :edit="edit" />
+                <div class="col" v-show="effective_requirements.length > 0">
+                    <div class="text-subtitle2">Requirements</div>
+                    <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
+                </div>
+                <div class="col" v-show="effective_milestones.length > 0">
+                    <div class="text-subtitle2">Milestones</div>
+                    <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
+                </div>
+            </section>
+            <section v-show="local_task.designation == TaskDesignation.Task && !edit"
+                class="sidebar-section bookings-section">
+                <div class="col">
+                    <div class="text-subtitle2">Bookings</div>
+                    <div class="bookings-row">
+                        <div v-for="(b, idx) in taskBookings()" :key="b.dbId || idx" class="booking-box">
+                            <q-btn flat dense icon="delete" color="negative" @click="() => deleteBookingLocal(b)" />
+                            <q-checkbox dense v-model="b.final" label="Final"
+                                @update:modelValue="() => saveBookingLocal(b)" />
+                            <div class="booking-resources">
+                                <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
+                                    :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                            </div>
+                            <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218" class="responsive-field"
+                                @update:modelValue="(start) => saveBookingLocal(b, start, null)" />
+                            <DateTimeInput :modelValue="b.end" label="End" :maxWidth="218" class="responsive-field"
+                                @update:modelValue="(end) => saveBookingLocal(b, null, end)" />
                         </div>
-                        <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218"
-                            @update:modelValue="(start) => saveBookingLocal(b, start, null)" />
-                        <DateTimeInput :modelValue="b.end" label="End" :maxWidth="218"
-                            @update:modelValue="(end) => saveBookingLocal(b, null, end)" />
+                    </div>
+                    <div>
+                        <q-btn flat icon="add" label="Add Booking" color="primary" @click="createBooking" />
                     </div>
                 </div>
-                <div>
-                    <q-btn flat icon="add" label="Add Booking" color="primary" @click="createBooking" />
-                </div>
-            </div>
+            </section>
 
-        </q-card-section>
-
-
+        </div>
     </SidebarLayout>
 </template>
 
@@ -430,5 +427,60 @@ function createBooking() {
 
 .resource-list {
     min-width: 200px;
+}
+
+/* Layout helpers for expanded sidebar - flex based, no breakpoint required */
+.sidebar-content {
+    display: flex;
+    flex-flow: column nowrap;
+    gap: 0px;
+    align-items: stretch;
+}
+
+.sidebar-section {
+    padding: 12px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    /* flex: 1 1 320px; */
+    /* min-width: 220px; */
+    /* max-width: 720px; */
+}
+
+.responsive-field {
+    width: 100%;
+    max-width: 520px;
+    box-sizing: border-box;
+}
+
+.responsive-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.bookings-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.booking-box {
+    display: flex;
+    gap: 8px;
+    flex-flow: row wrap;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+}
+
+.booking-resources {
+    min-width: 160px;
+    max-width: 360px;
+}
+
+.clickable {
+    cursor: pointer;
 }
 </style>

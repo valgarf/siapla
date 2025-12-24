@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="margins">
         <q-toolbar>
             <q-btn :disable="sidebarStore.atFirst()" flat round icon="arrow_back" @click="sidebarStore.back" />
             <q-btn :disable="sidebarStore.atLast()" flat round icon="arrow_forward" @click="sidebarStore.next"
@@ -18,6 +18,12 @@
 <style scoped>
 .q-btn.disabled {
     opacity: 0.3 !important;
+}
+
+.margins {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: 1000px;
 }
 </style>
 
