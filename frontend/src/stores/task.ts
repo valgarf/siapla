@@ -3,7 +3,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia';
 import { graphql } from 'src/gql';
 import type { TaskDesignation, TaskSaveInput, TasksQuery } from 'src/gql/graphql';
 import { computed, type Ref } from 'vue';
-import { TaskDialogData, useDialogStore } from './dialog';
+import { TaskSidebarData, useSidebarStore } from './sidebar';
 import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { ApolloError } from '@apollo/client/core';
@@ -168,7 +168,7 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   // Returns any mutation error as a string, or null on success
   async function saveTask(task: Ref<TaskInput>): Promise<string | null> {
-    const dialog = useDialogStore();
+    const sidebarStore = useSidebarStore();
     try {
       const resp = await mutSaveTask.mutate({ task: taskToObj(task) });
       // Apollo GraphQL errors (if any)
@@ -184,7 +184,7 @@ export const useTaskStore = defineStore('taskStore', () => {
           task.value.dbId = dbId;
           await queryGetAll.refetch();
           // TODO: generic error handling?
-          dialog.replaceDialog(new TaskDialogData(dbId));
+          sidebarStore.replaceSidebar(new TaskSidebarData(dbId));
         } else {
           task.value.dbId = dbId;
           await queryGetAll.refetch();
@@ -198,17 +198,17 @@ export const useTaskStore = defineStore('taskStore', () => {
   }
 
   async function deleteTask(taskId: number, pop: boolean = true) {
-    const dialog = useDialogStore();
+    const sidebarStore = useSidebarStore();
     const resp = await mutDeleteTask.mutate({ taskId: taskId });
     const result = resp?.data?.taskDelete;
     if (result) {
-      // TODO: a 'filter' that removes all corresponding dialogs would be better
+      // TODO: a 'filter' that removes all corresponding sidebars would be better
       if (
         pop &&
-        dialog.activeDialog instanceof TaskDialogData &&
-        dialog.activeDialog.taskId == taskId
+        sidebarStore.activeSidebar instanceof TaskSidebarData &&
+        sidebarStore.activeSidebar.taskId == taskId
       ) {
-        dialog.popDialog();
+        sidebarStore.popSidebar();
       }
       await queryGetAll.refetch();
     }

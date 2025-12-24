@@ -1,6 +1,7 @@
 <template>
-    <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :availability="availability"
-        :dependencies="dependencies" :rowSymbols="rowSymbols" @alloc-click="onAllocClick" @row-click="onTaskClick">
+    <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
+        :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
+        scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-plan">
         <template #corner>
             <div class="corner-buttons">
                 <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
@@ -18,29 +19,43 @@ import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
-import { useDialogStore, TaskDialogData, NewTaskDialogData, NewResourceDialogData } from 'src/stores/dialog';
+import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 
 // collapse state moved to GanttChart component
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
-        dialogStore.pushDialog(new TaskDialogData(tid));
+        sidebarStore.toggleSidebar(new TaskSidebarData(tid));
     }
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
 function onNewTask() {
-    dialogStore.pushDialog(new NewTaskDialogData());
+    sidebarStore.pushSidebar(new NewTaskSidebarData());
 }
 function onNewResource() {
-    dialogStore.pushDialog(new NewResourceDialogData());
+    sidebarStore.pushSidebar(new NewResourceSidebarData());
 }
+
+
+const issueStore = useIssueStore();
+const rowSymbols = computed(() => {
+    const map: { [rowid: number]: { symbolUTF8: string; title?: string } } = {};
+    for (const i of issueStore.issues) {
+        if (i.taskId != null) {
+            const existing = map[i.taskId];
+            const desc = existing ? existing.title + '\n' + i.description : i.description;
+            map[i.taskId] = { symbolUTF8: '⚠', title: desc };
+        }
+    }
+    return map;
+});
 
 // Build flattened rows for the left list and the Gantt rows structure
 const rows = computed(() => {
@@ -68,26 +83,31 @@ const ganttRows = computed(() => {
         allocations: planStore.by_task(r.task.dbId).map((a) => ({ dbId: a.dbId, start: a.start, end: a.end, task: r.task, allocationType: a.allocationType })),
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
+        availability: [],
+        symbol: rowSymbols.value[r.task.dbId]
     }));
 });
 
-const issueStore = useIssueStore();
-const rowSymbols = computed(() => {
-    const map = new Map<number, { rowId: number; symbol: string; title?: string }>();
-    for (const i of issueStore.issues) {
-        if (i.taskId != null) {
-            const existing = map.get(i.taskId);
-            const desc = existing ? existing.title + '\n' + i.description : i.description;
-            map.set(i.taskId, { rowId: i.taskId, symbol: '⚠', title: desc });
-        }
+// compute selections based on sidebar
+const selectedRowIds = computed(() => {
+    const active = sidebarStore.activeSidebar;
+    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (active instanceof TaskSidebarData) {
+        return [active.taskId];
     }
-    return Array.from(map.values());
+    return [] as number[];
 });
 
-// availability per row: tasks do not have availability in this view; provide empty
-const availability = computed(() => {
-    return [] as { rowId: number; segments: { start: string | Date; end: string | Date }[] }[];
+const selectedAllocIds = computed(() => {
+    const active = sidebarStore.activeSidebar;
+    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (active instanceof ResourceSidebarData) {
+        const resId = active.resourceId;
+        return planStore.by_resource(resId).map(a => a.dbId);
+    }
+    return [] as number[];
 });
+
 
 // dependencies: extract predecessor relationships
 const dependencies = computed(() => {

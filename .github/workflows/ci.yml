@@ -27,9 +27,15 @@ jobs:
         with:
           versionSpec: '6.4.x'
 
+      - name: Display GitVersion config
+        uses: gittools/actions/gitversion/command@v4.1.0
+        with:
+          arguments: '/showConfig'
+
       - name: GitVersion
         id: gitversion
         uses: gittools/actions/gitversion/execute@v4.1.0
+
 
       - name: Configure git for tagging
         if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
@@ -44,11 +50,11 @@ jobs:
         run: |
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
+          
 
   frontend-build:
     name: Build frontend
     needs: generate-version
-    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -83,63 +89,10 @@ jobs:
           name: frontend-dist
           path: frontend/dist/spa
 
-  backend-build:
-    name: Build backend
-    needs: [generate-version, frontend-build]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        run: rustup toolchain install stable --profile minimal && rustup default stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend-dist
-
-      - name: Copy frontend into crate
-        run: |
-          mkdir -p crates/siapla/src/bundled_frontend
-          # artifact is unpacked into the workspace root path 'frontend-dist'
-          if [ -d "frontend-dist" ]; then
-            rm -rf crates/siapla/src/bundled_frontend/*
-            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
-          else
-            echo "frontend-dist not found"
-            exit 1
-          fi
-
-      - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces --locked
-
-      - name: Apply version to crate Cargo.toml
-        env:
-          VERSION: ${{ needs.generate-version.outputs.version }}
-        run: |
-          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
-
-      - name: Build backend (just build-backend)
-        run: cargo build --release -p siapla
-
-      - name: Upload backend binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: siapla-serve-binary
-          path: target/release/siapla-serve
-
+  
   test:
     name: Test
     needs: [generate-version, frontend-build]
-    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -173,6 +126,58 @@ jobs:
       - name: Run tests (just test)
         run: cargo test
 
+  backend-build:
+    name: Build backend
+    needs: [generate-version, frontend-build]
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Copy frontend into crate
+        run: |
+          mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
+          if [ -d "frontend-dist" ]; then
+            cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
+          else
+            echo "frontend-dist not found"
+            exit 1
+          fi
+
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces --locked
+
+      - name: Apply version to crate Cargo.toml
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+        run: |
+          cargo ws version custom "${VERSION}" --no-git-commit --exact --yes
+
+      - name: Build backend (just build-backend)
+        run: cargo build --release -p siapla
+
+      - name: Upload backend binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: siapla-serve-binary
+          path: target/release/siapla-serve
+
   publish-cratesio:
     name: Publish to crates.io
     needs: [generate-version, test, frontend-build]
@@ -199,8 +204,8 @@ jobs:
       - name: Copy frontend into crate
         run: |
           mkdir -p crates/siapla/src/bundled_frontend
+          rm -rf crates/siapla/src/bundled_frontend/*
           if [ -d "frontend-dist" ]; then
-            rm -rf crates/siapla/src/bundled_frontend/*
             cp -r frontend-dist/* crates/siapla/src/bundled_frontend/
           else
             echo "frontend-dist not found"
@@ -224,7 +229,7 @@ jobs:
 
   docker-image:
     name: Docker image
-    needs: [backend-build, test]
+    needs: [generate-version, backend-build, test]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/release/')
     steps:
@@ -243,7 +248,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (main)
+        if: startsWith(github.ref, 'refs/heads/main')
+        env:
+          VERSION: ${{ needs.generate-version.outputs.version }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          docker build --build-arg BINARY="siapla-serve-binary/siapla-serve" -t ${DOCKERHUB_USERNAME}/siapla:${VERSION} -t ${DOCKERHUB_USERNAME}/siapla:latest -f image/Dockerfile .
+          docker push ${DOCKERHUB_USERNAME}/siapla:${VERSION}
+          docker push ${DOCKERHUB_USERNAME}/siapla:latest
+      
+      - name: Build and push Docker image (beta)
+        if: startsWith(github.ref, 'refs/heads/release')
         env:
           VERSION: ${{ needs.generate-version.outputs.version }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -268,20 +284,11 @@ jobs:
 
       - name: Create Draft GitHub Release (auto-generated notes)
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.generate-version.outputs.version }}
-          release_name: v${{ needs.generate-version.outputs.version }}
+          name: v${{ needs.generate-version.outputs.version }}
           draft: true
           generate_release_notes: true
           prerelease: ${{ startsWith(github.ref, 'refs/heads/release/') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload binary to release
-        uses: actions/upload-release-asset@v2
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: siapla-serve-binary/siapla-serve
-          asset_name: siapla-serve
-          asset_content_type: application/octet-stream
+          files: siapla-serve-binary/siapla-serve

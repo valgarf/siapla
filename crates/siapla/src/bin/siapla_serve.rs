@@ -73,7 +73,7 @@ async fn custom_subscriptions(
 
 // Embed the bundled frontend directory at compile time
 // include the bundled_frontend directory that lives in the same crate
-static BUNDLED_FRONTEND_DIR: Dir = include_dir!("crates/siapla/src/bundled_frontend");
+static BUNDLED_FRONTEND_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/bundled_frontend");
 
 #[derive(Parser, Debug)]
 #[command(name = "siapla-serve")]

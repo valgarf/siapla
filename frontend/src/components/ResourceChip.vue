@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { ResourceDialogData, useDialogStore } from 'src/stores/dialog';
+import { ResourceSidebarData, useSidebarStore } from 'src/stores/sidebar';
 import type { Resource } from 'src/stores/resource';
 
 interface Props {
@@ -14,9 +14,9 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), { clickable: true });
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 function showDetails() {
-    dialogStore.pushDialog(new ResourceDialogData(props.resource.dbId));
+    sidebarStore.pushSidebar(new ResourceSidebarData(props.resource.dbId));
 }
 </script>

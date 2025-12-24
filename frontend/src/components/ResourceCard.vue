@@ -9,17 +9,16 @@
 
 <script setup lang="ts">
 import type { Resource } from 'src/stores/resource';
-import { ResourceDialogData, useDialogStore } from 'src/stores/dialog';
+import { ResourceSidebarData, useSidebarStore } from 'src/stores/sidebar';
 
 interface Props {
     resource: Resource;
 };
 
 const props = withDefaults(defineProps<Props>(), {});
-const dialogStore = useDialogStore();
-// details dialog
+const sidebarStore = useSidebarStore();
 function showDetails() {
-    dialogStore.pushDialog(new ResourceDialogData(props.resource.dbId))
+    sidebarStore.pushSidebar(new ResourceSidebarData(props.resource.dbId))
 }
 
 </script>

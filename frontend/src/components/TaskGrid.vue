@@ -22,11 +22,11 @@
 import { computed } from 'vue';
 import TaskCard from './TaskCard.vue';
 import { useTaskStore } from 'src/stores/task';
-import { NewTaskDialogData, useDialogStore } from 'src/stores/dialog';
+import { NewTaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
 
 
 const taskStore = useTaskStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 const tasks = computed(() => {
   const result = [...taskStore.tasks];
@@ -41,9 +41,8 @@ withDefaults(defineProps<Props>(), {
   issuesOnly: true
 });
 
-// details dialog
 function showDetailsNew() {
-  dialogStore.pushDialog(new NewTaskDialogData())
+  sidebarStore.pushSidebar(new NewTaskSidebarData())
 }
 
 </script>
