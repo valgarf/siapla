@@ -4,6 +4,9 @@
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" scrollYKey="resources"
     @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
+      <q-btn aria-label="Sort Order" flat icon="sort">
+        <SortMenu v-model="sortMenu" :options="sortOptions" @update:options="updateSortOptions" />
+      </q-btn>
       <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
         <q-tooltip>New Task</q-tooltip></q-btn>
       <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
@@ -17,9 +20,12 @@
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { useSidebarStore, ResourceSidebarData, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
-import { computed } from 'vue';
+import { computed, ref, reactive } from 'vue';
 import GanttChart from './GanttChart.vue';
 import { TaskDesignation } from 'src/gql/graphql';
+import SortMenu from './SortMenu.vue';
+
+interface SortOption { key: string; label: string; asc: boolean }
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
@@ -50,17 +56,70 @@ const availability = computed(() => {
   return out;
 });
 
+const sortMenu = ref(false);
+const sortOptions = reactive<SortOption[]>([
+  { key: 'name', label: 'Name', asc: true },
+  { key: 'added', label: 'Added', asc: true },
+  { key: 'removed', label: 'Removed', asc: false },
+  { key: 'totalHours', label: 'Total Working hours', asc: false },
+  { key: 'earliestStart', label: 'Earliest Task Start', asc: true },
+  { key: 'lastEnd', label: 'Last Task End', asc: true }
+]);
+function updateSortOptions(newOpts: SortOption[]) {
+  sortOptions.splice(0, sortOptions.length, ...newOpts);
+}
+
 const resourceRows = computed(() => {
-  return Array.from(resourceStore.resources).map(r => ({
+  const arr = Array.from(resourceStore.resources).map(r => ({
     id: r.dbId,
     name: resourceStore.resource(r.dbId)?.name ?? '<UNNAMED>',
     designation: TaskDesignation.Task,
     depth: 0,
-    allocations: planStore.by_resource(r.dbId).map(a => ({
-      dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType
-    })),
+    allocations: planStore.by_resource(r.dbId).map(a => ({ dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType })),
     availability: availability.value[r.dbId] ?? []
   }));
+
+  interface AllocationRow { dbId: number; start: string | Date; end: string | Date; task: unknown; allocationType: unknown }
+  interface ResourceRow { id: number; name: string; designation: TaskDesignation; depth: number; allocations: AllocationRow[]; availability: { start: string | Date; end: string | Date }[] }
+
+  function cmp(a: ResourceRow, b: ResourceRow) {
+    for (const opt of sortOptions) {
+      if (opt.key === 'name') {
+        const ca = a.name ?? '';
+        const cb = b.name ?? '';
+        if (ca !== cb) return (ca.localeCompare(cb)) * (opt.asc ? 1 : -1);
+      }
+      else if (opt.key === 'added') {
+        const aa = resourceStore.resource(a.id)?.added?.getTime() ?? 0;
+        const ba = resourceStore.resource(b.id)?.added?.getTime() ?? 0;
+        if (aa !== ba) return (aa - ba) * (opt.asc ? 1 : -1);
+      }
+      else if (opt.key === 'removed') {
+        const ar = resourceStore.resource(a.id)?.removed ? resourceStore.resource(a.id)!.removed!.getTime() : 0;
+        const br = resourceStore.resource(b.id)?.removed ? resourceStore.resource(b.id)!.removed!.getTime() : 0;
+        if (ar !== br) return (ar - br) * (opt.asc ? 1 : -1);
+      }
+      else if (opt.key === 'totalHours') {
+        const ah = planStore.by_resource(a.id).reduce((s, x) => s + (new Date(x.end).getTime() - new Date(x.start).getTime()), 0);
+        const bh = planStore.by_resource(b.id).reduce((s, x) => s + (new Date(x.end).getTime() - new Date(x.start).getTime()), 0);
+        if (ah !== bh) return (ah - bh) * (opt.asc ? 1 : -1);
+      }
+      else if (opt.key === 'earliestStart') {
+        const ae = planStore.by_resource(a.id).map(x => new Date(x.start).getTime()).sort((x, y) => x - y)[0] ?? Infinity;
+        const be = planStore.by_resource(b.id).map(x => new Date(x.start).getTime()).sort((x, y) => x - y)[0] ?? Infinity;
+        if (ae !== be) return (ae - be) * (opt.asc ? 1 : -1);
+      }
+      else if (opt.key === 'lastEnd') {
+        const ae = planStore.by_resource(a.id).map(x => new Date(x.end).getTime()).sort((x, y) => y - x)[0] ?? -Infinity;
+        const be = planStore.by_resource(b.id).map(x => new Date(x.end).getTime()).sort((x, y) => y - x)[0] ?? -Infinity;
+        if (ae !== be) return (ae - be) * (opt.asc ? 1 : -1);
+      }
+    }
+    return 0;
+  }
+
+  arr.sort((a, b) => cmp(a, b));
+  return arr;
 });
 
 // compute selections from sidebar

@@ -977,7 +977,7 @@ function toggleGroup(id: number) {
 
 .corner-buttons {
     display: flex;
-    gap: 6px;
+    gap: 3px;
     justify-content: center;
     align-content: center;
     height: 100%;

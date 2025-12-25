@@ -3,6 +3,9 @@
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
         scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-plan">
         <template #corner>
+            <q-btn aria-label="Sort Order" flat icon="sort">
+                <SortMenu v-model="sortMenu" :options="sortOptions" @update:options="updateSortOptions" />
+            </q-btn>
             <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
                 <q-tooltip>New Task</q-tooltip></q-btn>
             <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
@@ -13,7 +16,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, reactive } from 'vue';
+import SortMenu from './SortMenu.vue';
+
+interface SortOption { key: string; label: string; asc: boolean }
 import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
@@ -58,14 +64,63 @@ const rowSymbols = computed(() => {
 });
 
 // Build flattened rows for the left list and the Gantt rows structure
+const sortMenu = ref(false);
+const sortOptions = reactive<SortOption[]>([
+    { key: 'name', label: 'Name', asc: true },
+    { key: 'start', label: 'Start', asc: true },
+    { key: 'end', label: 'End', asc: true },
+    { key: 'isBooked', label: 'Is Booked', asc: false },
+    { key: 'effort', label: 'Effort', asc: false }
+]);
+function updateSortOptions(newOpts: SortOption[]) {
+    // replace reactive array contents to preserve reactivity
+    sortOptions.splice(0, sortOptions.length, ...newOpts);
+}
+
 const rows = computed(() => {
     const tasks = taskStore.tasks.slice();
-    const roots = tasks.filter((t) => t.parent == null).sort((a, b) => a.title.localeCompare(b.title));
+
+    function isBookingType(v: unknown): boolean {
+        return v === 'BOOKING' || v === 1
+    }
+
+    function cmp(a: Task, b: Task) {
+        for (const opt of sortOptions) {
+            if (opt.key === 'name') {
+                const ca = a.title ?? '';
+                const cb = b.title ?? '';
+                if (ca !== cb) return (ca.localeCompare(cb)) * (opt.asc ? 1 : -1);
+            }
+            else if (opt.key === 'start') {
+                const as = planStore.by_task(a.dbId).map(x => new Date(x.start).getTime()).sort((x, y) => x - y)[0] ?? Infinity;
+                const bs = planStore.by_task(b.dbId).map(x => new Date(x.start).getTime()).sort((x, y) => x - y)[0] ?? Infinity;
+                if (as !== bs) return (as - bs) * (opt.asc ? 1 : -1);
+            }
+            else if (opt.key === 'end') {
+                const ae = planStore.by_task(a.dbId).map(x => new Date(x.end).getTime()).sort((x, y) => y - x)[0] ?? -Infinity;
+                const be = planStore.by_task(b.dbId).map(x => new Date(x.end).getTime()).sort((x, y) => y - x)[0] ?? -Infinity;
+                if (ae !== be) return (ae - be) * (opt.asc ? 1 : -1);
+            }
+            else if (opt.key === 'isBooked') {
+                const ab = planStore.by_task(a.dbId).some(x => isBookingType(x.allocationType));
+                const bb = planStore.by_task(b.dbId).some(x => isBookingType(x.allocationType));
+                if (ab !== bb) return ((ab ? 1 : 0) - (bb ? 1 : 0)) * (opt.asc ? 1 : -1);
+            }
+            else if (opt.key === 'effort') {
+                const ae = planStore.by_task(a.dbId).reduce((s, x) => s + (new Date(x.end).getTime() - new Date(x.start).getTime()), 0);
+                const be = planStore.by_task(b.dbId).reduce((s, x) => s + (new Date(x.end).getTime() - new Date(x.start).getTime()), 0);
+                if (ae !== be) return (ae - be) * (opt.asc ? 1 : -1);
+            }
+        }
+        return 0;
+    }
+
+    const roots = tasks.filter((t) => t.parent == null).sort((a, b) => cmp(a, b));
     const result: { task: Task; depth: number }[] = [];
     function walk(t: Task, depth: number) {
         result.push({ task: t, depth });
         if (t.designation == TaskDesignation.Group) {
-            const children = t.children.slice().sort((a, b) => a.title.localeCompare(b.title));
+            const children = t.children.slice().sort((a, b) => cmp(a, b));
             for (const c of children) walk(c, depth + 1);
         }
     }
