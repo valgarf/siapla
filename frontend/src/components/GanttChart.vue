@@ -1,38 +1,37 @@
 <template>
     <div class="gantt-grid">
-        <div class="gantt-corner">
+        <div class="gantt-corner corner-buttons" style="display:flex;align-items:center;">
+            <q-btn aria-label="Reset Zoom" flat @click.stop="resetZoom" icon="refresh">
+                <q-tooltip>Reset Zoom</q-tooltip></q-btn>
             <slot name="corner" />
         </div>
 
         <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
-            @mouseleave="onPanEnd">
+            @mouseleave="onPanEnd" @wheel.prevent="onWheel">
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
                 <svg :width="timelineWidth" :height="headerHeight">
-                    <!-- months -->
+                    <!-- header top row (year/month) -->
                     <g>
-                        <template v-for="(month, i) in months" :key="i">
-                            <rect :x="month.x" y="0" :width="month.width" :height="monthRowHeight" fill="#fff"
-                                stroke="#ccc" stroke-width="1" />
-                            <foreignObject v-if="month.width > widthForDays(month.startDate, 4)" :x="month.x + 4" :y="0"
-                                :width="month.width - 8" :height="monthRowHeight">
+                        <template v-for="(seg, i) in topRowSegments" :key="i">
+                            <rect :x="seg.x" y="0" :width="seg.width" :height="monthRowHeight" fill="#fff" stroke="#ccc"
+                                stroke-width="1" />
+                            <foreignObject v-if="seg.width > 20" :x="seg.x + 4" :y="0"
+                                :width="Math.max(seg.width - 8, 0)" :height="monthRowHeight">
                                 <div class="svg-text-ellipsis svg-text-month" xmlns="http://www.w3.org/1999/xhtml">{{
-                                    month.label }}</div>
+                                    seg.label }}</div>
                             </foreignObject>
                         </template>
                     </g>
-                    <!-- days -->
+                    <!-- header bottom row (day/week/hour) -->
                     <g>
-                        <template v-for="(day, i) in days" :key="i">
-                            <rect v-if="day.date.getDay() === 0 || day.date.getDay() === 6" :x="dateToX(day.date)"
-                                :y="monthRowHeight" :width="dayWidthAtDate(day.date)" :height="dayRowHeight"
-                                :fill="weekendColor" stroke="#ccc" stroke-width="1" />
-                            <rect v-else :x="dateToX(day.date)" :y="monthRowHeight" :width="dayWidthAtDate(day.date)"
-                                :height="dayRowHeight" fill="#fff" stroke="#ccc" stroke-width="1" />
-                            <foreignObject :x="dateToX(day.date) + 2" :y="monthRowHeight"
-                                :width="dayWidthAtDate(day.date) - 4" :height="dayRowHeight">
+                        <template v-for="(seg, i) in bottomRowSegments" :key="i">
+                            <rect :x="seg.x" :y="monthRowHeight" :width="seg.width" :height="dayRowHeight" fill="#fff"
+                                stroke="#ccc" stroke-width="1" />
+                            <foreignObject v-if="!hoursMode" :x="seg.x + 2" :y="monthRowHeight"
+                                :width="Math.max(seg.width - 4, 0)" :height="dayRowHeight">
                                 <div class="svg-text-ellipsis svg-text-day" xmlns="http://www.w3.org/1999/xhtml">{{
-                                    day.label }}</div>
+                                    seg.label }}</div>
                             </foreignObject>
                         </template>
                     </g>
@@ -72,7 +71,7 @@
         </div>
 
         <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove"
-            @mouseup="onPanEnd" @mouseleave="onPanEnd" style="grid-column: 2; grid-row: 2;">
+            @mouseup="onPanEnd" @mouseleave="onPanEnd" @wheel.prevent="onWheel" style="grid-column: 2; grid-row: 2;">
             <svg :width="timelineWidth" :height="chartHeight"
                 :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
                 <defs>
@@ -106,10 +105,10 @@
 
                 <!-- vertical day lines -->
                 <g>
-                    <template v-for="(day, i) in days" :key="i">
-                        <line :x1="dateToX(nextDayDate(day.date))" :y1="0" :x2="dateToX(nextDayDate(day.date))"
-                            :y2="chartHeight" stroke="#ddd" stroke-width="1" />
+                    <template v-for="(seg, i) in bottomRowSegments" :key="i">
+                        <line :x1="seg.x" :y1="0" :x2="seg.x" :y2="chartHeight" stroke="#ddd" stroke-width="1" />
                     </template>
+
                 </g>
 
                 <!-- highlighted row-->
@@ -247,7 +246,7 @@
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { scrollX, scrollYMap, panInitialized } from './ganttShared'
+import { scrollX, scrollYMap, panInitialized, zoomX } from './ganttShared'
 import { nextTick } from 'process';
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
@@ -290,7 +289,8 @@ const emit = defineEmits<{
 const weekendColor = "#fff7ce"
 const descriptionColWidth = computed(() => 240);
 const rowHeight = computed(() => props.rowHeight ?? 36)
-const dayWidth = computed(() => props.dayWidth ?? 24)
+const dayWidth = computed(() => (props.dayWidth ?? 24) * zoomX.value)
+
 const barPadding = computed(() => props.barPadding ?? 8)
 const barHeight = computed(() => rowHeight.value - barPadding.value * 2);
 const monthRowHeight = computed(() => 28);
@@ -326,18 +326,19 @@ function dayWidthAtDate(d: Date | string) {
     return dateToX(nd) - dateToX(dt)
 }
 
-function widthForDays(start: Date | string, n: number) {
-    const s = parseDate(start)
-    const nd = new Date(s)
-    nd.setDate(nd.getDate() + n)
-    return dateToX(nd) - dateToX(s)
-}
-
 const days = computed(() => {
-    const arr: { date: Date; x: number; label: string }[] = []
+    const arr: { date: Date; x: number; label: string, labelFull: string }[] = []
     const cur = new Date(startDate.value)
+    // determine visible bounds in pixels (include 1000px margin outside)
+    const rect = scrollCell.value?.getBoundingClientRect()
+    const visibleWidth = rect ? rect.width : (window?.innerWidth ?? 0)
+    const leftBound = Math.max(0, scrollX.value - 4000)
+    const rightBound = scrollX.value + visibleWidth + 4000
     while (cur <= endDate.value) {
-        arr.push({ date: new Date(cur), x: dateToX(cur), label: `${cur.getDate()}` })
+        const x = dateToX(cur)
+        if (x >= leftBound && x <= rightBound) {
+            arr.push({ date: new Date(cur), x, label: `${cur.getDate()}`, labelFull: `${cur.getFullYear()}-${cur.getMonth()}-${cur.getDate()}` })
+        }
         cur.setDate(cur.getDate() + 1)
     }
     return arr
@@ -349,14 +350,89 @@ const timelineWidth = computed(() => {
     return dateToX(endNext)
 })
 
-const months = computed(() => {
-    const map = new Map<string, { x: number; width: number; label: string; startDate: Date }>()
+// helper to group segments for header rows depending on zoom
+function getWeekNumber(dt: Date) {
+    const d = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+const topRowSegments = computed(() => {
+    // zoom > 5 => show days on top row
+    if (zoomX.value > 5) {
+        return days.value.map(d => ({ x: d.x, width: dayWidthAtDate(d.date), label: d.labelFull }))
+    }
+    // zoom < 0.25 => group by year
+    if (zoomX.value < 0.25) {
+        const map = new Map<number, { x: number; width: number; label: string }>()
+        days.value.forEach(d => {
+            const y = d.date.getFullYear()
+            if (!map.has(y)) map.set(y, { x: d.x, width: dayWidthAtDate(d.date), label: `${y}` })
+            else map.get(y)!.width += dayWidthAtDate(d.date)
+        })
+        return Array.from(map.values())
+    }
+    // default: months
+    const map = new Map<string, { x: number; width: number; label: string }>()
     days.value.forEach((d) => {
         const key = `${d.date.getFullYear()}-${d.date.getMonth()}`
-        if (!map.has(key)) map.set(key, { x: d.x, startDate: d.date, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
+        if (!map.has(key)) map.set(key, { x: d.x, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
         else map.get(key)!.width += dayWidthAtDate(d.date)
     })
     return Array.from(map.values())
+})
+
+const hoursMode = computed(() => zoomX.value > 5)
+const showFullHours = computed(() => zoomX.value > 20)
+
+const bottomRowSegments = computed(() => {
+    // zoom < 0.25 => months
+    if (zoomX.value < 0.25) {
+        const map = new Map<string, { x: number; width: number; label: string }>()
+        days.value.forEach(d => {
+            const key = `${d.date.getFullYear()}-${d.date.getMonth()}`
+            if (!map.has(key)) map.set(key, { x: d.x, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
+            else map.get(key)!.width += dayWidthAtDate(d.date)
+        })
+        return Array.from(map.values())
+    }
+    // zoom > 5 => hours
+    if (zoomX.value > 5) {
+        const step = zoomX.value < 20 ? 3 : 1;
+        const segs: { x: number; width: number; label: string }[] = []
+        days.value.forEach(d => {
+            for (let h = 0; h < 24; h += step) {
+                const dt = new Date(d.date)
+                dt.setHours(h, 0, 0, 0)
+                const x = dateToX(dt)
+                const width = dayWidthAtDate(d.date) / 24 * step
+                let label = ''
+                if (showFullHours.value) {
+                    // zoom > 20: show all hours 1..23 (skip 0)
+                    if (h !== 0) label = `${h}`
+                } else {
+                    // zoom > 5: show every 3 hours (3,6,9,...,21), skip 0
+                    if (h % 3 === 0 && h !== 0) label = `${h}`
+                }
+                segs.push({ x, width, label })
+            }
+        })
+        return segs
+    }
+    // zoom < 0.6 => weeks
+    if (zoomX.value < 0.6) {
+        const map = new Map<string, { x: number; width: number; label: string }>()
+        days.value.forEach(d => {
+            const wk = `${d.date.getFullYear()}-${getWeekNumber(d.date)}`
+            if (!map.has(wk)) map.set(wk, { x: d.x, width: dayWidthAtDate(d.date), label: `W${getWeekNumber(d.date)}` })
+            else map.get(wk)!.width += dayWidthAtDate(d.date)
+        })
+        return Array.from(map.values())
+    }
+    // default: days
+    return days.value.map(d => ({ x: d.x, width: dayWidthAtDate(d.date), label: d.label }))
 })
 
 const selectedRowIdsSet = computed(() => new Set((props.selectedRowIds) ?? []));
@@ -491,6 +567,7 @@ function initPan() {
 watch([timelineWidth, panInitialized, scrollCell], initPan)
 
 function _assignClampedScrollX(value: number) {
+    // make sure we cannot scroll outside of the visible range
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         const visibleWidth = rect.width;
@@ -499,6 +576,7 @@ function _assignClampedScrollX(value: number) {
 }
 
 function _assignClampedScrollY(value: number) {
+    // make sure we cannot scroll outside of the visible range
     if (scrollCell.value) {
         const rect = scrollCell.value.getBoundingClientRect();
         let visibleHeight = rect.height;
@@ -588,6 +666,40 @@ function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
     if (!row.scheduleTarget || !first) return false
     return parseDate(first).getTime() <= parseDate(row.scheduleTarget).getTime()
+}
+
+// wheel zoom handler: zoom along x axis only
+function onWheel(e: WheelEvent) {
+    // only act when over timeline areas (handler attached there)
+    e.preventDefault()
+    const target = e.currentTarget as HTMLElement
+    const rect = target.getBoundingClientRect()
+    const offsetX = e.clientX - rect.left // mouse cursor offset to left border
+    const oldZoom = zoomX.value
+    const delta = e.deltaY
+    // scale factor: exponential for smooth zoom
+    const scaleFactor = Math.exp(-delta * 0.001)
+    const newZoom = Math.max(0.1, Math.min(30, oldZoom * scaleFactor))
+    if (newZoom === oldZoom) return
+    const ratio = newZoom / oldZoom
+    // keep the date under cursor fixed by adjusting scrollX
+    const newScroll = (scrollX.value + offsetX) * ratio - offsetX
+    zoomX.value = newZoom
+    _assignClampedScrollX(newScroll)
+}
+
+function resetZoom() {
+    const old = zoomX.value
+    zoomX.value = 1
+    // adjust scroll to keep center focused similarly
+    if (scrollCell.value) {
+        const rect = scrollCell.value.getBoundingClientRect()
+        const center = rect.width / 2
+        const newScroll = (scrollX.value + center) * (1 / old) - center
+        _assignClampedScrollX(newScroll)
+    } else {
+        _assignClampedScrollX(scrollX.value)
+    }
 }
 
 function allocArrow(predId: number, succId: number): string {
@@ -861,5 +973,13 @@ function toggleGroup(id: number) {
 .selected-alloc {
     stroke-width: 2.5 !important;
     filter: drop-shadow(2px 2px 2px #555a)
+}
+
+.corner-buttons {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    align-content: center;
+    height: 100%;
 }
 </style>

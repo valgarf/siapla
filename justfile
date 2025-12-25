@@ -5,6 +5,9 @@ db := 'sqlite:./run-data/test.sqlite'
 default:
     @just --list
 
+# Call this once to initialize the repository at the beginning
+init: install-frontend build-frontend build-backend test
+
 
 [working-directory(".")]
 [positional-arguments]
@@ -71,6 +74,10 @@ build-frontend: quasar-build
 [working-directory(".")]
 build-backend: build-frontend
     cargo build --release -p siapla
+
+[working-directory("./frontend")]
+install-frontend:
+    npm install
 
 serve:
     #!/usr/bin/env bash
