@@ -4,23 +4,14 @@
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" scrollYKey="resources"
     @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
-      <div class="corner-buttons">
-        <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task" />
-        <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add" />
-      </div>
+      <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
+        <q-tooltip>New Task</q-tooltip></q-btn>
+      <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
+        <q-tooltip>New Resource</q-tooltip></q-btn>
     </template>
   </GanttChart>
 </template>
 
-<style scoped>
-.corner-buttons {
-  display: flex;
-  gap: 6px;
-  justify-content: center;
-  align-content: center;
-  height: 100%;
-}
-</style>
 <script setup lang="ts">
 
 import { usePlanStore } from 'src/stores/plan';
