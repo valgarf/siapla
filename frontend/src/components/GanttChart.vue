@@ -250,7 +250,7 @@ import { scrollX, scrollYMap, panInitialized, zoomX } from './ganttShared'
 import { nextTick } from 'process';
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
-type Row = {
+export type Row = {
     id: number;
     name: string;
     designation?: TaskDesignation;

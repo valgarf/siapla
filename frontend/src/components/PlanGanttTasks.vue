@@ -1,10 +1,10 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
-        scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-plan">
+        scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
         <template #corner>
             <q-btn aria-label="Sort Order" flat icon="sort">
-                <SortMenu v-model="sortMenu" :options="sortOptions" @update:options="updateSortOptions" />
+                <SortMenu v-model="sortMenu" :options="taskSortOptions" @update:options="updateSortOptions" />
             </q-btn>
             <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
                 <q-tooltip>New Task</q-tooltip></q-btn>
@@ -16,16 +16,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive } from 'vue';
+import { computed, ref } from 'vue';
 import SortMenu from './SortMenu.vue';
 
-interface SortOption { key: string; label: string; asc: boolean }
+
 import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
+import { taskSortOptions, type SortOption } from './sortOptions'
 
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
@@ -65,16 +66,10 @@ const rowSymbols = computed(() => {
 
 // Build flattened rows for the left list and the Gantt rows structure
 const sortMenu = ref(false);
-const sortOptions = reactive<SortOption[]>([
-    { key: 'name', label: 'Name', asc: true },
-    { key: 'start', label: 'Start', asc: true },
-    { key: 'end', label: 'End', asc: true },
-    { key: 'isBooked', label: 'Is Booked', asc: false },
-    { key: 'effort', label: 'Effort', asc: false }
-]);
+
 function updateSortOptions(newOpts: SortOption[]) {
     // replace reactive array contents to preserve reactivity
-    sortOptions.splice(0, sortOptions.length, ...newOpts);
+    taskSortOptions.splice(0, taskSortOptions.length, ...newOpts);
 }
 
 const rows = computed(() => {
@@ -85,7 +80,22 @@ const rows = computed(() => {
     }
 
     function cmp(a: Task, b: Task) {
-        for (const opt of sortOptions) {
+        for (const opt of taskSortOptions) {
+            if (opt.key === 'isRequirement') {
+                const ab = a.designation == TaskDesignation.Requirement;
+                const bb = b.designation == TaskDesignation.Requirement;
+                if (ab !== bb) return ((ab ? 1 : 0) - (bb ? 1 : 0)) * (opt.asc ? 1 : -1);
+            }
+            if (opt.key === 'isMilestone') {
+                const ab = a.designation == TaskDesignation.Milestone;
+                const bb = b.designation == TaskDesignation.Milestone;
+                if (ab !== bb) return ((ab ? 1 : 0) - (bb ? 1 : 0)) * (opt.asc ? 1 : -1);
+            }
+            if (opt.key === 'isGroup') {
+                const ab = a.designation == TaskDesignation.Group;
+                const bb = b.designation == TaskDesignation.Group;
+                if (ab !== bb) return ((ab ? 1 : 0) - (bb ? 1 : 0)) * (opt.asc ? 1 : -1);
+            }
             if (opt.key === 'name') {
                 const ca = a.title ?? '';
                 const cb = b.title ?? '';

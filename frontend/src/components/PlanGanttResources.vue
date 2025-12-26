@@ -5,7 +5,7 @@
     @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
       <q-btn aria-label="Sort Order" flat icon="sort">
-        <SortMenu v-model="sortMenu" :options="sortOptions" @update:options="updateSortOptions" />
+        <SortMenu v-model="sortMenu" :options="resourceSortOptions" @update:options="updateSortOptions" />
       </q-btn>
       <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
         <q-tooltip>New Task</q-tooltip></q-btn>
@@ -20,12 +20,13 @@
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { useSidebarStore, ResourceSidebarData, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
-import { computed, ref, reactive } from 'vue';
+import { computed, ref } from 'vue';
 import GanttChart from './GanttChart.vue';
+import type { Row } from './GanttChart.vue';
 import { TaskDesignation } from 'src/gql/graphql';
 import SortMenu from './SortMenu.vue';
+import { resourceSortOptions, type SortOption } from './sortOptions'
 
-interface SortOption { key: string; label: string; asc: boolean }
 
 const planStore = usePlanStore();
 const resourceStore = useResourceStore();
@@ -57,16 +58,9 @@ const availability = computed(() => {
 });
 
 const sortMenu = ref(false);
-const sortOptions = reactive<SortOption[]>([
-  { key: 'name', label: 'Name', asc: true },
-  { key: 'added', label: 'Added', asc: true },
-  { key: 'removed', label: 'Removed', asc: false },
-  { key: 'totalHours', label: 'Total Working hours', asc: false },
-  { key: 'earliestStart', label: 'Earliest Task Start', asc: true },
-  { key: 'lastEnd', label: 'Last Task End', asc: true }
-]);
+
 function updateSortOptions(newOpts: SortOption[]) {
-  sortOptions.splice(0, sortOptions.length, ...newOpts);
+  resourceSortOptions.splice(0, resourceSortOptions.length, ...newOpts);
 }
 
 const resourceRows = computed(() => {
@@ -79,11 +73,8 @@ const resourceRows = computed(() => {
     availability: availability.value[r.dbId] ?? []
   }));
 
-  interface AllocationRow { dbId: number; start: string | Date; end: string | Date; task: unknown; allocationType: unknown }
-  interface ResourceRow { id: number; name: string; designation: TaskDesignation; depth: number; allocations: AllocationRow[]; availability: { start: string | Date; end: string | Date }[] }
-
-  function cmp(a: ResourceRow, b: ResourceRow) {
-    for (const opt of sortOptions) {
+  function cmp(a: Row, b: Row) {
+    for (const opt of resourceSortOptions) {
       if (opt.key === 'name') {
         const ca = a.name ?? '';
         const cb = b.name ?? '';
