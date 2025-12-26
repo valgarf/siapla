@@ -442,8 +442,8 @@ function* iterateHidden(rw: RowWrapper): IterableIterator<RowWrapper> {
     if (collapsedGroups.value.has(rw.row.id)) {
         let idx = rw.idx + 1
         let value = rowMap.value.get(props.rows[idx]?.id ?? -1);
-        while (!value?.visible) {
-            yield value!
+        while (value != null && !value.visible) {
+            yield value
             idx += 1
             value = rowMap.value.get(props.rows[idx]?.id ?? -1);
         }

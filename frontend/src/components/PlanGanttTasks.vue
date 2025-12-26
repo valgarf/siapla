@@ -3,9 +3,11 @@
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
         scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
         <template #corner>
-            <q-btn aria-label="Sort Order" flat icon="sort">
-                <SortMenu v-model="sortMenu" :options="taskSortOptions" @update:options="updateSortOptions" />
-            </q-btn>
+            <SortMenu :modelValue="taskSortOptions" @update:modelValue="updateSortOptions">
+                <template #activator="{ toggle }">
+                    <q-btn aria-label="Sort Order" flat icon="sort" @click.stop="toggle" />
+                </template>
+            </SortMenu>
             <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
                 <q-tooltip>New Task</q-tooltip></q-btn>
             <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
@@ -16,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import SortMenu from './SortMenu.vue';
 
 
@@ -65,8 +67,6 @@ const rowSymbols = computed(() => {
 });
 
 // Build flattened rows for the left list and the Gantt rows structure
-const sortMenu = ref(false);
-
 function updateSortOptions(newOpts: SortOption[]) {
     // replace reactive array contents to preserve reactivity
     taskSortOptions.splice(0, taskSortOptions.length, ...newOpts);

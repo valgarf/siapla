@@ -4,9 +4,11 @@
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" scrollYKey="resources"
     @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
-      <q-btn aria-label="Sort Order" flat icon="sort">
-        <SortMenu v-model="sortMenu" :options="resourceSortOptions" @update:options="updateSortOptions" />
-      </q-btn>
+      <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
+        <template #activator="{ toggle }">
+          <q-btn aria-label="Sort Order" flat icon="sort" @click.stop="toggle" />
+        </template>
+      </SortMenu>
       <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">
         <q-tooltip>New Task</q-tooltip></q-btn>
       <q-btn aria-label="New resource" flat @click.stop="onNewResource" icon="person_add">
@@ -20,7 +22,7 @@
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { useSidebarStore, ResourceSidebarData, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import GanttChart from './GanttChart.vue';
 import type { Row } from './GanttChart.vue';
 import { TaskDesignation } from 'src/gql/graphql';
@@ -56,8 +58,6 @@ const availability = computed(() => {
   }
   return out;
 });
-
-const sortMenu = ref(false);
 
 function updateSortOptions(newOpts: SortOption[]) {
   resourceSortOptions.splice(0, resourceSortOptions.length, ...newOpts);
