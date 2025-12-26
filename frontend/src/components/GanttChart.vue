@@ -250,7 +250,7 @@ import { scrollX, scrollYMap, panInitialized, zoomX } from './ganttShared'
 import { nextTick } from 'process';
 
 type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
-type Row = {
+export type Row = {
     id: number;
     name: string;
     designation?: TaskDesignation;
@@ -442,8 +442,8 @@ function* iterateHidden(rw: RowWrapper): IterableIterator<RowWrapper> {
     if (collapsedGroups.value.has(rw.row.id)) {
         let idx = rw.idx + 1
         let value = rowMap.value.get(props.rows[idx]?.id ?? -1);
-        while (!value?.visible) {
-            yield value!
+        while (value != null && !value.visible) {
+            yield value
             idx += 1
             value = rowMap.value.get(props.rows[idx]?.id ?? -1);
         }
@@ -977,7 +977,7 @@ function toggleGroup(id: number) {
 
 .corner-buttons {
     display: flex;
-    gap: 6px;
+    gap: 3px;
     justify-content: center;
     align-content: center;
     height: 100%;
