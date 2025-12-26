@@ -6,7 +6,9 @@
     <template #corner>
       <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
         <template #activator="{ toggle }">
-          <q-btn aria-label="Sort Order" flat icon="sort" @click.stop="toggle" />
+          <q-btn aria-label="Sort Order" flat icon="sort" @click.stop="toggle">
+            <q-tooltip>Sort Order</q-tooltip>
+          </q-btn>
         </template>
       </SortMenu>
       <q-btn aria-label="New task" flat @click.stop="onNewTask" icon="add_task">

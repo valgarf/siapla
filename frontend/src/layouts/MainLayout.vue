@@ -14,8 +14,7 @@
       </q-toolbar>
     </q-header>
 
-    <q-drawer v-model="leftDrawerOpen" show-if-above mini-to-overlay bordered :width="200" :mini="leftDrawerMini"
-      @mouseenter="leftDrawerMini = false" @mouseleave="leftDrawerMini = true" elevated>
+    <q-drawer v-model="leftDrawerOpen" bordered :width="200" :mini="true" elevated>
       <q-list>
         <PageLink v-for="page in pages" :key="page.title" v-bind="page" />
       </q-list>
@@ -116,8 +115,7 @@ const pages: PageLinkProps[] = [
 
 ]
 
-const leftDrawerOpen = ref(false);
-const leftDrawerMini = ref(true);
+const leftDrawerOpen = ref(true);
 
 const sidebarStore = useSidebarStore();
 

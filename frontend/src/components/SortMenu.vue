@@ -12,13 +12,13 @@
         <template #item="{ element, index }">
           <div :key="element.key" class="sort-item">
             <q-item class="drag-handle">
-              <q-item-section avatar>
+              <q-item-section side>
                 <q-icon name="drag_indicator" />
               </q-item-section>
               <q-item-section>
                 <div @click.stop="toggleDir(index)">{{ element.label }}</div>
               </q-item-section>
-              <q-item-section side top>
+              <q-item-section side>
                 <q-icon :name="element.asc ? 'arrow_upward' : 'arrow_downward'" size="16px" />
               </q-item-section>
             </q-item>
