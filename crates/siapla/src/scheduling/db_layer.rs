@@ -127,6 +127,7 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
                 db_id: t.id,
                 title: t.title.clone(),
                 schedule_target: t.schedule_target.map(|dt| dt.naive_utc()).unwrap_or_default(),
+                priority: t.priority as f64,
             }));
             project_objects.milestones.push(Rc::clone(&new_ref));
             Node::Milestone(new_ref.into())

@@ -88,7 +88,7 @@ serve:
     wait
 
 [working-directory("./frontend")]
-generate-frontend-gql:
+generate-frontend-gql: export-schema
     npm run codegen
 
 [working-directory("./crates")]
@@ -107,7 +107,7 @@ generate-holidays-api:
     # original definition (sadly does not match real API perfectly):
     # -i https://openholidaysapi.org/swagger/v1/swagger.json \
                 
-[working-directory("./run-data")]
+[working-directory("./frontend/src/gql")]
 export-schema:
     cargo run -p siapla --bin siapla-export-schema
 

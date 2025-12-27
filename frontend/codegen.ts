@@ -2,7 +2,8 @@ import type { CodegenConfig } from '@graphql-codegen/cli';
 
 const config: CodegenConfig = {
   overwrite: true,
-  schema: 'http://localhost:8880/graphql',
+  // Use local schema file for codegen (avoids requiring running server)
+  schema: 'src/gql/schema.graphql',
   documents: 'src/**/*',
   generates: {
     'src/gql/': {
@@ -25,9 +26,6 @@ const config: CodegenConfig = {
     },
     './graphql.schema.json': {
       plugins: ['introspection'],
-    },
-    'src/gql/schema.graphql': {
-      plugins: ['schema-ast'],
     },
   },
 };
