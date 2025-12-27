@@ -6,7 +6,9 @@ default:
     @just --list
 
 # Call this once to initialize the repository at the beginning
+[working-directory(".")]
 init: install-frontend build-frontend build-backend test
+    mkdir -p run-data
 
 
 [working-directory(".")]
