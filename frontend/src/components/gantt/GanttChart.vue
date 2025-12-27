@@ -248,6 +248,7 @@ import { AllocationType, TaskDesignation } from 'src/gql/graphql';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { scrollX, scrollYMap, panInitialized, zoomX, collapsedGroupsMap } from './ganttShared'
 import { nextTick } from 'process';
+import { formatDate } from 'src/common/datetime';
 
 export type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 export type Row = {
@@ -338,7 +339,7 @@ const days = computed(() => {
     while (cur <= endDate.value) {
         const x = dateToX(cur)
         if (x >= leftBound && x <= rightBound) {
-            arr.push({ date: new Date(cur), x, label: `${cur.getDate()}`, labelFull: `${cur.getFullYear()}-${cur.getMonth()}-${cur.getDate()}` })
+            arr.push({ date: new Date(cur), x, label: `${cur.getDate()}`, labelFull: formatDate(cur) })
         }
         cur.setDate(cur.getDate() + 1)
     }
