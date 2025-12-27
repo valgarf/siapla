@@ -305,11 +305,11 @@ function parseDate(d: string | Date) {
 
 const startDate = computed(() => {
     const d = parseDate(props.start)
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 7);
 })
 const endDate = computed(() => {
     const d = parseDate(props.end)
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
 })
 const msPerDay = 24 * 60 * 60 * 1000
 
