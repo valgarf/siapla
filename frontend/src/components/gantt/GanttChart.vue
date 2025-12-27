@@ -28,8 +28,8 @@
                         <template v-for="(seg, i) in bottomRowSegments" :key="i">
                             <rect :x="seg.x" :y="monthRowHeight" :width="seg.width" :height="dayRowHeight" fill="#fff"
                                 stroke="#ccc" stroke-width="1" />
-                            <foreignObject v-if="!hoursMode" :x="seg.x + 2" :y="monthRowHeight"
-                                :width="Math.max(seg.width - 4, 0)" :height="dayRowHeight">
+                            <foreignObject :x="seg.x + 2" :y="monthRowHeight" :width="Math.max(seg.width - 4, 0)"
+                                :height="dayRowHeight">
                                 <div class="svg-text-ellipsis svg-text-day" xmlns="http://www.w3.org/1999/xhtml">{{
                                     seg.label }}</div>
                             </foreignObject>
@@ -385,16 +385,13 @@ const topRowSegments = computed(() => {
     return Array.from(map.values())
 })
 
-const hoursMode = computed(() => zoomX.value > 5)
-const showFullHours = computed(() => zoomX.value > 20)
-
 const bottomRowSegments = computed(() => {
     // zoom < 0.25 => months
     if (zoomX.value < 0.25) {
         const map = new Map<string, { x: number; width: number; label: string }>()
         days.value.forEach(d => {
             const key = `${d.date.getFullYear()}-${d.date.getMonth()}`
-            if (!map.has(key)) map.set(key, { x: d.x, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })} ${d.date.getFullYear()}` })
+            if (!map.has(key)) map.set(key, { x: d.x, width: dayWidthAtDate(d.date), label: `${d.date.toLocaleString(undefined, { month: 'short' })}` })
             else map.get(key)!.width += dayWidthAtDate(d.date)
         })
         return Array.from(map.values())
@@ -409,14 +406,7 @@ const bottomRowSegments = computed(() => {
                 dt.setHours(h, 0, 0, 0)
                 const x = dateToX(dt)
                 const width = dayWidthAtDate(d.date) / 24 * step
-                let label = ''
-                if (showFullHours.value) {
-                    // zoom > 20: show all hours 1..23 (skip 0)
-                    if (h !== 0) label = `${h}`
-                } else {
-                    // zoom > 5: show every 3 hours (3,6,9,...,21), skip 0
-                    if (h % 3 === 0 && h !== 0) label = `${h}`
-                }
+                const label = `${h}`
                 segs.push({ x, width, label })
             }
         })
