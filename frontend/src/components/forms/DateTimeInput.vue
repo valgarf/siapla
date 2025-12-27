@@ -30,8 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import { date } from 'quasar';
-import { type Ref } from 'vue'
+import { date, debounce } from 'quasar'
+import { type Ref, ref, watch } from 'vue'
 
 interface Props {
   label: string
@@ -43,8 +43,6 @@ const props = withDefaults(defineProps<Props>(), { maxWidth: 300, dense: false }
 
 const model: Ref<Date | null> = defineModel({ required: true })
 
-import { ref, watch } from 'vue'
-import { debounce } from 'quasar'
 
 // local string shown in input; updates to model are debounced
 const localInput = ref('')

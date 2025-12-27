@@ -101,7 +101,7 @@ import { formatDatetime } from 'src/common/datetime';
 import { useSidebarStore } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
-import DateTimeInput from './DateTimeInput.vue';
+import DateTimeInput from '../forms/DateTimeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
 
 const resourceStore = useResourceStore();

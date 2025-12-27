@@ -32,7 +32,7 @@
                     v-model="local_task.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ local_task.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ local_task.designation
-                        }}</q-chip>
+                    }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
                 <q-markdown v-else-if="local_task.description" :src="local_task.description" />
@@ -76,7 +76,7 @@
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                    }}
+                                }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -159,12 +159,12 @@ import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
 import { type Issue, useIssueStore } from 'src/stores/issue';
-import DateTimeInput from './DateTimeInput.vue';
+import DateTimeInput from '../forms/DateTimeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
-import EditableResourceList from './EditableResourceList.vue';
-import EditableTaskList from './EditableTaskList.vue';
-import MarkdownEditor from './MarkdownEditor.vue';
-import TaskChip from './TaskChip.vue';
+import EditableResourceList from '../forms/EditableResourceList.vue';
+import EditableTaskList from '../forms/EditableTaskList.vue';
+import MarkdownEditor from '../forms/MarkdownEditor.vue';
+import TaskChip from '../common/TaskChip.vue';
 import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();

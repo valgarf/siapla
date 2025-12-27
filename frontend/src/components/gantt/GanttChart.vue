@@ -249,7 +249,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { scrollX, scrollYMap, panInitialized, zoomX } from './ganttShared'
 import { nextTick } from 'process';
 
-type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
+export type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
 export type Row = {
     id: number;
     name: string;
@@ -261,8 +261,8 @@ export type Row = {
     availability: Availability[]
     depth: number
 }
-type Availability = { start: string | Date; end: string | Date }
-type Dependency = { predId: number; succId: number }
+export type Availability = { start: string | Date; end: string | Date }
+export type Dependency = { predId: number; succId: number }
 type RowWrapper = { visible: boolean, lastVisibleId: number, visibleIdx: number, idx: number, row: Row };
 interface Props {
     start: string | Date

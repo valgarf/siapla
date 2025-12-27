@@ -1,6 +1,6 @@
 <template>
   <!-- activator slot: parent may provide a button or other control. -->
-  <slot name="activator" :toggle="toggle" :open="open" />
+  <slot name="activator" :toggle="toggle" :open="open" :close="close" />
 
   <q-menu v-model="visible" self="bottom left" anchor="top left">
     <q-card style="min-width: 240px">
@@ -9,14 +9,14 @@
       </q-card-section>
       <q-separator />
       <Draggable v-model="modelOptions" item-key="key" animation="150" handle=".drag-handle" class="draggable-list">
-        <template #item="{ element, index }">
-          <div :key="element.key" class="sort-item">
+        <template #item="{ element }">
+          <div :key="element.key" class="sort-item" @click.stop="element.asc = !element.asc">
             <q-item class="drag-handle">
-              <q-item-section side>
+              <q-item-section side class="drag-indicator">
                 <q-icon name="drag_indicator" />
               </q-item-section>
               <q-item-section>
-                <div @click.stop="toggleDir(index)">{{ element.label }}</div>
+                <div>{{ element.label }}</div>
               </q-item-section>
               <q-item-section side>
                 <q-icon :name="element.asc ? 'arrow_upward' : 'arrow_downward'" size="16px" />
@@ -35,39 +35,26 @@ import Draggable from 'vuedraggable'
 
 interface SortOption { key: string; label: string; asc: boolean }
 
-// internal visibility for the menu; parent does not need to control it
+// visibility is controlled from an activator (e.g. a button) on the outside
 const visible = ref(false)
 function toggle() { visible.value = !visible.value }
 function open() { visible.value = true }
+function close() { visible.value = false }
 
-// proxy the external modelValue through a computed so Draggable mutates it
+// model is just passed through to 'Draggable'
 const modelOptions = defineModel<SortOption[]>({ required: true })
-
-function toggleDir(i: number) {
-  const arr = modelOptions.value?.slice()
-  const existing = arr[i]
-  if (!existing) return
-  arr[i] = { ...existing, asc: !existing.asc }
-  // assign back to trigger setter and emit
-  modelOptions.value = arr
-}
 </script>
 
 <style scoped>
-.sort-list {
-  display: flex;
-  flex-direction: column
-}
-
 .sort-item {
-  cursor: grab
+  cursor: pointer
 }
 
 .sort-item:active {
   cursor: grabbing
 }
 
-.drop-end {
-  height: 8px
+.drag-indicator {
+  cursor: grab
 }
 </style>
