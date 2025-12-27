@@ -246,7 +246,7 @@
 <script setup lang="ts">
 import { AllocationType, TaskDesignation } from 'src/gql/graphql';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { scrollX, scrollYMap, panInitialized, zoomX } from './ganttShared'
+import { scrollX, scrollYMap, panInitialized, zoomX, collapsedGroupsMap } from './ganttShared'
 import { nextTick } from 'process';
 
 export type Allocation = { dbId: number; start: string | Date; end: string | Date; task?: { dbId?: number; title?: string } | null; allocationType: AllocationType | null; final?: boolean }
@@ -277,7 +277,8 @@ interface Props {
     selectedRowIds?: number[]
     // ids of allocations that should be highlighted
     selectedAllocIds?: number[]
-    scrollYKey: string
+    // key used to store state information for, e.g. scrolling or collapsed status
+    dataKey: string
 }
 
 const props = defineProps<Props>()
@@ -439,7 +440,7 @@ const selectedRowIdsSet = computed(() => new Set((props.selectedRowIds) ?? []));
 const selectedAllocIdsSet = computed(() => new Set((props.selectedAllocIds) ?? []));
 
 function* iterateHidden(rw: RowWrapper): IterableIterator<RowWrapper> {
-    if (collapsedGroups.value.has(rw.row.id)) {
+    if (collapsedGroups.value.has(rw.row.id) && rw.row.designation == TaskDesignation.Group) {
         let idx = rw.idx + 1
         let value = rowMap.value.get(props.rows[idx]?.id ?? -1);
         while (value != null && !value.visible) {
@@ -476,9 +477,6 @@ function allocationIsSelected(rw: RowWrapper, alloc: Allocation): boolean {
     return selectedAllocIdsSet.value.has(alloc.dbId)
 }
 
-// internal collapsed groups state (moved from parent)
-const collapsedGroups = ref(new Set<number>())
-
 const rowMap = computed(() => {
     let idx = 0;
     let visibleIdx = 0;
@@ -503,7 +501,7 @@ const rowMap = computed(() => {
             visibleIdx += 1
         }
         out.set(r.id, wrapper);
-        if (collapsedGroups.value.has(r.id)) {
+        if (collapsedGroups.value.has(r.id) && r.designation == TaskDesignation.Group) {
             // we entered a collapsed group. All rows are visible until we leave the group
             lastCollapsed = wrapper;
         }
@@ -522,18 +520,37 @@ const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.v
 const scrollY = computed({
     // getter
     get(): number {
-        let result = scrollYMap.value[props.scrollYKey]
+        let result = scrollYMap.value[props.dataKey]
         if (result == null) {
             result = 0
-            scrollYMap.value[props.scrollYKey] = result
+            scrollYMap.value[props.dataKey] = result
         }
         return result
     },
     // setter
     set(newValue) {
-        scrollYMap.value[props.scrollYKey] = newValue
+        scrollYMap.value[props.dataKey] = newValue
     }
 })
+// internal collapsed groups state 
+const collapsedGroups = computed({
+    // getter
+    get(): Set<number> {
+        let result = collapsedGroupsMap.value[props.dataKey]
+        if (result == null) {
+            result = new Set<number>()
+            collapsedGroupsMap.value[props.dataKey] = result
+        }
+        return result
+    },
+    // setter
+    set(newValue) {
+        collapsedGroupsMap.value[props.dataKey] = newValue
+    }
+})
+
+// const collapsedGroups = ref(new Set<number>())
+
 const isPanning = ref(false)
 let panStartX = 0
 let panStartY = 0

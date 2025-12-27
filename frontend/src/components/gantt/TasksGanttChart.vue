@@ -1,7 +1,7 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
-        :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds"
-        scrollYKey="tasks" @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
+        :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="tasks"
+        @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
         <template #corner>
             <SortMenu :modelValue="taskSortOptions" @update:modelValue="updateSortOptions">
                 <template #activator="{ toggle }">

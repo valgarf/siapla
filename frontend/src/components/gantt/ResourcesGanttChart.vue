@@ -1,7 +1,7 @@
 <template>
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
-    :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" scrollYKey="resources"
+    :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="resources"
     @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
     <template #corner>
       <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
