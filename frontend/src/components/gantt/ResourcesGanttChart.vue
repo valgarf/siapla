@@ -39,11 +39,11 @@ const sidebarStore = useSidebarStore();
 
 const startDay = computed(() => {
   const d = planStore.start;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 7);
 });
 const endDay = computed(() => {
   const d = planStore.end;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
 });
 
 
