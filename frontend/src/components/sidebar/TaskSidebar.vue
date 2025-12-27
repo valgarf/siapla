@@ -32,7 +32,7 @@
                     v-model="local_task.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ local_task.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ local_task.designation
-                    }}</q-chip>
+                        }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
                 <q-markdown v-else-if="local_task.description" :src="local_task.description" />
@@ -59,9 +59,15 @@
                 class="sidebar-section responsive-row">
                 <DateTimeInput v-if="edit" label="Schedule" class="responsive-field"
                     v-model="local_task.scheduleTarget" />
-                <div v-else class="row items-baseline">
+                <q-input v-if="edit" label="Priority" type="number" step="0.01" min="0" class="responsive-field"
+                    v-model.number="local_task.priority" />
+                <div v-if="!edit" class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Schedule:</div>
                     <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
+                </div>
+                <div v-if="!edit" class="row items-baseline">
+                    <div class="text-subtitle2 q-pr-md">Priority:</div>
+                    <div>{{ local_task.priority.toFixed(2) }}</div>
                 </div>
             </section>
 
@@ -76,7 +82,7 @@
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                }}
+                                    }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -172,7 +178,7 @@ const sidebarStore = useSidebarStore();
 const resourceStore = useResourceStore();
 const planStore = usePlanStore();
 
-const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [] };
+const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [], priority: 1.0 };
 const local_task = ref<TaskInput>(local_task_default)
 const edit = ref(local_task.value.dbId == null)
 

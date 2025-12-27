@@ -18,6 +18,7 @@ export interface Task {
   successors: Task[];
   earliestStart: Date | null;
   scheduleTarget: Date | null;
+  priority: number;
   effort: number | null;
   designation: TaskDesignation;
   resourceConstraints: ResourceConstraint[];
@@ -31,6 +32,7 @@ export interface ResourceConstraint {
 
 export interface TaskInput extends Partial<Task> {
   title: string;
+  priority: number;
   description: string;
   designation: TaskDesignation;
 }
@@ -41,6 +43,7 @@ const TASK_QUERY = graphql(`
       dbId
       title
       description
+      priority
       designation
       parent {
         dbId
@@ -90,6 +93,7 @@ function convertQueryResult(query: TasksQuery) {
           title: t.title,
           description: t.description,
           designation: t.designation,
+          priority: t.priority,
           parent: null,
           children: [],
           predecessors: [],

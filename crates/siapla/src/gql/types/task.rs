@@ -54,6 +54,9 @@ impl task::Model {
     fn effort(&self) -> Option<f64> {
         self.effort.map(Into::into)
     }
+    fn priority(&self) -> f64 {
+        self.priority as f64
+    }
     fn designation(&self) -> anyhow::Result<TaskDesignation> {
         Ok(TaskDesignation::from_str(&self.designation)?)
     }
@@ -174,6 +177,7 @@ pub struct TaskSaveInput {
     earliest_start: Nullable<DateTime<Utc>>,
     schedule_target: Nullable<DateTime<Utc>>,
     effort: Nullable<f64>,
+    priority: f64,
     pub predecessors: Option<Vec<i32>>,
     pub successors: Option<Vec<i32>>,
     pub children: Option<Vec<i32>>,
@@ -191,6 +195,7 @@ impl From<TaskSaveInput> for crate::entity::task::ActiveModel {
             earliest_start: nullable_to_av!(value.earliest_start),
             schedule_target: nullable_to_av!(value.schedule_target),
             effort: nullable_to_av!(value.effort.map(|v| v as f32)),
+            priority: ActiveValue::Set(value.priority as f32),
         }
     }
 }
