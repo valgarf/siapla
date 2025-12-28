@@ -2,7 +2,10 @@
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="resources"
-    @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
+    @alloc-click="onAllocClick" @row-click="onResourceClick" @alloc-drag-start="onAllocDragStart"
+    @alloc-drag-move-start="onAllocDragMoveStart" @alloc-drag-move="onAllocDragMove" @alloc-drag-end="onAllocDragEnd"
+    @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
+    key="gantt-resources">
     <template #corner>
       <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
         <template #activator="{ toggle }">
@@ -24,7 +27,7 @@
 import { usePlanStore } from 'src/stores/plan';
 import { useResourceStore } from 'src/stores/resource';
 import { useSidebarStore, ResourceSidebarData, TaskSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import GanttChart from './GanttChart.vue';
 import type { Row } from './GanttChart.vue';
 import { TaskDesignation } from 'src/gql/graphql';
@@ -119,9 +122,9 @@ const resourceRows = computed(() => {
 const selectedRowIds = computed(() => {
   const active = sidebarStore.activeSidebar;
   if (!active || !sidebarStore.isSelected) return [] as number[];
-  // if active sidebar is a resource, highlight that row
-  if (active instanceof ResourceSidebarData) {
-    return [active.resourceId];
+  // show drag handles for the selected task when a task sidebar is active
+  if (active instanceof TaskSidebarData) {
+    return [active.taskId];
   }
   return [] as number[];
 });
@@ -142,10 +145,76 @@ function onResourceClick(rid: number) {
   sidebarStore.toggleSidebar(new ResourceSidebarData(rid));
 }
 
-function onAllocClick(data: { taskId: number | null }) {
-  if (data.taskId != null) {
-    sidebarStore.toggleSidebar(new TaskSidebarData(data.taskId));
+function onAllocClick(evt: { taskId: number | null }) {
+  if (evt.taskId != null) {
+    sidebarStore.toggleSidebar(new TaskSidebarData(evt.taskId));
   }
+}
+
+// handlers for GanttChart emitted events
+const dragging = ref<{ rowId: number | null; allocId: number | null; edge: string | null } | null>(null);
+const dragOriginals = ref(new Map<number, { start: Date; end: Date; grabOffsetMs?: number }>());
+
+function onAllocDragStart(evt: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move' | null; mouse?: MouseEvent }) {
+  dragging.value = { rowId: evt.rowId ?? null, allocId: evt.allocId ?? null, edge: evt.edge ?? null };
+}
+
+function onAllocDragEnd() {
+  // simple finalize: clear drag state
+  dragging.value = null;
+  dragOriginals.value.clear();
+}
+
+function onAllocDragMoveStart(evt: { rowId: number | null; allocId: number | null; mouse?: MouseEvent; date?: Date }) {
+  if (!evt?.allocId) return;
+  const alloc = planStore.allocation(evt.allocId);
+  if (!alloc) return;
+  const start = alloc.start instanceof Date ? alloc.start : new Date(alloc.start);
+  const end = alloc.end instanceof Date ? alloc.end : new Date(alloc.end);
+  const entry: { start: Date; end: Date; grabOffsetMs?: number } = { start, end };
+  if (evt.date && evt.date instanceof Date) {
+    if (evt && (dragging.value?.edge === 'move')) {
+      entry.grabOffsetMs = evt.date.getTime() - start.getTime();
+    }
+  }
+  dragOriginals.value.set(evt.allocId, entry);
+}
+
+async function onAllocDragMove(evt: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move' | null; mouse?: MouseEvent; date?: Date }) {
+  if (!evt?.allocId) return;
+  const orig = dragOriginals.value.get(evt.allocId);
+  const alloc = planStore.allocation(evt.allocId);
+  if (!orig || !alloc) return;
+  if (!evt.date) return;
+  const d = evt.date;
+  let newStart = orig.start;
+  let newEnd = orig.end;
+  if (evt.edge === 'start') {
+    newStart = d;
+  } else if (evt.edge === 'end') {
+    newEnd = d;
+  } else {
+    const duration = orig.end.getTime() - orig.start.getTime();
+    const offset = orig.grabOffsetMs ?? 0;
+    newStart = new Date(d.getTime() - offset);
+    newEnd = new Date(newStart.getTime() + duration);
+  }
+  // persist continuous preview
+  await planStore.saveBooking({ ...alloc, start: newStart, end: newEnd });
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+  if (!payload?.allocId) return;
+  await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+  if (!payload?.allocId) return;
+  await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+  await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
 }
 
 function onNewTask() {

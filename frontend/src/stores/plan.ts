@@ -156,6 +156,42 @@ export const usePlanStore = defineStore('planStore', () => {
     }
   }
 
+  async function splitBooking(dbId?: number | null, gapMs?: number) {
+    if (!dbId) return;
+    const alloc = allocations_map.value.get(dbId);
+    if (!alloc) return;
+    const start = alloc.start instanceof Date ? alloc.start : new Date(alloc.start);
+    const end = alloc.end instanceof Date ? alloc.end : new Date(alloc.end);
+    const total = end.getTime() - start.getTime();
+    const gap = typeof gapMs === 'number' ? gapMs : Math.min(60 * 60 * 1000, Math.max(15 * 60 * 1000, Math.round(total * 0.05)));
+    const half = Math.floor((total - gap) / 2);
+    const firstEnd = new Date(start.getTime() + half);
+    const secondStart = new Date(firstEnd.getTime() + gap);
+    try {
+      // update first (reuse existing dbId)
+      await saveBooking({ ...alloc, end: firstEnd } as Allocation);
+      // create second booking (dbId 0 -> new)
+      const newAlloc: Allocation = { dbId: 0, start: secondStart, end, task: alloc.task, resources: alloc.resources, allocationType: alloc.allocationType, final: !!alloc.final };
+      await saveBooking(newAlloc);
+    } catch (err) {
+      console.warn('Failed to split booking', err);
+    }
+  }
+
+  async function joinBookings(leftAllocId: number, rightAllocId: number) {
+    const left = allocations_map.value.get(leftAllocId);
+    const right = allocations_map.value.get(rightAllocId);
+    if (!left || !right) return;
+    const newStart = left.start instanceof Date ? left.start : new Date(left.start);
+    const newEnd = right.end instanceof Date ? right.end : new Date(right.end);
+    try {
+      await saveBooking({ ...left, start: newStart, end: newEnd } as Allocation);
+      await deleteBooking(right.dbId);
+    } catch (err) {
+      console.warn('Failed to join bookings', err);
+    }
+  }
+
   function bookingsByTask(taskId?: number | null) {
     if (taskId == null) return [] as Allocation[];
     return allocations.value.filter(a => a.task?.dbId === taskId && a.allocationType === AllocationType.Booking);
@@ -308,6 +344,8 @@ export const usePlanStore = defineStore('planStore', () => {
     createBookingFromPlan: (taskId?: number | null) => createBookingFromPlan(taskId),
     saveBooking: (b: Allocation) => saveBooking(b),
     deleteBooking: (dbId?: number | null) => deleteBooking(dbId),
+    splitBooking: (dbId?: number | null, gapMs?: number) => splitBooking(dbId, gapMs),
+    joinBookings: (leftAllocId: number, rightAllocId: number) => joinBookings(leftAllocId, rightAllocId),
     recalculate: () => {
       return mutRecalculate.mutate()
     }

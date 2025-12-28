@@ -1,7 +1,10 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="tasks"
-        @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
+        @alloc-click="onAllocClick" @row-click="onTaskClick" @alloc-drag-start="onAllocDragStart"
+        @alloc-drag-move-start="onAllocDragMoveStart" @alloc-drag-move="onAllocDragMove"
+        @alloc-drag-end="onAllocDragEnd" @delete-booking="onDeleteBooking" @split-booking="onSplitBooking"
+        @join-bookings="onJoinBookings" key="gantt-tasks">
         <template #corner>
             <SortMenu :modelValue="taskSortOptions" @update:modelValue="updateSortOptions">
                 <template #activator="{ toggle }">
@@ -20,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import SortMenu from './SortMenu.vue';
 
 
@@ -46,6 +49,69 @@ function onTaskClick(tid: number | null) {
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
+}
+
+// handlers for GanttChart events
+const dragging = ref<{ rowId: number | null; allocId: number | null; edge: string | null } | null>(null);
+const dragOriginals = ref(new Map<number, { start: Date; end: Date; grabOffsetMs?: number }>())
+
+function onAllocDragStart(evt: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move' | null; mouse?: MouseEvent }) {
+    dragging.value = { rowId: evt.rowId ?? null, allocId: evt.allocId ?? null, edge: evt.edge ?? null };
+}
+
+function onAllocDragEnd() {
+    dragging.value = null;
+}
+
+function onAllocDragMoveStart(evt: { rowId: number | null; allocId: number | null; mouse?: MouseEvent; date?: Date }) {
+    if (!evt?.allocId) return;
+    const alloc = planStore.allocation(evt.allocId);
+    if (!alloc) return;
+    const start = alloc.start instanceof Date ? alloc.start : new Date(alloc.start);
+    const end = alloc.end instanceof Date ? alloc.end : new Date(alloc.end);
+    const entry: { start: Date; end: Date; grabOffsetMs?: number } = { start, end };
+    if (evt.date && evt.date instanceof Date) {
+        if (evt && (dragging.value?.edge === 'move')) {
+            entry.grabOffsetMs = evt.date.getTime() - start.getTime();
+        }
+    }
+    dragOriginals.value.set(evt.allocId, entry);
+}
+
+async function onAllocDragMove(evt: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move' | null; mouse?: MouseEvent; date?: Date }) {
+    if (!evt?.allocId) return;
+    const orig = dragOriginals.value.get(evt.allocId);
+    const alloc = planStore.allocation(evt.allocId);
+    if (!orig || !alloc) return;
+    if (!evt.date) return;
+    const d = evt.date;
+    let newStart = orig.start;
+    let newEnd = orig.end;
+    if (evt.edge === 'start') {
+        newStart = d;
+    } else if (evt.edge === 'end') {
+        newEnd = d;
+    } else {
+        const duration = orig.end.getTime() - orig.start.getTime();
+        const offset = orig.grabOffsetMs ?? 0;
+        newStart = new Date(d.getTime() - offset);
+        newEnd = new Date(newStart.getTime() + duration);
+    }
+    await planStore.saveBooking({ ...alloc, start: newStart, end: newEnd });
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+    if (!payload?.allocId) return;
+    await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+    if (!payload?.allocId) return;
+    await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+    await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
 }
 function onNewTask() {
     sidebarStore.pushSidebar(new NewTaskSidebarData());
