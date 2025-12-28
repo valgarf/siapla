@@ -98,7 +98,7 @@ import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
-import { useSidebarStore } from 'src/stores/sidebar';
+import { useSidebarStore, ResourceSidebarData } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
 import DateTimeInput from '../forms/DateTimeInput.vue';
@@ -286,13 +286,12 @@ async function toggleEdit() {
         saveError.value = err
         if (!err) {
             edit.value = false
-            sidebarStore.setEditing(false)
         }
     }
     else {
         saveError.value = null
         edit.value = true
-        sidebarStore.setEditing(true)
+        if (localResource.value.dbId != null) sidebarStore.startEdit(new ResourceSidebarData(localResource.value.dbId))
     }
 }
 
@@ -302,8 +301,7 @@ function cancelEdit() {
     saveError.value = null;
     edit.value = false;
     // always allow cancel at store level (removes new items)
-    sidebarStore.cancelEdit();
-    sidebarStore.setEditing(false)
+    sidebarStore.discard();
 }
 
 function addVacation() {

@@ -393,13 +393,13 @@ async function toggleEdit() {
         saveError.value = err
         if (!err) {
             edit.value = false
-            sidebarStore.setEditing(false)
         }
     }
     else {
         saveError.value = null
         edit.value = true
-        sidebarStore.setEditing(true)
+        // start editing existing item (if dbId present)
+        if (localTask.value.dbId != null) sidebarStore.startEdit(new TaskSidebarData(localTask.value.dbId))
     }
 }
 
@@ -408,8 +408,7 @@ function cancelEdit() {
     localTask.value = { ...localTaskDefault, ...props.task };
     saveError.value = null;
     edit.value = false;
-    sidebarStore.cancelEdit();
-    sidebarStore.setEditing(false)
+    sidebarStore.discard();
 }
 
 

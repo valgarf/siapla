@@ -53,15 +53,19 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
 
   // sidebar UI state
   const isOpen = ref(false);
-  const isSelected = ref(false);
   const isExpanded = ref(false);
-  // edit mode state: when true, switching sidebars is blocked
-  const isEditing = ref(false);
+  // editing state: reference to the SidebarData being edited (new or existing), null otherwise
+  const currentEditing: Ref<SidebarData | null> = ref(null);
   // UI hint to make save/cancel buttons shake when a blocked action occurs
   const shakeButtons = ref(false);
 
   const activeSidebars = computed(() => stack.value.slice());
-  const activeSidebar = computed(() => stack.value[stack.value.length - 1]);
+  const activeSidebar = computed(() => {
+    if (currentEditing.value != null) {
+      return currentEditing.value
+    }
+    return stack.value[stack.value.length - 1] ?? null
+  });
 
   // NOTE: selection population is moved out of the store (to the caller components).
   // selection population is done by the caller components (PlanGantt*).
@@ -89,52 +93,53 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     return typeof x === 'object' && x !== null && prop in r && typeof r[prop] === 'number';
   }
 
-  function toggleSidebar(sidebar: SidebarData) {
+  // Toggle visibility of a sidebar entry (open/close). If a different sidebar is provided,
+  // open it (push if necessary). If same as active and open -> close.
+  function toggle(sidebar: SidebarData) {
     const last = stack.value[stack.value.length - 1] ?? null;
-    if (isEditing.value && !isSameSidebar(last, sidebar)) {
-      // blocked while editing
+    if (currentEditing.value != null && !isSameSidebar(last, sidebar)) {
+      // we are in edit mode, cannot change sidebar
       triggerShake();
       return;
     }
     if (last != null && isSameSidebar(last, sidebar) && isOpen.value) {
+      // same sidebar, close it
       isOpen.value = false;
-      isSelected.value = false;
+      return;
     }
-    else {
-      pushSidebar(sidebar);
+    // open (and ensure top is this sidebar)
+    // if it's already top, just ensure visible
+    if (last != null && isSameSidebar(last, sidebar)) {
+      isOpen.value = true;
+      return;
     }
+    pushSidebar(sidebar);
   }
   function pushSidebar(sidebar: SidebarData) {
-    // if same as last, do nothing
+    // push only existing items (callers must use createNew for new items)
     const last = stack.value[stack.value.length - 1] ?? null;
-    if (isEditing.value && !isSameSidebar(last, sidebar)) {
-      // blocked while editing
+    if (currentEditing.value != null && !isSameSidebar(last, sidebar)) {
       triggerShake();
       return;
     }
     if (last != null && isSameSidebar(last, sidebar)) {
       isOpen.value = true;
-      isSelected.value = true;
       return;
     }
     // push new top, clear forward history
     stack.value.push(sidebar);
     forwardStack.value = [];
-    // if this is a new item, enter edit mode
-    if (sidebar.constructor.name === 'NewTaskSidebarData' || sidebar.constructor.name === 'NewResourceSidebarData') {
-      isEditing.value = true;
-    }
     // limit stack to 20 entries
     while (stack.value.length > 20) {
       stack.value.shift();
     }
     isOpen.value = true;
-    isSelected.value = true;
   }
 
-  function replaceSidebar(sidebar: SidebarData) {
+  // Replace the active sidebar entry (useful after saving to update id). If no entry, push instead.
+  function replaceTop(sidebar: SidebarData) {
     const last = stack.value[stack.value.length - 1] ?? null;
-    if (isEditing.value && !isSameSidebar(last, sidebar)) {
+    if (currentEditing.value != null && !isSameSidebar(last, sidebar)) {
       triggerShake();
       return;
     }
@@ -144,28 +149,21 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     }
     stack.value[stack.value.length - 1] = sidebar;
     isOpen.value = true;
-    isSelected.value = true;
-    // if replaced with a new item, enter edit mode
-    if (sidebar.constructor.name === 'NewTaskSidebarData' || sidebar.constructor.name === 'NewResourceSidebarData') {
-      isEditing.value = true;
-    }
   }
 
   function popSidebar() {
-    if (isEditing.value) {
-      // popping while editing is blocked; request button shake
+    if (currentEditing.value != null) {
       triggerShake();
       return;
     }
-    if (stack.value.length <= 1) {
+    const popped = stack.value.pop();
+    if (popped != null) {
+      forwardStack.value.push(popped);
+    }
+    if (!stack.value.length) {
       // keep the stack but hide sidebar
       isOpen.value = false;
-      isSelected.value = false;
-      return;
     }
-    const popped = stack.value.pop() as SidebarData;
-    // push into forward stack so next() can restore
-    forwardStack.value.push(popped);
   }
 
   function back() {
@@ -173,7 +171,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   }
 
   function next() {
-    if (isEditing.value) {
+    if (currentEditing.value != null) {
       triggerShake();
       return;
     }
@@ -182,14 +180,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     if (f) {
       stack.value.push(f);
       isOpen.value = true;
-      isSelected.value = true;
     }
-  }
-
-  function closeLayer() {
-    // hide sidebar but keep stack intact
-    isOpen.value = false;
-    isSelected.value = false;
   }
 
   function atFirst(): boolean {
@@ -203,14 +194,12 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   function reset(sidebar: SidebarData | null = null) {
     stack.value = [];
     isOpen.value = false;
-    isSelected.value = false;
-    isEditing.value = false;
+    currentEditing.value = null;
     if (sidebar != null) pushSidebar(sidebar);
   }
 
   function toggleOpen() {
     isOpen.value = !isOpen.value;
-    isSelected.value = isOpen.value;
   }
 
   function toggleExpand() {
@@ -220,25 +209,58 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   function triggerShake() {
     // ensure sidebar is visible when we signal a blocked action
     isOpen.value = true;
-    isSelected.value = true;
     shakeButtons.value = true;
     // clear after animation timeframe
     setTimeout(() => (shakeButtons.value = false), 600);
   }
 
-  // cancel editing: always allowed. If top is a new item, remove it and close sidebar.
-  function cancelEdit() {
-    const active = activeSidebar.value ?? null;
-    isEditing.value = false;
-    // New items should be removed from the stack
-    if (active != null && (active.constructor.name === 'NewTaskSidebarData' || active.constructor.name === 'NewResourceSidebarData')) {
-      // remove top
-      stack.value.pop();
-      // close sidebar
+  // discard current editing (abort). If creating a new item, drop it. If editing existing, just clear editing.
+  function discard() {
+    // if current editing is a new item, just clear it
+    if (currentEditing.value != null && (currentEditing.value.constructor.name === 'NewTaskSidebarData' || currentEditing.value.constructor.name === 'NewResourceSidebarData')) {
+      currentEditing.value = null;
+      // do not push anything; keep stack untouched
       isOpen.value = false;
-      isSelected.value = false;
-      // clear forward history
       forwardStack.value = [];
+      return;
+    }
+    currentEditing.value = null;
+  }
+
+  // start editing an existing or new SidebarData
+  function startEdit(sidebar: SidebarData | null) {
+    if (currentEditing.value != null) {
+      triggerShake();
+      return;
+    }
+    currentEditing.value = sidebar;
+    // ensure sidebar visible
+    isOpen.value = true;
+  }
+
+  // create new item: alias for starting edit of a new SidebarData
+  function createNew(sidebar: SidebarData) {
+    startEdit(sidebar);
+  }
+
+  // save editing: end editing. If a savedSidebar is provided (e.g. new item got an id), push/replace it on the stack.
+  function save(savedSidebar: SidebarData) {
+    currentEditing.value = null;
+    // if top is same, replace, otherwise push
+    const last = stack.value[stack.value.length - 1] ?? null;
+    if (!isSameSidebar(last, savedSidebar)) {
+      pushSidebar(savedSidebar);
+    }
+  }
+
+  // delete all stack entries matching the provided sidebar (by id). End editing and close sidebar if stack empty.
+  function deleteSidebar(sidebar: SidebarData) {
+    // remove matching entries
+    stack.value = stack.value.filter((s) => !isSameSidebar(s, sidebar));
+    // end any editing
+    currentEditing.value = null;
+    if (!stack.value.length) {
+      isOpen.value = false;
     }
   }
 
@@ -248,26 +270,29 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     activeSidebars,
     activeSidebar,
     isOpen,
-    isSelected,
     isExpanded,
-    // actions (keeps previous names for compatibility)
+    // actions (keeps previous names for compatibility where reasonable)
     pushSidebar,
-    toggleSidebar,
+    replaceTop,
+    toggle,
     back,
     next,
-    closeLayer,
     popSidebar,
-    replaceSidebar,
     atFirst,
     atLast,
     reset,
-    // new actions
+    // visibility
     toggleOpen,
     toggleExpand,
+    createNew,
     // edit-mode controls
-    isEditing,
-    setEditing: (v: boolean) => (isEditing.value = v),
-    cancelEdit,
+    currentEditing,
+    startEdit,
+    save,
+    discard,
+    // deletion
+    deleteSidebar,
+    // misc
     shakeButtons,
     triggerShake,
   };

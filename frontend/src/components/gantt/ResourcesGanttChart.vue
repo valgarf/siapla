@@ -118,7 +118,7 @@ const resourceRows = computed(() => {
 // compute selections from sidebar
 const selectedRowIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
   // if active sidebar is a resource, highlight that row
   if (active instanceof ResourceSidebarData) {
     return [active.resourceId];
@@ -128,7 +128,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
   // if active sidebar is a task, highlight allocations for that task
   if (active instanceof TaskSidebarData) {
     const taskId = active.taskId;
@@ -139,21 +139,21 @@ const selectedAllocIds = computed(() => {
 
 
 function onResourceClick(rid: number) {
-  sidebarStore.toggleSidebar(new ResourceSidebarData(rid));
+  sidebarStore.toggle(new ResourceSidebarData(rid));
 }
 
 function onAllocClick(data: { taskId: number | null }) {
   if (data.taskId != null) {
-    sidebarStore.toggleSidebar(new TaskSidebarData(data.taskId));
+    sidebarStore.toggle(new TaskSidebarData(data.taskId));
   }
 }
 
 function onNewTask() {
-  sidebarStore.pushSidebar(new NewTaskSidebarData());
+  sidebarStore.createNew(new NewTaskSidebarData());
 }
 
 function onNewResource() {
-  sidebarStore.pushSidebar(new NewResourceSidebarData());
+  sidebarStore.createNew(new NewResourceSidebarData());
 }
 
 </script>
