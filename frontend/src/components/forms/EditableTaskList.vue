@@ -1,24 +1,24 @@
 <template>
-    <q-select v-if="edit" filled v-model="select_model" multiple :options="select_possible" use-chips stack-label
-        :label="name" />
-    <div v-else-if="model.length" class="col">
-        <div class="text-subtitle2">{{ name }}</div>
+    <q-select v-if="edit" filled v-model="selectModel" multiple :options="selectPossible" use-chips stack-label
+        :label="label" />
+    <div v-else-if="model?.length" class="col">
+        <div class="text-subtitle2">{{ label }}</div>
         <TaskChip v-for="task in model" :key="task.dbId" :task="task" />
     </div>
 </template>
 
 <script setup lang="ts">
 import { useTaskStore, type Task } from 'src/stores/task';
-import { computed, type Ref } from 'vue';
+import { computed } from 'vue';
 import TaskChip from '../common/TaskChip.vue';
 
 interface Props {
-    name: string;
+    label?: string;
     edit: boolean;
     possible: Task[];
 };
 const props = withDefaults(defineProps<Props>(), {});
-const model: Ref<Task[]> = defineModel({ required: true })
+const model = defineModel<Task[] | undefined>({ required: true })
 
 const taskStore = useTaskStore();
 
@@ -29,22 +29,22 @@ interface SelectOpt {
     value: number,
 }
 
-function to_select_opt(t: Task): SelectOpt {
+function toSelectOpt(t: Task): SelectOpt {
     return { label: t.title, value: t.dbId }
 }
-function from_select_opt(t: SelectOpt): Task | undefined {
+function fromSelectOpt(t: SelectOpt): Task | undefined {
     return taskStore.task(t.value)
 }
 
-const select_model = computed({
+const selectModel = computed({
     get() {
-        return model.value.map(to_select_opt) || []
+        return (model.value ?? []).map(toSelectOpt) || []
     },
     set(value: SelectOpt[]) {
-        model.value = value.map(from_select_opt).filter((v: Task | undefined) => v != undefined)
+        model.value = value.map(fromSelectOpt).filter((v: Task | undefined) => v != undefined)
     }
 })
-const select_possible = computed(() => { return props.possible.map(to_select_opt) })
+const selectPossible = computed(() => { return props.possible.map(toSelectOpt) })
 
 
 

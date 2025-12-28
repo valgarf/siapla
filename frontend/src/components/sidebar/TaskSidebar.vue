@@ -4,7 +4,7 @@
             <div class="col">
                 <q-breadcrumbs>
                     <q-breadcrumbs-el disable label="Tasks" />
-                    <q-breadcrumbs-el v-for="p in parents" :key="p.dbId" :label="p.title" :disable="edit"
+                    <q-breadcrumbs-el v-for="p in recursiveParents" :key="p.dbId" :label="p.title" :disable="edit"
                         class="clickable" @click="!edit && sidebarStore.pushSidebar(new TaskSidebarData(p.dbId))" />
                     <q-breadcrumbs-el disable label="" />
                 </q-breadcrumbs>
@@ -32,7 +32,7 @@
                     v-model="local_task.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ local_task.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ local_task.designation
-                        }}</q-chip>
+                    }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
                 <q-markdown v-else-if="local_task.description" :src="local_task.description" />
@@ -82,7 +82,7 @@
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                    }}
+                                }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -106,15 +106,15 @@
                 </div>
             </section>
             <section class="sidebar-section column q-gutter-xs">
-                <EditableTaskList v-model="local_task.predecessors" name="predecessors" :possible="possiblePredecessors"
+                <EditableTaskList v-model="local_task.predecessors" label="predecessors"
+                    :possible="possiblePredecessors"
                     v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
-                <EditableTaskList v-model="local_task.successors" name="successors" :possible="possibleSuccessors"
+                <EditableTaskList v-model="local_task.successors" label="successors" :possible="possibleSuccessors"
                     v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
-                <q-select filled v-show="edit" v-model="parent" :options="possibleParents" use-chips stack-label
-                    label="parent" class="responsive-field" />
-                <EditableTaskList v-model="local_task.children" name="children" :possible="possibleChildren"
+                <TaskSelect v-show="edit" v-model="local_task.parent" :possible="possibleParents" label="parent" />
+                <EditableTaskList v-model="local_task.children" label="children" :possible="possibleChildren"
                     v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
                 <div class="col" v-show="effective_requirements.length > 0">
@@ -171,6 +171,7 @@ import EditableResourceList from '../forms/EditableResourceList.vue';
 import EditableTaskList from '../forms/EditableTaskList.vue';
 import MarkdownEditor from '../forms/MarkdownEditor.vue';
 import TaskChip from '../common/TaskChip.vue';
+import TaskSelect from '../forms/TaskSelect.vue';
 import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();
@@ -197,7 +198,7 @@ watchEffect(() => {
 
 
 
-const parents = computed(() => {
+const recursiveParents = computed(() => {
     const parents = [];
     let parent = local_task.value.parent;
     while (parent != null && parent.dbId != local_task.value.dbId) {
@@ -207,17 +208,25 @@ const parents = computed(() => {
     return parents.reverse()
 })
 
+function _sort_by_title(t1: Task, t2: Task): number {
+    return t1.title.localeCompare(t2.title, undefined, { sensitivity: "accent" })
+}
+
 const possiblePredecessors = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Milestone)
+    const excludeIds = new Set(recursiveSuccessors.value.map((t) => t.dbId))
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Milestone && !excludeIds.has(t.dbId)).sort(_sort_by_title)
 })
 const possibleSuccessors = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Requirement)
+    const excludeIds = new Set(recursivePredecessors.value.map((t) => t.dbId))
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Requirement && !excludeIds.has(t.dbId)).sort(_sort_by_title)
+})
+const possibleParents = computed(() => {
+    const excludeIds = new Set(recursiveChildren.value.map((t) => t.dbId))
+    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation == TaskDesignation.Group && !excludeIds.has(t.dbId)).sort(_sort_by_title)
 })
 const possibleChildren = computed(() => {
-    return taskStore.tasks.filter((t) => {
-        const parent_ids = parents.value.map((p) => p.dbId);
-        return !parent_ids.includes(t.dbId) && local_task.value.dbId != t.dbId
-    })
+    const excludeIds = recursiveParents.value.map((p) => p.dbId);
+    return taskStore.tasks.filter((t) => local_task.value.dbId != t.dbId && !excludeIds.includes(t.dbId)).sort(_sort_by_title)
 })
 
 const resourceConstraints = computed(() => {
@@ -234,29 +243,19 @@ const resourceConstraints = computed(() => {
     }
 })
 
-// This is a not so nice workaround to get select to work. 
-// If we use actual tasks in the model, we get recursion errors, so we only provide the ids.
-interface SelectOpt {
-    label: string,
-    value: number,
-}
-function to_select_opt(t: Task): SelectOpt {
-    return { label: t.title, value: t.dbId }
-}
-function from_select_opt(t: SelectOpt): Task | undefined {
-    return taskStore.task(t.value)
-}
-
-const possibleParents = computed(() => {
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation == TaskDesignation.Group).map(to_select_opt)
+const recursiveChildren = computed(() => {
+    const result = Array.from(_get_children(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    return result
 })
-const parent = computed({
-    get() {
-        return local_task.value.parent != null ? to_select_opt(local_task.value.parent) : null
-    },
-    set(value) {
-        local_task.value.parent = value != null ? from_select_opt(value) ?? null : null
-    }
+
+const recursivePredecessors = computed(() => {
+    const result = Array.from(_get_recursive_predecessors(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    return result
+})
+
+const recursiveSuccessors = computed(() => {
+    const result = Array.from(_get_recursive_successors(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    return result
 })
 
 function _get_milestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
@@ -276,6 +275,78 @@ function _get_milestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
     }
     for (const suc of task.successors ?? []) {
         result = result.union(_get_milestones(suc, seen))
+    }
+    return result
+}
+
+function _get_children(task: Partial<Task>, seen: Set<number>): Set<Task> {
+    let result: Set<Task> = new Set([])
+    if (task.dbId) {
+        if (seen.has(task.dbId)) {
+            return result;
+        }
+        seen.add(task.dbId)
+    }
+    for (const ch of task.children ?? []) {
+        result = result.union(_get_children(ch, seen))
+        if (ch.dbId != null) {
+            const store_task = taskStore.task(ch.dbId)
+            if (store_task != null) { result.add(store_task) }
+        }
+    }
+    return result
+}
+
+function _get_recursive_predecessors(task: Partial<Task>, seen: Set<number>): Set<Task> {
+    let result: Set<Task> = new Set([])
+    if (task.dbId) {
+        if (seen.has(task.dbId)) {
+            return result;
+        }
+        seen.add(task.dbId)
+    }
+    for (const pre of task.predecessors ?? []) {
+        // Recurse into the predecessor itself
+        result = result.union(_get_recursive_predecessors(pre, seen))
+        // If the predecessor is a group, include all its children and their recursive predecessors
+        if (pre.designation == TaskDesignation.Group) {
+            for (const ch of pre.children ?? []) {
+                result.add(ch)
+                result = result.union(_get_recursive_predecessors(ch, seen))
+            }
+        }
+        // Finally add the predecessor itself
+        if (pre.dbId != null) {
+            const store_task = taskStore.task(pre.dbId)
+            if (store_task != null) { result.add(store_task) }
+        }
+    }
+    return result
+}
+
+function _get_recursive_successors(task: Partial<Task>, seen: Set<number>): Set<Task> {
+    let result: Set<Task> = new Set([])
+    if (task.dbId) {
+        if (seen.has(task.dbId)) {
+            return result;
+        }
+        seen.add(task.dbId)
+    }
+    for (const suc of task.successors ?? []) {
+        // Recurse into the successor itself
+        result = result.union(_get_recursive_successors(suc, seen))
+        // If the successor is a group, include all its children and their recursive successors
+        if (suc.designation == TaskDesignation.Group) {
+            for (const ch of suc.children ?? []) {
+                result = result.union(_get_recursive_successors(ch, seen))
+                result.add(ch)
+            }
+        }
+        // Finally add the successor itself
+        if (suc.dbId != null) {
+            const store_task = taskStore.task(suc.dbId)
+            if (store_task != null) { result.add(store_task) }
+        }
     }
     return result
 }
