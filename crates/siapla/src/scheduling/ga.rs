@@ -38,10 +38,10 @@ pub struct GASettings {
     pub prob_mutate_order: f64,
     /// probability for creating a crossover point at any given index between tasks
     pub prob_crossover_point: f64,
-    /// slopes for cost function: (low, medium, high) before target
-    pub cost_before: [f64; 3],
-    /// slopes for cost function: (low, medium, high) after target
-    pub cost_after: [f64; 3],
+    /// slope multiplier for cost function before target (base value)
+    pub cost_before: f64,
+    /// slope multiplier for cost function after target (base value)
+    pub cost_after: f64,
 }
 
 impl Default for GASettings {
@@ -57,8 +57,8 @@ impl Default for GASettings {
             prob_mutate_order: 0.2,
             prob_crossover_point: 0.3,
 
-            cost_before: [-0.2, -0.4, -0.6],
-            cost_after: [0.2, 0.4, 0.6],
+            cost_before: -0.4,
+            cost_after: 0.4,
         }
     }
 }
@@ -143,25 +143,24 @@ pub fn milestone_cost(
     plan: &Plan,
     milestone: &Milestone,
 ) -> f64 {
-    // since no priority metadata exists, use medium priority index = 1
-    let pri_idx = 1usize;
+    let pri_factor = milestone.priority.max(0.0);
     let day = 3600.0 * 24.0;
     if let Some(fulfilled_milestone) = plan.fulfilled_milestones.get(&milestone.db_id) {
         let diff = fulfilled_milestone.date - milestone.schedule_target;
         let days = diff.as_seconds_f64() / day;
         if days < 0.0 {
             // finished before target -> negative cost
-            (days.abs() + 1.0).ln() * settings.cost_before[pri_idx]
+            (days.abs() + 1.0).ln() * settings.cost_before * pri_factor
         } else {
             // finished after -> positive cost
-            (days.powi(2) + days) * settings.cost_after[pri_idx]
+            (days.powi(2) + days) * settings.cost_after * pri_factor
         }
     } else {
         // milestone not fulfilled: penalize as if finished at calculation_end + (end - start)
         let diff = project.calculation_end - milestone.schedule_target;
         let project_length = project.calculation_end - project.start;
         let days = (diff.as_seconds_f64() + project_length.as_seconds_f64()) / day;
-        (days.powi(2) + days) * settings.cost_after[pri_idx]
+        (days.powi(2) + days) * settings.cost_after * pri_factor
     }
 }
 
@@ -180,11 +179,6 @@ pub fn cost_function(project: &Project, settings: &GASettings, ind: &Individual)
 // c*sqrt(t+delta) -> c * 0.5 *(t+delta)**3/2
 
 /// Run the genetic algorithm and return the best found individual.
-///
-/// NOTE: The project model currently does not contain per-milestone priority metadata.
-/// As a pragmatic default we treat all milestones as 'medium' priority. If you later
-/// add priority information to milestones, the cost function here should be adapted to
-/// read it and pick the appropriate slope index.
 pub fn run_ga(project: &Project, settings: &GASettings) -> Individual {
     let start_time = Instant::now();
     let mut rng = rand::rng();
@@ -598,23 +592,33 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
         if let Node::Milestone(m_rc) = project.g.node_weight(nidx).expect("node must exist") {
             let milestone = m_rc.borrow();
             // collect predecessor task ids
-            let pred_task_ids: Vec<i32> = project
+            let pred_tasks: Vec<Rc<RefCell<Task>>> = project
                 .g
                 .neighbors_directed(nidx, Direction::Incoming)
                 .filter_map(|pidx| match project.g.node_weight(pidx) {
-                    Some(Node::Task(t)) => Some(t.borrow().db_id),
+                    Some(Node::Task(t)) => Some(Rc::clone(t)),
                     _ => None,
                 })
                 .collect();
 
-            if pred_task_ids.is_empty() {
+            if pred_tasks.is_empty() {
                 continue;
             }
 
             let mut max_end: Option<NaiveDateTime> = None;
             let mut all_assigned = true;
-            for tid in pred_task_ids.iter() {
-                if let Some(assign_map) = plan.assignments.get(tid) {
+            for t in pred_tasks.iter() {
+                let borrowd_task = t.borrow();
+                let tid = borrowd_task.db_id;
+                let booked_finishes =
+                    if borrowd_task.booked_final { borrowd_task.booked_until } else { None };
+                drop(borrowd_task);
+                if let Some(finished_at) = booked_finishes {
+                    max_end = match max_end {
+                        None => Some(finished_at),
+                        Some(prev) => Some(std::cmp::max(prev, finished_at)),
+                    };
+                } else if let Some(assign_map) = plan.assignments.get(&tid) {
                     // flatten the assign_map into an iterator of end timestamps and take the max
                     let task_max_end = itertools::max(
                         assign_map

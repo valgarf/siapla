@@ -6,3 +6,10 @@ export function formatDatetime(dt: Date | null | undefined): string {
   }
   return date.formatDate(dt, 'YYYY-MM-DD HH:mm');
 }
+
+export function formatDate(dt: Date | null | undefined): string {
+  if (dt == null) {
+    return '-';
+  }
+  return date.formatDate(dt, 'YYYY-MM-DD');
+}

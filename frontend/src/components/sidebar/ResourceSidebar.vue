@@ -1,90 +1,95 @@
 <template>
-    <DialogLayout :dialogLayer="dialogLayer">
+    <SidebarLayout>
         <template #toolbar>
             <div class="col"></div>
             <q-btn flat @click="toggleEdit()" :loading="resourceStore.saving" color="primary"
                 :disable="resourceStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
                     : null }}
             </q-btn>
+            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
             <q-btn flat @click="deleteResource()" :loading="resourceStore.deleting" color="negative" icon="delete"
                 :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
         </template>
         <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
-        <q-card-section>
-            <q-input v-if="edit" outlined placeholder="Name" class="text-h5" v-model="localResource.name" />
-            <div v-else class="text-h5">{{ localResource.name }}</div>
-        </q-card-section>
 
-        <q-card-section>
-            <DateTimeInput v-if="edit" label="Added" v-model="localResource.added" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Added:</div>
-                <div>{{ formatDatetime(localResource.added) }}</div>
-            </div>
-        </q-card-section>
-        <q-card-section>
-            <DateTimeInput v-if="edit" label="Removed" v-model="localResource.removed" />
-            <div v-else class="row items-baseline">
-                <div class="text-subtitle2 q-pr-md">Removed:</div>
-                <div>{{ formatDatetime(localResource.removed) }}</div>
-            </div>
-        </q-card-section>
+        <div class="sidebar-content">
 
-        <q-card-section>
-            <div class="text-subtitle2 q-pb-sm">Holiday Calendar</div>
-            <div v-if="edit" class="q-gutter-y-md">
-                <q-select v-model="selectedCountry" :options="countries" option-label="name" option-value="isocode"
-                    label="Country" outlined dense emit-value map-options clearable class="q-mb-md" />
-                <q-select v-if="regions.length > 0" v-model="selectedRegion" :options="regions" option-label="name"
-                    option-value="isocode" label="Region" outlined dense emit-value map-options clearable
-                    class="q-mb-md" />
-            </div>
-            <div v-else class="row items-baseline">
-                <div>{{ localResource.holiday?.name || '<No holiday calendar selected>' }}</div>
-            </div>
-        </q-card-section>
+            <section class="sidebar-section responsive-row">
+                <q-input v-if="edit" outlined placeholder="Name" class="text-h5 responsive-field"
+                    v-model="localResource.name" />
+                <div v-else class="text-h5">{{ localResource.name }}</div>
+            </section>
 
-        <q-card-section>
-            <div class="text-subtitle2 q-pb-sm">Working Hours per day:</div>
-            <div v-if="edit" class="row q-col-gutter-md">
-                <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']"
-                    :key="day + '-edit'" class="col-12 col-sm-6">
-                    <q-input :label="day" type="number" min="0" max="24" step="0.5"
-                        v-model.number="localResource.availability[day.toLowerCase().substring(0, 2) as keyof Availability]"
-                        dense outlined />
+            <section class="sidebar-section responsive-row">
+                <DateTimeInput v-if="edit" label="Added" class="responsive-field" v-model="localResource.added" />
+                <div v-else class="row items-baseline responsive-field">
+                    <div class="text-subtitle2 q-pr-md">Added:</div>
+                    <div>{{ formatDatetime(localResource.added) }}</div>
                 </div>
-            </div>
-            <div v-else>
-                <div v-for="([days, hours], index) in groupedWorkingHours" :key="index"
-                    class="row items-center q-mb-xs">
-                    <div class="col-4 text-body2">
-                        {{ formatDayRange(days) }}
+                <DateTimeInput v-if="edit" label="Removed" class="responsive-field" v-model="localResource.removed" />
+                <div v-else class="row items-baseline responsive-field">
+                    <div class="text-subtitle2 q-pr-md">Removed:</div>
+                    <div>{{ formatDatetime(localResource.removed) }}</div>
+                </div>
+            </section>
+
+            <section class="sidebar-section">
+                <div class="text-subtitle2 q-pb-sm">Holiday Calendar</div>
+                <div v-if="edit" class="q-gutter-y-md responsive-row">
+                    <q-select v-model="selectedCountry" :options="countries" option-label="name" option-value="isocode"
+                        label="Country" outlined dense emit-value map-options clearable
+                        class="q-mb-md responsive-field" />
+                    <q-select v-if="regions.length > 0" v-model="selectedRegion" :options="regions" option-label="name"
+                        option-value="isocode" label="Region" outlined dense emit-value map-options clearable
+                        class="q-mb-md responsive-field" />
+                </div>
+                <div v-else class="row items-baseline">
+                    <div>{{ localResource.holiday?.name || '<No holiday calendar selected>' }}</div>
+                </div>
+            </section>
+
+            <section class="sidebar-section">
+                <div class="text-subtitle2 q-pb-sm">Working Hours per day:</div>
+                <div v-if="edit" class="working-hours-grid">
+                    <div v-for="day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']"
+                        :key="day + '-edit'" class="working-day">
+                        <q-input :label="day" type="number" min="0" max="24" step="0.5"
+                            v-model.number="localResource.availability[day.toLowerCase().substring(0, 2) as keyof Availability]"
+                            dense outlined class="responsive-field" />
                     </div>
-                    <div class="col-2">{{ hours }}h</div>
                 </div>
-            </div>
-        </q-card-section>
+                <div v-else>
+                    <div v-for="([days, hours], index) in groupedWorkingHours" :key="index"
+                        class="row items-center q-mb-xs">
+                        <div class="col-4 text-body2">
+                            {{ formatDayRange(days) }}
+                        </div>
+                        <div class="col-2">{{ hours }}h</div>
+                    </div>
+                </div>
+            </section>
 
-        <q-card-section>
-            <div class="text-subtitle2 q-pb-sm">Vacations</div>
-            <div v-if="edit" class="q-gutter-y-md">
-                <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-edit'"
-                    class="row items-center q-gutter-sm">
-                    <DateTimeInput v-model="vacation.from" label="From" outlined dense class="col" />
-                    <DateTimeInput v-model="vacation.until" label="Until" outlined dense class="col" />
-                    <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
+            <section class="sidebar-section">
+                <div class="text-subtitle2 q-pb-sm">Vacations</div>
+                <div v-if="edit" class="q-gutter-y-md">
+                    <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-edit'"
+                        class="row items-center q-gutter-sm">
+                        <DateTimeInput v-model="vacation.from" label="From" outlined class="col responsive-field" />
+                        <DateTimeInput v-model="vacation.until" label="Until" outlined class="col responsive-field" />
+                        <q-btn flat round color="negative" icon="delete" @click="removeVacation(index)" />
+                    </div>
+                    <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
                 </div>
-                <q-btn @click="addVacation" icon="add" label="Add Vacation" color="primary" flat />
-            </div>
-            <div v-else>
-                <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-show'"
-                    class="q-py-xs">
-                    {{ formatDatetime(vacation.from) }} - {{ formatDatetime(vacation.until) }}
+                <div v-else>
+                    <div v-for="(vacation, index) in localResource.vacations" :key="index + '-vacation-show'"
+                        class="q-py-xs">
+                        {{ formatDatetime(vacation.from) }} - {{ formatDatetime(vacation.until) }}
+                    </div>
+                    <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
                 </div>
-                <div v-if="localResource.vacations.length == 0">No vacations scheduled</div>
-            </div>
-        </q-card-section>
-    </DialogLayout>
+            </section>
+        </div>
+    </SidebarLayout>
 </template>
 
 
@@ -93,14 +98,14 @@ import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
-import { useDialogStore } from 'src/stores/dialog';
+import { useSidebarStore } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
-import DateTimeInput from './DateTimeInput.vue';
-import DialogLayout from './DialogLayout.vue';
+import DateTimeInput from '../forms/DateTimeInput.vue';
+import SidebarLayout from './SidebarLayout.vue';
 
 const resourceStore = useResourceStore();
-const dialogStore = useDialogStore();
+const sidebarStore = useSidebarStore();
 
 const groupedWorkingHours = computed(() => {
     if (!localResource.value) return [];
@@ -250,7 +255,6 @@ onRegionsResult((result) => {
 // holiday logic end
 
 interface Props {
-    dialogLayer: number;
     resource: ResourceInput;
 };
 
@@ -286,6 +290,12 @@ async function toggleEdit() {
         saveError.value = null
         edit.value = true
     }
+}
+
+function cancelEdit() {
+    localResource.value = { ...localResourceDefault, ...props.resource };
+    saveError.value = null;
+    edit.value = false;
 }
 
 function addVacation() {
@@ -324,7 +334,7 @@ async function save(): Promise<string | null> {
 async function deleteResource() {
     const resourceId = localResource.value.dbId
     if (resourceId == null) {
-        dialogStore.popDialog()
+        sidebarStore.popSidebar()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {
@@ -344,3 +354,48 @@ async function deleteResource() {
 }
 
 </script>
+
+<style scoped>
+.sidebar-content {
+    display: flex;
+    flex-flow: column nowrap;
+    gap: 0px;
+    align-items: stretch;
+}
+
+.sidebar-section {
+    padding: 12px 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.responsive-field {
+    width: 100%;
+    max-width: 520px;
+    box-sizing: border-box;
+}
+
+.responsive-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.working-hours-grid {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.working-day {
+    flex: 0 0 96px;
+}
+
+.bookings-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+</style>

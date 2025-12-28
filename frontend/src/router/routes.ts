@@ -4,26 +4,13 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
-    children: [{ path: '', component: () => import('pages/PlanTasksPage.vue') }],
+    children: [{ path: '', component: () => import('pages/TasksPage.vue') }],
   },
   {
     path: '/resources',
     component: () => import('layouts/MainLayout.vue'),
-    children: [{ path: '', component: () => import('pages/PlanResourcesPage.vue') }],
+    children: [{ path: '', component: () => import('pages/ResourcesPage.vue') }],
   },
-  // {
-  //   path: '/tasks',
-  //   component: () => import('layouts/MainLayout.vue'),
-  //   children: [{ path: '', component: () => import('pages/TasksPage.vue') }],
-  // },
-  // {
-  //   path: '/resources',
-  //   component: () => import('layouts/MainLayout.vue'),
-  //   children: [{ path: '', component: () => import('pages/ResourcesPage.vue') }],
-  // },
-
-  // Always leave this as last one,
-  // but you can also remove it
   {
     path: '/:catchAll(.*)*',
     component: () => import('pages/ErrorNotFound.vue'),

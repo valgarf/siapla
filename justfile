@@ -5,6 +5,11 @@ db := 'sqlite:./run-data/test.sqlite'
 default:
     @just --list
 
+# Call this once to initialize the repository at the beginning
+[working-directory(".")]
+init: install-frontend build-frontend build-backend test
+    mkdir -p run-data
+
 
 [working-directory(".")]
 [positional-arguments]
@@ -72,6 +77,10 @@ build-frontend: quasar-build
 build-backend: build-frontend
     cargo build --release -p siapla
 
+[working-directory("./frontend")]
+install-frontend:
+    npm install
+
 serve:
     #!/usr/bin/env bash
     just serve-backend &
@@ -79,7 +88,7 @@ serve:
     wait
 
 [working-directory("./frontend")]
-generate-frontend-gql:
+generate-frontend-gql: export-schema
     npm run codegen
 
 [working-directory("./crates")]
@@ -98,7 +107,7 @@ generate-holidays-api:
     # original definition (sadly does not match real API perfectly):
     # -i https://openholidaysapi.org/swagger/v1/swagger.json \
                 
-[working-directory("./run-data")]
+[working-directory("./frontend/src/gql")]
 export-schema:
     cargo run -p siapla --bin siapla-export-schema
 

@@ -18,7 +18,7 @@
                 </div>
             </div>
             <div class="right">
-                <q-btn v-if="state == CalculationState.Modified" dense flat label="Recalculate"
+                <q-btn v-if="state == CalculationState.Modified" dense flat label="Recalculate" icon="auto_fix_high"
                     @click.prevent="recalc" />
             </div>
         </div>

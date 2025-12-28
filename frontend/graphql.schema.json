@@ -2453,6 +2453,22 @@
             "deprecationReason": null
           },
           {
+            "name": "priority",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
             "name": "resourceConstraints",
             "description": null,
             "args": [],
@@ -2691,6 +2707,22 @@
                   "name": "Int",
                   "ofType": null
                 }
+              }
+            },
+            "defaultValue": null,
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "priority",
+            "description": null,
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Float",
+                "ofType": null
               }
             },
             "defaultValue": null,
@@ -3859,26 +3891,24 @@
     "directives": [
       {
         "name": "deprecated",
-        "description": null,
+        "description": "Marks an element of a GraphQL schema as no longer supported.",
         "isRepeatable": false,
         "locations": [
+          "ARGUMENT_DEFINITION",
           "ENUM_VALUE",
-          "FIELD_DEFINITION"
+          "FIELD_DEFINITION",
+          "INPUT_FIELD_DEFINITION"
         ],
         "args": [
           {
             "name": "reason",
-            "description": null,
+            "description": "Explains why this element was deprecated, usually also including a suggestion for how to access supported similar data. Formatted using the Markdown syntax, as specified by [CommonMark](https://commonmark.org/).",
             "type": {
-              "kind": "NON_NULL",
-              "name": null,
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String",
-                "ofType": null
-              }
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
             },
-            "defaultValue": null,
+            "defaultValue": "\"No longer supported\"",
             "isDeprecated": false,
             "deprecationReason": null
           }
@@ -3886,7 +3916,7 @@
       },
       {
         "name": "include",
-        "description": null,
+        "description": "Directs the executor to include this field or fragment only when the `if` argument is true.",
         "isRepeatable": false,
         "locations": [
           "FIELD",
@@ -3896,7 +3926,7 @@
         "args": [
           {
             "name": "if",
-            "description": null,
+            "description": "Included when true.",
             "type": {
               "kind": "NON_NULL",
               "name": null,
@@ -3913,8 +3943,17 @@
         ]
       },
       {
+        "name": "oneOf",
+        "description": "Indicates exactly one field must be supplied and this field must not be `null`.",
+        "isRepeatable": false,
+        "locations": [
+          "INPUT_OBJECT"
+        ],
+        "args": []
+      },
+      {
         "name": "skip",
-        "description": null,
+        "description": "Directs the executor to skip this field or fragment when the `if` argument is true.",
         "isRepeatable": false,
         "locations": [
           "FIELD",
@@ -3924,7 +3963,7 @@
         "args": [
           {
             "name": "if",
-            "description": null,
+            "description": "Skipped when true.",
             "type": {
               "kind": "NON_NULL",
               "name": null,
@@ -3942,7 +3981,7 @@
       },
       {
         "name": "specifiedBy",
-        "description": null,
+        "description": "Exposes a URL that specifies the behavior of this scalar.",
         "isRepeatable": false,
         "locations": [
           "SCALAR"
@@ -3950,7 +3989,7 @@
         "args": [
           {
             "name": "url",
-            "description": null,
+            "description": "The URL that specifies the behavior of this scalar.",
             "type": {
               "kind": "NON_NULL",
               "name": null,

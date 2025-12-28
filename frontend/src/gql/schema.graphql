@@ -1,39 +1,155 @@
-type Allocation {
-  allocationType: AllocationType!
-  dbId: Int!
-  end: DateTime!
-  final: Boolean!
-  resources: [Resource!]!
-  start: DateTime!
-  task: Task!
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
 }
 
 enum AllocationType {
-  BOOKING
   PLAN
+  BOOKING
+}
+
+enum CalculationState {
+  MODIFIED
+  CALCULATING
+  FINISHED
+}
+
+enum IssueCode {
+  PRED_ISSUE
+  REQUIREMENT_MISSING
+  MILESTONE_MISSING
+  RESOURCE_MISSING
+  NO_EFFORT
+  NO_SLOT_FOUND
+  DEPENDENCY_LOOP
+  HIERARCHY_LOOP
+  UNKNOWN
+}
+
+enum IssueType {
+  TASK
+  PLANNING_TASK
+  PLANNING_GENERAL
+  GENERAL
+}
+
+enum TaskDesignation {
+  TASK
+  GROUP
+  REQUIREMENT
+  MILESTONE
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+input AvailabilityInput {
+  weekday: Weekday!
+  duration: Int!
+}
+
+input ResourceConstraintEntryInput {
+  resourceId: Int!
+}
+
+input ResourceConstraintInput {
+  optional: Boolean!
+  speed: Float!
+  entries: [ResourceConstraintEntryInput!]!
+}
+
+input ResourceSaveInput {
+  dbId: Int
+  name: String!
+  timezone: String!
+  added: DateTime!
+  removed: DateTime
+  holidayId: Int
+  availability: [AvailabilityInput!]
+  addedVacations: [VacationInput!]
+  removedVacations: [Int!]
+}
+
+input TaskSaveInput {
+  dbId: Int
+  title: String!
+  description: String!
+  designation: TaskDesignation!
+  parentId: Int
+  earliestStart: DateTime
+  scheduleTarget: DateTime
+  effort: Float
+  priority: Float!
+  predecessors: [Int!]
+  successors: [Int!]
+  children: [Int!]
+  resourceConstraints: [ResourceConstraintInput!]
+}
+
+input VacationInput {
+  from: DateTime!
+  until: DateTime!
+}
+
+"""
+  Combined date and time (with time zone) in [RFC 3339][0] format.
+
+  Represents a description of an exact instant on the time-line (such as the
+  instant that a user account was created).
+
+  [`DateTime` scalar][1] compliant.
+
+  See also [`chrono::DateTime`][2] for details.
+
+  [0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5
+  [1]: https://graphql-scalars.dev/docs/scalars/date-time
+  [2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
+"""
+scalar DateTime
+
+"""
+  Date in the proleptic Gregorian calendar (without time zone).
+
+  Represents a description of the date (as used for birthdays, for example).
+  It cannot represent an instant on the time-line.
+
+  [`LocalDate` scalar][1] compliant.
+
+  See also [`chrono::NaiveDate`][2] for details.
+
+  [1]: https://graphql-scalars.dev/docs/scalars/local-date
+  [2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
+"""
+scalar LocalDate
+
+type Allocation {
+  dbId: Int!
+  start: DateTime!
+  end: DateTime!
+  allocationType: AllocationType!
+  final: Boolean!
+  resources: [Resource!]!
+  task: Task!
 }
 
 type Availability {
   dbId: Int!
-  duration: Int!
   resource: Resource!
-  weekday: Weekday!
-}
-
-input AvailabilityInput {
   duration: Int!
   weekday: Weekday!
-}
-
-enum CalculationState {
-  CALCULATING
-  FINISHED
-  MODIFIED
 }
 
 type CalculationUpdate {
-  plan: Plan
   state: CalculationState!
+  plan: Plan
 }
 
 type Country {
@@ -42,96 +158,45 @@ type Country {
   regions: [Region!]!
 }
 
-"""
-Combined date and time (with time zone) in [RFC 3339][0] format.
-
-Represents a description of an exact instant on the time-line (such as the
-instant that a user account was created).
-
-[`DateTime` scalar][1] compliant.
-
-See also [`chrono::DateTime`][2] for details.
-
-[0]: https://datatracker.ietf.org/doc/html/rfc3339#section-5
-[1]: https://graphql-scalars.dev/docs/scalars/date-time
-[2]: https://docs.rs/chrono/latest/chrono/struct.DateTime.html
-"""
-scalar DateTime
-
 type Holiday {
-  country: Country
   dbId: Int!
-  entries(from: LocalDate!, until: LocalDate!): [HolidayEntry!]!
   externalId: String!
   name: String!
+  country: Country
   region: Region
+  entries(from: LocalDate!, until: LocalDate!): [HolidayEntry!]!
 }
 
 type HolidayEntry {
-  date: LocalDate!
   dbId: Int!
-  holiday: Holiday!
+  date: LocalDate!
   name: String
+  holiday: Holiday!
 }
 
 type Interval {
-  end: DateTime!
   start: DateTime!
+  end: DateTime!
 }
 
 type Issue {
-  code: IssueCode!
   dbId: Int!
+  code: IssueCode!
   description: String!
-  task: Task
   type: IssueType!
+  task: Task
 }
-
-enum IssueCode {
-  DEPENDENCY_LOOP
-  HIERARCHY_LOOP
-  MILESTONE_MISSING
-  NO_EFFORT
-  NO_SLOT_FOUND
-  PRED_ISSUE
-  REQUIREMENT_MISSING
-  RESOURCE_MISSING
-  UNKNOWN
-}
-
-enum IssueType {
-  GENERAL
-  PLANNING_GENERAL
-  PLANNING_TASK
-  TASK
-}
-
-"""
-Date in the proleptic Gregorian calendar (without time zone).
-
-Represents a description of the date (as used for birthdays, for example).
-It cannot represent an instant on the time-line.
-
-[`LocalDate` scalar][1] compliant.
-
-See also [`chrono::NaiveDate`][2] for details.
-
-[1]: https://graphql-scalars.dev/docs/scalars/local-date
-[2]: https://docs.rs/chrono/latest/chrono/naive/struct.NaiveDate.html
-"""
-scalar LocalDate
 
 type Mutation {
-  bookingDelete(dbId: Int!): Boolean!
-  bookingSave(dbId: Int, end: DateTime!, final: Boolean!, resources: [Int!]!, start: DateTime!, taskId: Int!): Allocation!
   new: Mutation!
-
-  """Trigger a manual recalculation now"""
-  recalculateNow: Boolean!
-  resourceDelete(resourceId: Int!): Boolean!
-  resourceSave(resource: ResourceSaveInput!): Resource!
-  taskDelete(taskId: Int!): Boolean!
   taskSave(task: TaskSaveInput!): Task!
+  taskDelete(taskId: Int!): Boolean!
+  resourceSave(resource: ResourceSaveInput!): Resource!
+  resourceDelete(resourceId: Int!): Boolean!
+  bookingSave(dbId: Int, taskId: Int!, start: DateTime!, end: DateTime!, resources: [Int!]!, final: Boolean!): Allocation!
+  bookingDelete(dbId: Int!): Boolean!
+  "Trigger a manual recalculation now"
+  recalculateNow: Boolean!
 }
 
 type Plan {
@@ -139,70 +204,48 @@ type Plan {
 }
 
 type Query {
+  helloWorld: String!
+  tasks: [Task!]!
+  resources: [Resource!]!
   countries: [Country!]!
   country(isocode: String!): Country
-  currentPlan: Plan!
-  getFromOpenHolidays(isocode: String!): Holiday
-  helloWorld: String!
-  issues: [Issue!]!
   region(isocode: String!): Region
-  resources: [Resource!]!
-  tasks: [Task!]!
+  getFromOpenHolidays(isocode: String!): Holiday
+  currentPlan: Plan!
+  issues: [Issue!]!
 }
 
 type Region {
-  country: Country!
-  countryName: String!
-  holiday: Holiday!
   isocode: String!
   name: String!
+  countryName: String!
   regionName: String!
+  holiday: Holiday!
+  country: Country!
 }
 
 type Resource {
-  added: DateTime!
-  availability: [Availability!]!
-  combinedAvailability(end: DateTime!, start: DateTime!): [Interval!]!
   dbId: Int!
-  holiday: Holiday
   name: String!
-  removed: DateTime
   timezone: String!
+  added: DateTime!
+  removed: DateTime
+  holiday: Holiday
+  availability: [Availability!]!
   vacation: [Vacation!]!
+  combinedAvailability(start: DateTime!, end: DateTime!): [Interval!]!
 }
 
 type ResourceConstraint {
-  entries: [ResourceConstraintEntry!]!
   id: Int!
   optional: Boolean!
   speed: Float!
+  entries: [ResourceConstraintEntry!]!
 }
 
 type ResourceConstraintEntry {
   id: Int!
   resource: Resource!
-}
-
-input ResourceConstraintEntryInput {
-  resourceId: Int!
-}
-
-input ResourceConstraintInput {
-  entries: [ResourceConstraintEntryInput!]!
-  optional: Boolean!
-  speed: Float!
-}
-
-input ResourceSaveInput {
-  added: DateTime!
-  addedVacations: [VacationInput!]
-  availability: [AvailabilityInput!]
-  dbId: Int
-  holidayId: Int
-  name: String!
-  removed: DateTime
-  removedVacations: [Int!]
-  timezone: String!
 }
 
 type Subscription {
@@ -211,61 +254,25 @@ type Subscription {
 }
 
 type Task {
-  allocations: [Allocation!]!
-  children: [Task!]!
   dbId: Int!
+  title: String!
   description: String!
-  designation: TaskDesignation!
   earliestStart: DateTime
+  scheduleTarget: DateTime
   effort: Float
+  priority: Float!
+  designation: TaskDesignation!
+  predecessors: [Task!]!
+  successors: [Task!]!
+  children: [Task!]!
   issues: [Issue!]!
   parent: Task
-  predecessors: [Task!]!
   resourceConstraints: [ResourceConstraint!]!
-  scheduleTarget: DateTime
-  successors: [Task!]!
-  title: String!
-}
-
-enum TaskDesignation {
-  GROUP
-  MILESTONE
-  REQUIREMENT
-  TASK
-}
-
-input TaskSaveInput {
-  children: [Int!]
-  dbId: Int
-  description: String!
-  designation: TaskDesignation!
-  earliestStart: DateTime
-  effort: Float
-  parentId: Int
-  predecessors: [Int!]
-  resourceConstraints: [ResourceConstraintInput!]
-  scheduleTarget: DateTime
-  successors: [Int!]
-  title: String!
+  allocations: [Allocation!]!
 }
 
 type Vacation {
   dbId: Int!
   from: DateTime!
   until: DateTime!
-}
-
-input VacationInput {
-  from: DateTime!
-  until: DateTime!
-}
-
-enum Weekday {
-  FRIDAY
-  MONDAY
-  SATURDAY
-  SUNDAY
-  THURSDAY
-  TUESDAY
-  WEDNESDAY
 }

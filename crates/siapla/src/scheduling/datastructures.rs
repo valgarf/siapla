@@ -55,6 +55,7 @@ pub struct Milestone {
     pub db_id: i32,
     pub title: String,
     pub schedule_target: NaiveDateTime,
+    pub priority: f64,
 }
 
 #[derive(Debug, Clone)]
