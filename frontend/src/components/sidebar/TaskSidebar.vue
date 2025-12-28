@@ -10,18 +10,19 @@
                 </q-breadcrumbs>
             </div>
             <q-btn flat @click="toggleEdit()" :loading="taskStore.saving" color="primary" :disable="taskStore.deleting"
-                :icon="edit ? 'save' : 'edit'" class="q-ma-xs">
-            </q-btn>
-            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
+                :icon="edit ? 'save' : 'edit'" class="q-ma-xs" :class="{ shake: sidebarStore.shakeButtons }" />
+
+            <q-btn v-if="edit && localTask.dbId != null" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs"
+                @click="cancelEdit" :class="{ shake: sidebarStore.shakeButtons }" />
             <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
-                :disable="taskStore.saving" class="q-ma-xs"></q-btn>
+                :disable="taskStore.saving" class="q-ma-xs" :class="{ shake: sidebarStore.shakeButtons }"></q-btn>
         </template>
         <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
 
         <div class="sidebar-content">
 
             <section class="sidebar-section">
-                <q-btn-toggle v-if="edit" v-model="local_task.designation" rounded toggle-color="secondary"
+                <q-btn-toggle v-if="edit" v-model="localTask.designation" rounded toggle-color="secondary"
                     class="q-mb-sm" text-color="secondary" color="white" :options="[
                         { label: 'Requirement', value: TaskDesignation.Requirement },
                         { label: 'Task', value: TaskDesignation.Task },
@@ -29,17 +30,17 @@
                         { label: 'Milestone', value: TaskDesignation.Milestone }
                     ]" />
                 <q-input v-if="edit" outlined placeholder="Title" class="text-h5 responsive-field q-mb-sm"
-                    v-model="local_task.title" />
-                <div v-else class="text-h5 q-mb-sm">{{ local_task.title }}
-                    <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ local_task.designation
+                    v-model="localTask.title" />
+                <div v-else class="text-h5 q-mb-sm">{{ localTask.title }}
+                    <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ localTask.designation
                     }}</q-chip>
                 </div>
-                <MarkdownEditor v-if="edit" placeholder="description" v-model="local_task.description" />
-                <q-markdown v-else-if="local_task.description" :src="local_task.description" />
+                <MarkdownEditor v-if="edit" placeholder="description" v-model="localTask.description" />
+                <q-markdown v-else-if="localTask.description" :src="localTask.description" />
                 <div v-else><i>No description</i></div>
             </section>
 
-            <section v-if="local_task.designation == TaskDesignation.Task && taskIssues.length > 0"
+            <section v-if="localTask.designation == TaskDesignation.Task && taskIssues.length > 0"
                 class="sidebar-section">
                 <div class="issue-list">
                     <div class="issue-list-title">Issues</div>
@@ -47,37 +48,36 @@
                 </div>
             </section>
 
-            <section v-show="local_task.designation == TaskDesignation.Requirement"
+            <section v-show="localTask.designation == TaskDesignation.Requirement"
                 class="sidebar-section responsive-row">
-                <DateTimeInput v-if="edit" label="Start" class="responsive-field" v-model="local_task.earliestStart" />
+                <DateTimeInput v-if="edit" label="Start" class="responsive-field" v-model="localTask.earliestStart" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Start:</div>
-                    <div>{{ formatDatetime(local_task.earliestStart) }}</div>
+                    <div>{{ formatDatetime(localTask.earliestStart) }}</div>
                 </div>
             </section>
-            <section v-show="local_task.designation == TaskDesignation.Milestone"
-                class="sidebar-section responsive-row">
+            <section v-show="localTask.designation == TaskDesignation.Milestone" class="sidebar-section responsive-row">
                 <DateTimeInput v-if="edit" label="Schedule" class="responsive-field"
-                    v-model="local_task.scheduleTarget" />
+                    v-model="localTask.scheduleTarget" />
                 <q-input v-if="edit" label="Priority" type="number" step="0.01" min="0" class="responsive-field"
-                    v-model.number="local_task.priority" />
+                    v-model.number="localTask.priority" />
                 <div v-if="!edit" class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Schedule:</div>
-                    <div>{{ formatDatetime(local_task.scheduleTarget) }}</div>
+                    <div>{{ formatDatetime(localTask.scheduleTarget) }}</div>
                 </div>
                 <div v-if="!edit" class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Priority:</div>
-                    <div>{{ local_task.priority.toFixed(2) }}</div>
+                    <div>{{ localTask.priority.toFixed(2) }}</div>
                 </div>
             </section>
 
-            <section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(local_task.designation)"
+            <section v-show="[TaskDesignation.Task, TaskDesignation.Group].includes(localTask.designation)"
                 class="sidebar-section">
                 <div class="q-gutter-y-sm">
                     <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                         <div class="col">
                             <EditableResourceList v-model="option.resources"
-                                :name="`Resource Constraint ${idx + 1}${(local_task.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
+                                :name="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
                                 :possible="allResources" :edit="edit" class="full-width" />
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
@@ -97,36 +97,35 @@
                 </div>
             </section>
 
-            <section v-show="local_task.designation == TaskDesignation.Task" class="sidebar-section responsive-row">
+            <section v-show="localTask.designation == TaskDesignation.Task" class="sidebar-section responsive-row">
                 <q-input v-if="edit" label="effort (days)" stack-label type="number" class="responsive-field"
-                    v-model.number="local_task.effort" />
+                    v-model.number="localTask.effort" />
                 <div v-else class="row items-baseline">
                     <div class="text-subtitle2 q-pr-md">Effort:</div>
-                    <div>{{ local_task.effort != null ? local_task.effort + " days" : "-" }}</div>
+                    <div>{{ localTask.effort != null ? localTask.effort + " days" : "-" }}</div>
                 </div>
             </section>
             <section class="sidebar-section column q-gutter-xs">
-                <EditableTaskList v-model="local_task.predecessors" label="predecessors"
-                    :possible="possiblePredecessors"
-                    v-show="local_task.designation != TaskDesignation.Requirement && ((local_task.predecessors?.length ?? 0) > 0 || edit)"
+                <EditableTaskList v-model="localTask.predecessors" label="predecessors" :possible="possiblePredecessors"
+                    v-show="localTask.designation != TaskDesignation.Requirement && ((localTask.predecessors?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
-                <EditableTaskList v-model="local_task.successors" label="successors" :possible="possibleSuccessors"
-                    v-show="local_task.designation != TaskDesignation.Milestone && ((local_task.successors?.length ?? 0) > 0 || edit)"
+                <EditableTaskList v-model="localTask.successors" label="successors" :possible="possibleSuccessors"
+                    v-show="localTask.designation != TaskDesignation.Milestone && ((localTask.successors?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
-                <TaskSelect v-show="edit" v-model="local_task.parent" :possible="possibleParents" label="parent" />
-                <EditableTaskList v-model="local_task.children" label="children" :possible="possibleChildren"
-                    v-show="local_task.designation == TaskDesignation.Group && ((local_task.children?.length ?? 0) > 0 || edit)"
+                <TaskSelect v-show="edit" v-model="localTask.parent" :possible="possibleParents" label="parent" />
+                <EditableTaskList v-model="localTask.children" label="children" :possible="possibleChildren"
+                    v-show="localTask.designation == TaskDesignation.Group && ((localTask.children?.length ?? 0) > 0 || edit)"
                     :edit="edit" />
-                <div class="col" v-show="effective_requirements.length > 0">
+                <div class="col" v-show="effectiveRequirements.length > 0">
                     <div class="text-subtitle2">Requirements</div>
-                    <TaskChip v-for="task in effective_requirements" :clickable="!edit" :key="task.dbId" :task="task" />
+                    <TaskChip v-for="task in effectiveRequirements" :clickable="!edit" :key="task.dbId" :task="task" />
                 </div>
-                <div class="col" v-show="effective_milestones.length > 0">
+                <div class="col" v-show="effectiveMilestones.length > 0">
                     <div class="text-subtitle2">Milestones</div>
-                    <TaskChip v-for="task in effective_milestones" :clickable="!edit" :key="task.dbId" :task="task" />
+                    <TaskChip v-for="task in effectiveMilestones" :clickable="!edit" :key="task.dbId" :task="task" />
                 </div>
             </section>
-            <section v-show="local_task.designation == TaskDesignation.Task && !edit"
+            <section v-show="localTask.designation == TaskDesignation.Task && !edit"
                 class="sidebar-section bookings-section">
                 <div class="col">
                     <div class="text-subtitle2">Bookings</div>
@@ -179,9 +178,9 @@ const sidebarStore = useSidebarStore();
 const resourceStore = useResourceStore();
 const planStore = usePlanStore();
 
-const local_task_default = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [], priority: 1.0 };
-const local_task = ref<TaskInput>(local_task_default)
-const edit = ref(local_task.value.dbId == null)
+const localTaskDefault = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [], priority: 1.0 };
+const localTask = ref<TaskInput>(localTaskDefault)
+const edit = ref(localTask.value.dbId == null)
 
 
 interface Props {
@@ -192,48 +191,48 @@ const props = defineProps<Props>();
 
 watchEffect(() => {
     // task changed
-    local_task.value = { ...local_task_default, ...props.task }
-    edit.value = local_task.value.dbId == null
+    localTask.value = { ...localTaskDefault, ...props.task }
+    edit.value = localTask.value.dbId == null
 })
 
 
 
 const recursiveParents = computed(() => {
     const parents = [];
-    let parent = local_task.value.parent;
-    while (parent != null && parent.dbId != local_task.value.dbId) {
+    let parent = localTask.value.parent;
+    while (parent != null && parent.dbId != localTask.value.dbId) {
         parents.push(parent)
         parent = parent.parent
     }
     return parents.reverse()
 })
 
-function _sort_by_title(t1: Task, t2: Task): number {
+function _sortByTitle(t1: Task, t2: Task): number {
     return t1.title.localeCompare(t2.title, undefined, { sensitivity: "accent" })
 }
 
 const possiblePredecessors = computed(() => {
     const excludeIds = new Set(recursiveSuccessors.value.map((t) => t.dbId))
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Milestone && !excludeIds.has(t.dbId)).sort(_sort_by_title)
+    return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Milestone && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleSuccessors = computed(() => {
     const excludeIds = new Set(recursivePredecessors.value.map((t) => t.dbId))
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation != TaskDesignation.Requirement && !excludeIds.has(t.dbId)).sort(_sort_by_title)
+    return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Requirement && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleParents = computed(() => {
     const excludeIds = new Set(recursiveChildren.value.map((t) => t.dbId))
-    return taskStore.tasks.filter((t) => t.dbId != local_task.value.dbId && t.designation == TaskDesignation.Group && !excludeIds.has(t.dbId)).sort(_sort_by_title)
+    return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation == TaskDesignation.Group && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleChildren = computed(() => {
     const excludeIds = recursiveParents.value.map((p) => p.dbId);
-    return taskStore.tasks.filter((t) => local_task.value.dbId != t.dbId && !excludeIds.includes(t.dbId)).sort(_sort_by_title)
+    return taskStore.tasks.filter((t) => localTask.value.dbId != t.dbId && !excludeIds.includes(t.dbId)).sort(_sortByTitle)
 })
 
 const resourceConstraints = computed(() => {
     {
-        let result = local_task.value.resourceConstraints ?? []
+        let result = localTask.value.resourceConstraints ?? []
         if (!edit.value) {
-            let parent = local_task.value.parent;
+            let parent = localTask.value.parent;
             while (result.length < 1 && parent != null) {
                 result = parent.resourceConstraints;
                 parent = parent.parent;
@@ -244,21 +243,21 @@ const resourceConstraints = computed(() => {
 })
 
 const recursiveChildren = computed(() => {
-    const result = Array.from(_get_children(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    const result = Array.from(_getChildren(localTask.value, new Set())).filter((t) => t.dbId != localTask.value.dbId)
     return result
 })
 
 const recursivePredecessors = computed(() => {
-    const result = Array.from(_get_recursive_predecessors(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    const result = Array.from(_getRecursivePredecessors(localTask.value, new Set())).filter((t) => t.dbId != localTask.value.dbId)
     return result
 })
 
 const recursiveSuccessors = computed(() => {
-    const result = Array.from(_get_recursive_successors(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId)
+    const result = Array.from(_getRecursiveSuccessors(localTask.value, new Set())).filter((t) => t.dbId != localTask.value.dbId)
     return result
 })
 
-function _get_milestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
+function _getMilestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
     if (task.dbId) {
         if (seen.has(task.dbId)) {
@@ -271,15 +270,15 @@ function _get_milestones(task: Partial<Task>, seen: Set<number>): Set<Task> {
         if (store_task != null) { result.add(store_task) }
     }
     if (task.parent != null) {
-        result = result.union(_get_milestones(task.parent, seen))
+        result = result.union(_getMilestones(task.parent, seen))
     }
     for (const suc of task.successors ?? []) {
-        result = result.union(_get_milestones(suc, seen))
+        result = result.union(_getMilestones(suc, seen))
     }
     return result
 }
 
-function _get_children(task: Partial<Task>, seen: Set<number>): Set<Task> {
+function _getChildren(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
     if (task.dbId) {
         if (seen.has(task.dbId)) {
@@ -288,7 +287,7 @@ function _get_children(task: Partial<Task>, seen: Set<number>): Set<Task> {
         seen.add(task.dbId)
     }
     for (const ch of task.children ?? []) {
-        result = result.union(_get_children(ch, seen))
+        result = result.union(_getChildren(ch, seen))
         if (ch.dbId != null) {
             const store_task = taskStore.task(ch.dbId)
             if (store_task != null) { result.add(store_task) }
@@ -297,7 +296,7 @@ function _get_children(task: Partial<Task>, seen: Set<number>): Set<Task> {
     return result
 }
 
-function _get_recursive_predecessors(task: Partial<Task>, seen: Set<number>): Set<Task> {
+function _getRecursivePredecessors(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
     if (task.dbId) {
         if (seen.has(task.dbId)) {
@@ -307,12 +306,12 @@ function _get_recursive_predecessors(task: Partial<Task>, seen: Set<number>): Se
     }
     for (const pre of task.predecessors ?? []) {
         // Recurse into the predecessor itself
-        result = result.union(_get_recursive_predecessors(pre, seen))
+        result = result.union(_getRecursivePredecessors(pre, seen))
         // If the predecessor is a group, include all its children and their recursive predecessors
         if (pre.designation == TaskDesignation.Group) {
             for (const ch of pre.children ?? []) {
                 result.add(ch)
-                result = result.union(_get_recursive_predecessors(ch, seen))
+                result = result.union(_getRecursivePredecessors(ch, seen))
             }
         }
         // Finally add the predecessor itself
@@ -324,7 +323,7 @@ function _get_recursive_predecessors(task: Partial<Task>, seen: Set<number>): Se
     return result
 }
 
-function _get_recursive_successors(task: Partial<Task>, seen: Set<number>): Set<Task> {
+function _getRecursiveSuccessors(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
     if (task.dbId) {
         if (seen.has(task.dbId)) {
@@ -334,11 +333,11 @@ function _get_recursive_successors(task: Partial<Task>, seen: Set<number>): Set<
     }
     for (const suc of task.successors ?? []) {
         // Recurse into the successor itself
-        result = result.union(_get_recursive_successors(suc, seen))
+        result = result.union(_getRecursiveSuccessors(suc, seen))
         // If the successor is a group, include all its children and their recursive successors
         if (suc.designation == TaskDesignation.Group) {
             for (const ch of suc.children ?? []) {
-                result = result.union(_get_recursive_successors(ch, seen))
+                result = result.union(_getRecursiveSuccessors(ch, seen))
                 result.add(ch)
             }
         }
@@ -351,13 +350,13 @@ function _get_recursive_successors(task: Partial<Task>, seen: Set<number>): Set<
     return result
 }
 
-const effective_milestones = computed(() => {
-    const result = Array.from(_get_milestones(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId);
+const effectiveMilestones = computed(() => {
+    const result = Array.from(_getMilestones(localTask.value, new Set())).filter((t) => t.dbId != localTask.value.dbId);
     result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
     return result
 })
 
-function _get_requirements(task: Partial<Task>, seen: Set<number>): Set<Task> {
+function _getRequirements(task: Partial<Task>, seen: Set<number>): Set<Task> {
     let result: Set<Task> = new Set([])
     if (task.dbId) {
         if (seen.has(task.dbId)) {
@@ -370,16 +369,16 @@ function _get_requirements(task: Partial<Task>, seen: Set<number>): Set<Task> {
         if (store_task != null) { result.add(store_task) }
     }
     if (task.parent != null) {
-        result = result.union(_get_requirements(task.parent, seen))
+        result = result.union(_getRequirements(task.parent, seen))
     }
     for (const pre of task.predecessors ?? []) {
-        result = result.union(_get_requirements(pre, seen))
+        result = result.union(_getRequirements(pre, seen))
     }
     return result
 }
 
-const effective_requirements = computed(() => {
-    const result = Array.from(_get_requirements(local_task.value, new Set())).filter((t) => t.dbId != local_task.value.dbId);
+const effectiveRequirements = computed(() => {
+    const result = Array.from(_getRequirements(localTask.value, new Set())).filter((t) => t.dbId != localTask.value.dbId);
     result.sort((lhs, rhs) => lhs.title < rhs.title ? -1 : lhs.title > rhs.title ? 1 : 0)
     return result
 })
@@ -392,33 +391,39 @@ async function toggleEdit() {
     if (edit.value) {
         const err = await save()
         saveError.value = err
-        if (!err) edit.value = false
+        if (!err) {
+            edit.value = false
+            sidebarStore.setEditing(false)
+        }
     }
     else {
         saveError.value = null
         edit.value = true
+        sidebarStore.setEditing(true)
     }
 }
 
 function cancelEdit() {
     // reset local values from props
-    local_task.value = { ...local_task_default, ...props.task };
+    localTask.value = { ...localTaskDefault, ...props.task };
     saveError.value = null;
     edit.value = false;
+    sidebarStore.cancelEdit();
+    sidebarStore.setEditing(false)
 }
 
 
 async function save(): Promise<string | null> {
     // reset error before saving
     saveError.value = null
-    const err = await taskStore.saveTask(local_task)
+    const err = await taskStore.saveTask(localTask)
     return err
 }
 
 async function deleteTask() {
-    const taskId = local_task.value.dbId
+    const taskId = localTask.value.dbId
     if (taskId == null) {
-        sidebarStore.popSidebar()
+        cancelEdit()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {
@@ -441,25 +446,25 @@ const allResources = computed(() => resourceStore.resources);
 
 const issueStore = useIssueStore();
 const taskIssues = computed(() => {
-    const tid = local_task.value.dbId;
+    const tid = localTask.value.dbId;
     if (tid == null) return [] as Issue[];
     return issueStore.issues.filter((i) => i.taskId === tid);
 });
 
 
 function taskBookings(): Allocation[] {
-    const tid = local_task.value.dbId;
+    const tid = localTask.value.dbId;
     if (tid == null) return [];
     return planStore.bookingsByTask(tid);
 }
 
 function addResourceSlot() {
-    if (!local_task.value.resourceConstraints) local_task.value.resourceConstraints = [];
-    local_task.value.resourceConstraints.push({ resources: [], optional: false, speed: 1 });
+    if (!localTask.value.resourceConstraints) localTask.value.resourceConstraints = [];
+    localTask.value.resourceConstraints.push({ resources: [], optional: false, speed: 1 });
 }
 function removeResourceSlot(idx: number) {
-    if (!local_task.value.resourceConstraints) return;
-    local_task.value.resourceConstraints.splice(idx, 1);
+    if (!localTask.value.resourceConstraints) return;
+    localTask.value.resourceConstraints.splice(idx, 1);
 }
 
 async function saveBookingLocal(b: Allocation, overwriteStart: Date | null = null, overwriteEnd: Date | null = null) {
@@ -480,7 +485,7 @@ async function deleteBookingLocal(b: Allocation) {
 }
 
 function createBooking() {
-    void planStore.createBookingFromPlan(local_task.value.dbId ?? null);
+    void planStore.createBookingFromPlan(localTask.value.dbId ?? null);
 }
 
 // ...existing code...
@@ -559,5 +564,34 @@ function createBooking() {
 
 .clickable {
     cursor: pointer;
+}
+
+/* shake animation for blocked save/cancel */
+@keyframes shake {
+
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
+}
+
+.shake {
+    animation: shake 0.6s;
 }
 </style>

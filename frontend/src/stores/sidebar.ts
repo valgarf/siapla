@@ -55,6 +55,10 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   const isOpen = ref(false);
   const isSelected = ref(false);
   const isExpanded = ref(false);
+  // edit mode state: when true, switching sidebars is blocked
+  const isEditing = ref(false);
+  // UI hint to make save/cancel buttons shake when a blocked action occurs
+  const shakeButtons = ref(false);
 
   const activeSidebars = computed(() => stack.value.slice());
   const activeSidebar = computed(() => stack.value[stack.value.length - 1]);
@@ -87,6 +91,11 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
 
   function toggleSidebar(sidebar: SidebarData) {
     const last = stack.value[stack.value.length - 1] ?? null;
+    if (isEditing.value && !isSameSidebar(last, sidebar)) {
+      // blocked while editing
+      triggerShake();
+      return;
+    }
     if (last != null && isSameSidebar(last, sidebar) && isOpen.value) {
       isOpen.value = false;
       isSelected.value = false;
@@ -98,6 +107,11 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   function pushSidebar(sidebar: SidebarData) {
     // if same as last, do nothing
     const last = stack.value[stack.value.length - 1] ?? null;
+    if (isEditing.value && !isSameSidebar(last, sidebar)) {
+      // blocked while editing
+      triggerShake();
+      return;
+    }
     if (last != null && isSameSidebar(last, sidebar)) {
       isOpen.value = true;
       isSelected.value = true;
@@ -106,6 +120,10 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     // push new top, clear forward history
     stack.value.push(sidebar);
     forwardStack.value = [];
+    // if this is a new item, enter edit mode
+    if (sidebar.constructor.name === 'NewTaskSidebarData' || sidebar.constructor.name === 'NewResourceSidebarData') {
+      isEditing.value = true;
+    }
     // limit stack to 20 entries
     while (stack.value.length > 20) {
       stack.value.shift();
@@ -115,6 +133,11 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   }
 
   function replaceSidebar(sidebar: SidebarData) {
+    const last = stack.value[stack.value.length - 1] ?? null;
+    if (isEditing.value && !isSameSidebar(last, sidebar)) {
+      triggerShake();
+      return;
+    }
     if (stack.value.length == 0) {
       pushSidebar(sidebar);
       return;
@@ -122,9 +145,18 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     stack.value[stack.value.length - 1] = sidebar;
     isOpen.value = true;
     isSelected.value = true;
+    // if replaced with a new item, enter edit mode
+    if (sidebar.constructor.name === 'NewTaskSidebarData' || sidebar.constructor.name === 'NewResourceSidebarData') {
+      isEditing.value = true;
+    }
   }
 
   function popSidebar() {
+    if (isEditing.value) {
+      // popping while editing is blocked; request button shake
+      triggerShake();
+      return;
+    }
     if (stack.value.length <= 1) {
       // keep the stack but hide sidebar
       isOpen.value = false;
@@ -141,6 +173,10 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   }
 
   function next() {
+    if (isEditing.value) {
+      triggerShake();
+      return;
+    }
     // restore from forwardStack if available
     const f = forwardStack.value.pop();
     if (f) {
@@ -153,6 +189,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   function closeLayer() {
     // hide sidebar but keep stack intact
     isOpen.value = false;
+    isSelected.value = false;
   }
 
   function atFirst(): boolean {
@@ -167,18 +204,42 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     stack.value = [];
     isOpen.value = false;
     isSelected.value = false;
+    isEditing.value = false;
     if (sidebar != null) pushSidebar(sidebar);
   }
 
   function toggleOpen() {
     isOpen.value = !isOpen.value;
-    if (isOpen.value) {
-      isSelected.value = true;
-    }
+    isSelected.value = isOpen.value;
   }
 
   function toggleExpand() {
     isExpanded.value = !isExpanded.value;
+  }
+
+  function triggerShake() {
+    // ensure sidebar is visible when we signal a blocked action
+    isOpen.value = true;
+    isSelected.value = true;
+    shakeButtons.value = true;
+    // clear after animation timeframe
+    setTimeout(() => (shakeButtons.value = false), 600);
+  }
+
+  // cancel editing: always allowed. If top is a new item, remove it and close sidebar.
+  function cancelEdit() {
+    const active = activeSidebar.value ?? null;
+    isEditing.value = false;
+    // New items should be removed from the stack
+    if (active != null && (active.constructor.name === 'NewTaskSidebarData' || active.constructor.name === 'NewResourceSidebarData')) {
+      // remove top
+      stack.value.pop();
+      // close sidebar
+      isOpen.value = false;
+      isSelected.value = false;
+      // clear forward history
+      forwardStack.value = [];
+    }
   }
 
   return {
@@ -203,6 +264,12 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
     // new actions
     toggleOpen,
     toggleExpand,
+    // edit-mode controls
+    isEditing,
+    setEditing: (v: boolean) => (isEditing.value = v),
+    cancelEdit,
+    shakeButtons,
+    triggerShake,
   };
 });
 
