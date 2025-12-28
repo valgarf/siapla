@@ -182,18 +182,10 @@ export const useTaskStore = defineStore('taskStore', () => {
       }
       const dbId = resp?.data?.taskSave?.dbId;
       if (dbId != null) {
-        if (task.value.dbId == null) {
-          // a little hacky
-          // TODO: necessary?
-          task.value.dbId = dbId;
-          await queryGetAll.refetch();
-          // TODO: generic error handling?
-          sidebarStore.replaceSidebar(new TaskSidebarData(dbId));
-        } else {
-          task.value.dbId = dbId;
-          await queryGetAll.refetch();
-          // TODO: generic error handling?
-        }
+        task.value.dbId = dbId;
+        await queryGetAll.refetch();
+        // TODO: generic error handling?
+        sidebarStore.save(new TaskSidebarData(dbId));
       }
       return null;
     } catch (err: unknown) {
@@ -207,12 +199,13 @@ export const useTaskStore = defineStore('taskStore', () => {
     const result = resp?.data?.taskDelete;
     if (result) {
       // TODO: a 'filter' that removes all corresponding sidebars would be better
+      if (pop) { sidebarStore.discard(); }
       if (
         pop &&
         sidebarStore.activeSidebar instanceof TaskSidebarData &&
         sidebarStore.activeSidebar.taskId == taskId
       ) {
-        sidebarStore.popSidebar();
+        sidebarStore.deleteSidebar(new TaskSidebarData(taskId));
       }
       await queryGetAll.refetch();
     }

@@ -41,17 +41,17 @@ const sidebarStore = useSidebarStore();
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
-        sidebarStore.toggleSidebar(new TaskSidebarData(tid));
+        sidebarStore.toggle(new TaskSidebarData(tid));
     }
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
 function onNewTask() {
-    sidebarStore.pushSidebar(new NewTaskSidebarData());
+    sidebarStore.createNew(new NewTaskSidebarData());
 }
 function onNewResource() {
-    sidebarStore.pushSidebar(new NewResourceSidebarData());
+    sidebarStore.createNew(new NewResourceSidebarData());
 }
 
 
@@ -158,7 +158,7 @@ const ganttRows = computed(() => {
 // compute selections based on sidebar
 const selectedRowIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (!active || !sidebarStore.isOpen) return [] as number[];
     if (active instanceof TaskSidebarData) {
         return [active.taskId];
     }
@@ -167,7 +167,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (!active || !sidebarStore.isOpen) return [] as number[];
     if (active instanceof ResourceSidebarData) {
         const resId = active.resourceId;
         return planStore.by_resource(resId).map(a => a.dbId);
