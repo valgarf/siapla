@@ -121,17 +121,17 @@ const resourceRows = computed(() => {
 // compute selections from sidebar
 const selectedRowIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
-  // show drag handles for the selected task when a task sidebar is active
-  if (active instanceof TaskSidebarData) {
-    return [active.taskId];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
+  // if active sidebar is a resource, highlight that row
+  if (active instanceof ResourceSidebarData) {
+    return [active.resourceId];
   }
   return [] as number[];
 });
 
 const selectedAllocIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
   // if active sidebar is a task, highlight allocations for that task
   if (active instanceof TaskSidebarData) {
     const taskId = active.taskId;
@@ -142,12 +142,12 @@ const selectedAllocIds = computed(() => {
 
 
 function onResourceClick(rid: number) {
-  sidebarStore.toggleSidebar(new ResourceSidebarData(rid));
+  sidebarStore.toggle(new ResourceSidebarData(rid));
 }
 
 function onAllocClick(evt: { taskId: number | null }) {
   if (evt.taskId != null) {
-    sidebarStore.toggleSidebar(new TaskSidebarData(evt.taskId));
+    sidebarStore.toggle(new TaskSidebarData(evt.taskId));
   }
 }
 
@@ -218,11 +218,11 @@ async function onJoinBookings(payload: { rowId: number | null; leftAllocId: numb
 }
 
 function onNewTask() {
-  sidebarStore.pushSidebar(new NewTaskSidebarData());
+  sidebarStore.createNew(new NewTaskSidebarData());
 }
 
 function onNewResource() {
-  sidebarStore.pushSidebar(new NewResourceSidebarData());
+  sidebarStore.createNew(new NewResourceSidebarData());
 }
 
 </script>

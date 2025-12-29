@@ -3,12 +3,12 @@
         <template #toolbar>
             <div class="col"></div>
             <q-btn flat @click="toggleEdit()" :loading="resourceStore.saving" color="primary"
-                :disable="resourceStore.deleting" :icon="edit ? undefined : 'edit'" class="q-ma-xs">{{ edit ? "save"
-                    : null }}
-            </q-btn>
-            <q-btn v-if="edit" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs" @click="cancelEdit" />
+                :disable="resourceStore.deleting" :icon="edit ? 'save' : 'edit'" class="q-ma-xs"
+                :class="{ shake: sidebarStore.shakeButtons }" />
+            <q-btn v-if="edit && localResource.dbId != null" flat round icon="cancel" aria-label="Cancel"
+                class="q-ma-xs" @click="cancelEdit" :class="{ shake: sidebarStore.shakeButtons }" />
             <q-btn flat @click="deleteResource()" :loading="resourceStore.deleting" color="negative" icon="delete"
-                :disable="resourceStore.saving" class="q-ma-xs"></q-btn>
+                :disable="resourceStore.saving" class="q-ma-xs" :class="{ shake: sidebarStore.shakeButtons }"></q-btn>
         </template>
         <q-banner v-if="saveError" dense class="text-white bg-red">{{ saveError }}</q-banner>
 
@@ -98,7 +98,7 @@ import { useQuery } from '@vue/apollo-composable';
 import gql from 'graphql-tag';
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
-import { useSidebarStore } from 'src/stores/sidebar';
+import { useSidebarStore, ResourceSidebarData } from 'src/stores/sidebar';
 import { type Availability, defaultAvailability, type ResourceInput, useResourceStore, type Vacation } from 'src/stores/resource';
 import { computed, ref, watch, watchEffect } from 'vue';
 import DateTimeInput from '../forms/DateTimeInput.vue';
@@ -142,12 +142,12 @@ const groupedWorkingHours = computed(() => {
     return result;
 })
 
-const current_date = new Date()
-current_date.setHours(0, 0, 0, 0);
+const currentDate = new Date()
+currentDate.setHours(0, 0, 0, 0);
 const localResourceDefault: ResourceInput = {
     name: "",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    added: current_date,
+    added: currentDate,
     availability: { ...defaultAvailability },
     removed: null,
     holiday: null,
@@ -284,18 +284,24 @@ async function toggleEdit() {
     if (edit.value) {
         const err = await save()
         saveError.value = err
-        if (!err) edit.value = false
+        if (!err) {
+            edit.value = false
+        }
     }
     else {
         saveError.value = null
         edit.value = true
+        if (localResource.value.dbId != null) sidebarStore.startEdit(new ResourceSidebarData(localResource.value.dbId))
     }
 }
 
 function cancelEdit() {
+    // local reset
     localResource.value = { ...localResourceDefault, ...props.resource };
     saveError.value = null;
     edit.value = false;
+    // always allow cancel at store level (removes new items)
+    sidebarStore.discard();
 }
 
 function addVacation() {
@@ -334,7 +340,7 @@ async function save(): Promise<string | null> {
 async function deleteResource() {
     const resourceId = localResource.value.dbId
     if (resourceId == null) {
-        sidebarStore.popSidebar()
+        cancelEdit()
         return
     }
     const dialogResolved = new Promise((resolve, reject) => {
@@ -397,5 +403,34 @@ async function deleteResource() {
     gap: 12px;
     flex-wrap: wrap;
     align-items: flex-start;
+}
+
+/* shake animation for blocked save/cancel */
+@keyframes shake {
+
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
+}
+
+.shake {
+    animation: shake 0.6s;
 }
 </style>

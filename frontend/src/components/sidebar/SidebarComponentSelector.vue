@@ -39,10 +39,10 @@ function mapSidebarDataToComponent(cd: SidebarData): [number, Component, object]
 
 const currentComp = computed(() => {
     // sidebarStore.activeSidebar might be a computed ref; attempt to read .value if present
-    const maybe = sidebarStore.activeSidebar as unknown;
-    const cd = (maybe && typeof (maybe as { value?: unknown }).value !== 'undefined') ? (maybe as { value: unknown }).value : maybe;
-    if (!cd) return null;
-    return mapSidebarDataToComponent(cd as SidebarData);
+    if (sidebarStore.activeSidebar == null) {
+        return null
+    }
+    return mapSidebarDataToComponent(sidebarStore.activeSidebar);
 });
 </script>
 
