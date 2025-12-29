@@ -193,8 +193,7 @@
                                 class="clickable" />
                             <!-- drag handle for requirement (on top of symbol) -->
                             <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle"
-                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)"
-                                @mouseup.stop.prevent="(e) => onAllocDragEnd(rw.row.id, null, 'move', e)">
+                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
                                 <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#424242" opacity="0.95" />
                                 <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
                             </g>
@@ -209,8 +208,7 @@
                                 stroke="#b06b00" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
                             <!-- drag handle for milestone (on top of symbol) -->
                             <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle"
-                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)"
-                                @mouseup.stop.prevent="(e) => onAllocDragEnd(rw.row.id, null, 'move', e)">
+                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
                                 <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#424242" opacity="0.95" />
                                 <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
                             </g>
@@ -230,16 +228,16 @@
                     <!-- tasks -->
                     <template v-if="rw.row.designation === TaskDesignation.Task && rw.row.allocations">
                         <template v-for="alloc in rw.row.allocations" :key="rw.row.id + '-alloc-' + alloc.dbId">
-                            <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" rx="3"
+                            <rect :x="allocStartX(alloc)" :y="i * rowHeight + barPadding"
+                                :width="allocEndX(alloc) - allocStartX(alloc)" :height="barHeight" rx="3"
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
                                 class="clickable" :class="{ 'selected-alloc': allocationIsSelected(rw, alloc) }" />
                             <!-- only render allocation text if the bar is wide enough -->
-                            <template v-if="(dateToX(alloc.end) - dateToX(alloc.start)) > 23">
-                                <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
-                                    :width="(dateToX(alloc.end) - dateToX(alloc.start) - 8)" :height="barHeight">
+                            <template v-if="(allocEndX(alloc) - allocStartX(alloc)) > 23">
+                                <foreignObject :x="allocStartX(alloc) + 4" :y="i * rowHeight + barPadding"
+                                    :width="(allocEndX(alloc) - allocStartX(alloc) - 8)" :height="barHeight">
                                     <div class="svg-text-ellipsis svg-text-alloc clickable"
                                         xmlns="http://www.w3.org/1999/xhtml"
                                         @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
@@ -256,7 +254,7 @@
                     <template v-for="(rw) in visibleRows" :key="'overlay-'+rw.row.id">
                         <template v-for="(alloc, ai) in rw.row.allocations ?? []" :key="'ov-'+rw.row.id+'-'+alloc.dbId">
                             <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
-                                :transform="`translate(${dateToX(alloc.start)}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding})`">
+                                :transform="`translate(${allocStartX(alloc)}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding})`">
                                 <!-- start handle -->
                                 <g class="drag-handle start"
                                     @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'start', e)">
@@ -266,14 +264,14 @@
                                 <!-- move handle (center) -->
                                 <g class="drag-handle move"
                                     @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'move', e)"
-                                    :transform="`translate(${(dateToX(alloc.end) - dateToX(alloc.start)) / 2},0)`">
+                                    :transform="`translate(${(allocEndX(alloc) - allocStartX(alloc)) / 2},0)`">
                                     <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#424242" />
                                     <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
                                 </g>
                                 <!-- end handle -->
                                 <g class="drag-handle end"
                                     @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'end', e)"
-                                    :transform="`translate(${dateToX(alloc.end) - dateToX(alloc.start)},0)`">
+                                    :transform="`translate(${allocEndX(alloc) - allocStartX(alloc)},0)`">
                                     <rect x="4" y="-4" width="8" :height="barHeight" fill="#1e88e5" rx="2" />
                                     <text x="8" y="8" font-size="10" fill="#fff" text-anchor="middle">▶</text>
                                 </g>
@@ -281,7 +279,7 @@
 
                             <!-- centered action buttons for selected task's bookings -->
                             <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
-                                :transform="`translate(${dateToX(alloc.start) + (dateToX(alloc.end) - dateToX(alloc.start)) / 2 - 20}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
+                                :transform="`translate(${allocStartX(alloc) + (allocEndX(alloc) - allocStartX(alloc)) / 2 - 20}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
                                 <!-- delete button -->
                                 <g class="action-btn"
                                     @click.stop.prevent="() => onDeleteBooking(rw.row.id, alloc.dbId)">
@@ -297,7 +295,7 @@
                             </g>
                             <!-- join button between this and previous booking -->
                             <g v-if="prevAlloc(rw, ai) && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id)) && alloc.allocationType === AllocationType.Booking && prevAlloc(rw, ai)!.allocationType === AllocationType.Booking"
-                                :transform="`translate(${dateToX(prevAlloc(rw, ai)?.end) + (dateToX(alloc.start) - dateToX(prevAlloc(rw, ai)?.end)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
+                                :transform="`translate(${allocEndX(prevAlloc(rw, ai)!) + (allocStartX(alloc) - allocEndX(prevAlloc(rw, ai)!)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
                                 <g class="action-btn"
                                     @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId, alloc.dbId)">
                                     <rect x="-9" y="0" width="18" height="18" rx="3" fill="#4caf50" />
@@ -358,10 +356,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
-    (e: 'alloc-drag-move-start', data: { rowId: number | null, allocId: number | null, mouse: MouseEvent, date: Date }): void
-    (e: 'alloc-drag-move', data: { rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', mouse: MouseEvent, date: Date }): void
-    (e: 'alloc-drag-start', data: { rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', mouse: MouseEvent }): void
-    (e: 'alloc-drag-end', data: { rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', mouse: MouseEvent }): void
+    (e: 'alloc-drag-end', data: { rowId: number, allocId: number, start: Date, end: Date }): void
     (e: 'delete-booking', data: { rowId: number | null, allocId: number | null }): void
     (e: 'split-booking', data: { rowId: number | null, allocId: number | null, zoom: number }): void
     (e: 'join-bookings', data: { rowId: number | null, leftAllocId: number, rightAllocId: number }): void
@@ -380,6 +375,12 @@ const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
 const now = ref<Date>(new Date(Date.now()));
 
 let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
+
+// internal drag state and overwrites
+const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
+let draggingState: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined } | null = null;
+let lastDraggedAllocId: number | null = null;
+let pendingApply = false;
 
 function clientXToDate(clientX: number): Date {
     const rect = scrollCell.value?.getBoundingClientRect();
@@ -594,6 +595,37 @@ const visibleRows = computed(() => [...rowMap.value.values()].filter((r) => r.vi
 
 const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.value)
 
+// when external data arrives after a drag ended, clear the overwrite for the last dragged alloc
+watch(() => props.rows, newRows => {
+    if (!pendingApply || lastDraggedAllocId == null) return
+    // find allocation in new rows
+    for (const r of newRows ?? []) {
+        const allocs = r.allocations ?? []
+        for (const a of allocs) {
+            if (a.dbId === lastDraggedAllocId) {
+                const over = dragOverwrites.value.get(lastDraggedAllocId)
+                if (!over) {
+                    // nothing to clear
+                    pendingApply = false
+                    lastDraggedAllocId = null
+                    return
+                }
+                // compare external authoritative values with overwrite; if they match, drop the overwrite
+                const extStart = parseDate(a.start).getTime()
+                const extEnd = parseDate(a.end).getTime()
+                if (extStart === over.start.getTime() && extEnd === over.end.getTime()) {
+                    const m = new Map(dragOverwrites.value)
+                    m.delete(lastDraggedAllocId)
+                    dragOverwrites.value = m
+                    pendingApply = false
+                    lastDraggedAllocId = null
+                    return
+                }
+            }
+        }
+    }
+}, { deep: true })
+
 
 // panning logic
 
@@ -753,11 +785,33 @@ function fallbackTimestamp(row: Row): string | Date | null {
 }
 
 function firstAllocStart(row: Row) {
-    return row.allocations?.[0]?.start ?? fallbackTimestamp(row)
+    const alloc = row.allocations?.[0]
+    if (alloc) {
+        const over = dragOverwrites.value.get(alloc.dbId)
+        return over ? over.start : parseDate(alloc.start)
+    }
+    return fallbackTimestamp(row)
 }
 function lastAllocEnd(row: Row) {
     const allocs: Allocation[] = row.allocations ?? []
-    return (allocs.length > 0 ? allocs[allocs.length - 1]!.end : fallbackTimestamp(row))
+    if (allocs.length > 0) {
+        const last = allocs[allocs.length - 1]!
+        const over = dragOverwrites.value.get(last.dbId)
+        return over ? over.end : parseDate(last.end)
+    }
+    return fallbackTimestamp(row)
+}
+
+// helpers that return pixel positions for allocations, preferring drag overwrites when present
+function allocStartX(alloc: Allocation) {
+    const over = dragOverwrites.value.get(alloc.dbId)
+    const d = over ? over.start : parseDate(alloc.start)
+    return dateToX(d)
+}
+function allocEndX(alloc: Allocation) {
+    const over = dragOverwrites.value.get(alloc.dbId)
+    const d = over ? over.end : parseDate(alloc.end)
+    return dateToX(d)
 }
 function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
@@ -911,39 +965,95 @@ function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
 // NOTE: move-start handler removed (not needed currently)
 
 function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
-    // emit start and attach global listeners for continuous drag
-    emit('alloc-drag-start', { rowId, allocId, edge, mouse: e });
-    const initDate = clientXToDate(e.clientX);
-    emit('alloc-drag-move-start', { rowId, allocId, mouse: e, date: initDate });
-    // ensure any existing listeners removed
+    // clear previous listeners/state
     if (_activeDrag) {
         document.removeEventListener('mousemove', _activeDrag.moveListener);
         document.removeEventListener('mouseup', _activeDrag.upListener);
         _activeDrag = null;
+        draggingState = null;
     }
+
+    // locate original allocation bounds when available
+    let origStart: Date | undefined = undefined;
+    let origEnd: Date | undefined = undefined;
+    if (allocId != null) {
+        for (const rw of props.rows ?? []) {
+            const found = (rw.allocations ?? []).find(a => a.dbId === allocId);
+            if (found) {
+                origStart = (found.start instanceof Date) ? found.start : new Date(found.start);
+                origEnd = (found.end instanceof Date) ? found.end : new Date(found.end);
+                break;
+            }
+        }
+    }
+
+    const initDate = clientXToDate(e.clientX);
+    draggingState = { rowId, allocId, edge, origStart, origEnd };
+    if (edge === 'move' && origStart) {
+        const ds = draggingState;
+        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
+    }
+
+    if (allocId != null && origStart && origEnd) {
+        const m = new Map(dragOverwrites.value);
+        m.set(allocId, { start: origStart, end: origEnd });
+        dragOverwrites.value = m;
+    }
+
     const moveListener = (ev: MouseEvent) => {
+        if (!draggingState || draggingState.allocId == null) return;
         const date = clientXToDate(ev.clientX);
-        emit('alloc-drag-move', { rowId, allocId, edge, mouse: ev, date });
+        const aId = draggingState.allocId;
+        const s = draggingState.origStart ?? new Date();
+        const t = draggingState.origEnd ?? new Date();
+        let newS = s;
+        let newE = t;
+        if (draggingState.edge === 'start') {
+            newS = date;
+        } else if (draggingState.edge === 'end') {
+            newE = date;
+        } else {
+            const duration = t.getTime() - s.getTime();
+            const offset = draggingState.grabOffsetMs ?? 0;
+            newS = new Date(date.getTime() - offset);
+            newE = new Date(newS.getTime() + duration);
+        }
+        const m = new Map(dragOverwrites.value);
+        m.set(aId, { start: newS, end: newE });
+        dragOverwrites.value = m;
     };
-    const upListener = (ev: MouseEvent) => {
-        emit('alloc-drag-end', { rowId, allocId, edge, mouse: ev });
+
+    const upListener = () => {
+        if (!draggingState) {
+            document.removeEventListener('mousemove', moveListener);
+            document.removeEventListener('mouseup', upListener);
+            _activeDrag = null;
+            return;
+        }
+        const aId = draggingState.allocId;
+        let finalStart: Date | undefined = undefined;
+        let finalEnd: Date | undefined = undefined;
+        if (aId != null) {
+            const over = dragOverwrites.value.get(aId);
+            if (over) {
+                finalStart = over.start;
+                finalEnd = over.end;
+            }
+        }
+        if (draggingState.rowId != null && draggingState.allocId != null && finalStart != null && finalEnd != null) {
+            emit('alloc-drag-end', { rowId: draggingState.rowId, allocId: draggingState.allocId, start: finalStart, end: finalEnd })
+        }
+        lastDraggedAllocId = draggingState.allocId ?? null;
+        pendingApply = true;
         document.removeEventListener('mousemove', moveListener);
         document.removeEventListener('mouseup', upListener);
         _activeDrag = null;
+        draggingState = null;
     };
+
     document.addEventListener('mousemove', moveListener);
     document.addEventListener('mouseup', upListener);
     _activeDrag = { rowId, allocId, edge, moveListener, upListener };
-}
-
-function onAllocDragEnd(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
-    // if user triggers mouseup on the handle itself ensure listeners cleared and event emitted
-    emit('alloc-drag-end', { rowId, allocId, edge, mouse: e });
-    if (_activeDrag) {
-        document.removeEventListener('mousemove', _activeDrag.moveListener);
-        document.removeEventListener('mouseup', _activeDrag.upListener);
-        _activeDrag = null;
-    }
 }
 
 function onDeleteBooking(rowId: number | null, allocId: number | null) {
