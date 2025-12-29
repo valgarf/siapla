@@ -258,48 +258,56 @@
                                 <!-- start handle -->
                                 <g class="drag-handle start"
                                     @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'start', e)">
-                                    <rect x="-12" y="-4" width="8" :height="barHeight" fill="#1e88e5" rx="2" />
-                                    <text x="-8" y="8" font-size="10" fill="#fff" text-anchor="middle">◀</text>
+                                    <rect :x="-barHeight - 2" y="0" :width="barHeight" :height="barHeight"
+                                        fill="#1e88e5" rx="2" />
+                                    <text :x="-barHeight / 2 - 3" :y="barHeight / 2 + 3" font-size="10" fill="#fff"
+                                        text-anchor="middle">◀</text>
                                 </g>
                                 <!-- move handle (center) -->
                                 <g class="drag-handle move"
-                                    @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'move', e)"
-                                    :transform="`translate(${(allocEndX(alloc) - allocStartX(alloc)) / 2},0)`">
-                                    <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#424242" />
-                                    <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
+                                    @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'move', e)">
+                                    <rect x="0" y="0" :width="allocEndX(alloc) - allocStartX(alloc)" :height="barHeight"
+                                        fill="#ffffff00" />
                                 </g>
                                 <!-- end handle -->
                                 <g class="drag-handle end"
                                     @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'end', e)"
                                     :transform="`translate(${allocEndX(alloc) - allocStartX(alloc)},0)`">
-                                    <rect x="4" y="-4" width="8" :height="barHeight" fill="#1e88e5" rx="2" />
-                                    <text x="8" y="8" font-size="10" fill="#fff" text-anchor="middle">▶</text>
+                                    <rect x="2" y="0" :width="barHeight" :height="barHeight" fill="#1e88e5" rx="2" />
+                                    <text :x="barHeight / 2 + 3" :y="barHeight / 2 + 3" font-size="10" fill="#fff"
+                                        text-anchor="middle">▶</text>
                                 </g>
                             </g>
 
                             <!-- centered action buttons for selected task's bookings -->
                             <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
-                                :transform="`translate(${allocStartX(alloc) + (allocEndX(alloc) - allocStartX(alloc)) / 2 - 20}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
+                                :transform="`translate(${allocStartX(alloc) + (allocEndX(alloc) - allocStartX(alloc)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
                                 <!-- delete button -->
-                                <g class="action-btn"
+                                <g class="action-btn" :transform="`translate(${-barHeight / 2 - 2},0)`"
                                     @click.stop.prevent="() => onDeleteBooking(rw.row.id, alloc.dbId)">
-                                    <rect x="0" y="0" width="18" height="18" rx="3" fill="#e53935" />
-                                    <text x="9" y="13" font-size="12" fill="#fff" text-anchor="middle">🗑</text>
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#e53935" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">🗑</text>
                                 </g>
                                 <!-- split button -->
-                                <g class="action-btn" :transform="`translate(22,0)`"
+                                <g class="action-btn" :transform="`translate(${barHeight / 2 + 2},0)`"
                                     @click.stop.prevent="() => onSplitBooking(rw.row.id, alloc.dbId)">
-                                    <rect x="0" y="0" width="18" height="18" rx="3" fill="#fb8c00" />
-                                    <text x="9" y="13" font-size="12" fill="#fff" text-anchor="middle">✂</text>
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#fb8c00" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">✂</text>
                                 </g>
                             </g>
                             <!-- join button between this and previous booking -->
                             <g v-if="prevAlloc(rw, ai) && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id)) && alloc.allocationType === AllocationType.Booking && prevAlloc(rw, ai)!.allocationType === AllocationType.Booking"
                                 :transform="`translate(${allocEndX(prevAlloc(rw, ai)!) + (allocStartX(alloc) - allocEndX(prevAlloc(rw, ai)!)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
-                                <g class="action-btn"
-                                    @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId, alloc.dbId)">
-                                    <rect x="-9" y="0" width="18" height="18" rx="3" fill="#4caf50" />
-                                    <text x="0" y="13" font-size="12" fill="#fff" text-anchor="middle">🔗</text>
+                                <g class="action-btn" @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId,
+                                    alloc.dbId)">
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#4caf50" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">🔗</text>
                                 </g>
                             </g>
                         </template>
