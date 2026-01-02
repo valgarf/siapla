@@ -1,9 +1,11 @@
 <template>
     <q-select v-if="edit" filled v-model="selectModel" multiple :options="selectPossible" use-chips stack-label
         :label="label" />
-    <div v-else-if="model?.length" class="col">
+    <div v-else-if="model?.length || createButton" class="col">
         <div class="text-subtitle2">{{ label }}</div>
         <TaskChip v-for="task in model" :key="task.dbId" :task="task" />
+        <q-chip clickable v-if="!edit && createButton" outline icon="add" color="primary" label="Create"
+            @click="emit('create')" />
     </div>
 </template>
 
@@ -15,9 +17,13 @@ import TaskChip from '../common/TaskChip.vue';
 interface Props {
     label?: string;
     edit: boolean;
+    createButton?: boolean;
     possible: Task[];
 };
-const props = withDefaults(defineProps<Props>(), {});
+const props = withDefaults(defineProps<Props>(), { createButton: true });
+const emit = defineEmits<{
+    (e: 'create'): void
+}>()
 const model = defineModel<Task[] | undefined>({ required: true })
 
 const taskStore = useTaskStore();
