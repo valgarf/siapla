@@ -481,6 +481,37 @@ const topRowSegments = computed(() => {
     return Array.from(map.values())
 })
 
+const zoomTimeResMs = computed(() => {
+    if (zoomX.value > 20) {
+        // 1/4 hour
+        return 3600 * 1000 / 4
+    }
+    if (zoomX.value > 5) {
+        // 1/2 hour
+        return 3600 * 1000 / 2
+    }
+    if (zoomX.value > 0.6) {
+        // 1 hour
+        return 3600 * 1000
+    }
+    // 1 day
+    return 24 * 3600 * 1000
+})
+
+function roundToZoomRes(d: Date): Date {
+    const res = zoomTimeResMs.value
+    const result = new Date(Math.round((d.getTime() - startDate.value.getTime()) / res) * res + startDate.value.getTime());
+    if (res >= 24 * 3600 * 1000) {
+        if (d.getHours() > 12) {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+        }
+        else {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        }
+    }
+    return result
+}
+
 const bottomRowSegments = computed(() => {
     // zoom < 0.25 => months
     if (zoomX.value < 0.25) {
@@ -1034,18 +1065,18 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
             // row-level single date (requirement/milestone)
             const rowId = draggingState.rowId;
             if (rowId != null) {
-                dragRowOverwrites.value.set(rowId, date);
+                dragRowOverwrites.value.set(rowId, roundToZoomRes(date));
             }
         } else {
             const offset = draggingState.grabOffsetMs ?? 0;
             if (draggingState.edge === 'start') {
-                newS = new Date(date.getTime() - offset);
+                newS = roundToZoomRes(new Date(date.getTime() - offset))
             } else if (draggingState.edge === 'end') {
-                newE = new Date(date.getTime() - offset);
+                newE = roundToZoomRes(new Date(date.getTime() - offset))
             } else {
-                const duration = t.getTime() - s.getTime();
-                newS = new Date(date.getTime() - offset);
-                newE = new Date(newS.getTime() + duration);
+                const duration = t.getTime() - s.getTime()
+                newS = roundToZoomRes(new Date(date.getTime() - offset))
+                newE = new Date(newS.getTime() + duration)
             }
             dragOverwrites.value.set(aId, { start: newS, end: newE });
         }
