@@ -386,8 +386,6 @@ const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
 // row-level single-date overwrites (for requirements / milestones)
 const dragRowOverwrites = ref(new Map<number, Date>());
 let draggingState: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined } | null = null;
-let lastDraggedAllocId: number | null = null;
-let pendingApply = false;
 
 function clientXToDate(clientX: number): Date {
     const rect = scrollCell.value?.getBoundingClientRect();
@@ -602,35 +600,25 @@ const visibleRows = computed(() => [...rowMap.value.values()].filter((r) => r.vi
 
 const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.value)
 
-// when external data arrives after a drag ended, clear the overwrite for the last dragged alloc
-watch(() => props.rows, newRows => {
-    if (!pendingApply || lastDraggedAllocId == null) return
-    // find allocation in new rows
-    for (const r of newRows ?? []) {
-        const allocs = r.allocations ?? []
-        for (const a of allocs) {
-            if (a.dbId === lastDraggedAllocId) {
-                const over = dragOverwrites.value.get(lastDraggedAllocId)
-                if (!over) {
-                    // nothing to clear
-                    pendingApply = false
-                    lastDraggedAllocId = null
-                    return
-                }
-                // compare external authoritative values with overwrite; if they match, drop the overwrite
-                const extStart = parseDate(a.start).getTime()
-                const extEnd = parseDate(a.end).getTime()
-                if (extStart === over.start.getTime() && extEnd === over.end.getTime()) {
-                    const m = new Map(dragOverwrites.value)
-                    m.delete(lastDraggedAllocId)
-                    dragOverwrites.value = m
-                    pendingApply = false
-                    lastDraggedAllocId = null
-                    return
-                }
-            }
+// when external data arrives after a drag ended, clear the overwrite and only keep the overwrite 
+// for any active drag
+watch(() => props.rows, () => {
+    const allocMap: Map<number, { start: Date, end: Date }> = new Map();
+    const rowMap: Map<number, Date> = new Map();
+    if (draggingState?.allocId != null) {
+        const allocOver = dragOverwrites.value.get(draggingState.allocId);
+        if (allocOver) {
+            allocMap.set(draggingState.allocId, allocOver);
         }
     }
+    else if (draggingState?.rowId != null) {
+        const rowOver = dragRowOverwrites.value.get(draggingState.rowId);
+        if (rowOver) {
+            rowMap.set(draggingState.rowId, rowOver);
+        }
+    }
+    dragRowOverwrites.value = rowMap;
+    dragOverwrites.value = allocMap;
 }, { deep: true })
 
 
@@ -1023,14 +1011,10 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
     }
 
     if (allocId != null && origStart && origEnd) {
-        const m = new Map(dragOverwrites.value);
-        m.set(allocId, { start: origStart, end: origEnd });
-        dragOverwrites.value = m;
+        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
     }
     else if (rowId != null && origStart) {
-        const m = new Map(dragRowOverwrites.value);
-        m.set(rowId, origStart);
-        dragRowOverwrites.value = m;
+        dragRowOverwrites.value.set(rowId, origStart);
 
     }
 
@@ -1046,9 +1030,7 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
             // row-level single date (requirement/milestone)
             const rowId = draggingState.rowId;
             if (rowId != null) {
-                const m = new Map(dragRowOverwrites.value);
-                m.set(rowId, date);
-                dragRowOverwrites.value = m;
+                dragRowOverwrites.value.set(rowId, date);
             }
         } else {
             if (draggingState.edge === 'start') {
@@ -1061,9 +1043,7 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 newS = new Date(date.getTime() - offset);
                 newE = new Date(newS.getTime() + duration);
             }
-            const m = new Map(dragOverwrites.value);
-            m.set(aId, { start: newS, end: newE });
-            dragOverwrites.value = m;
+            dragOverwrites.value.set(aId, { start: newS, end: newE });
         }
     };
 
@@ -1091,15 +1071,13 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 finalEnd = over;
             }
         }
+        _activeDrag = null;
+        draggingState = null;
+        document.removeEventListener('mousemove', moveListener);
+        document.removeEventListener('mouseup', upListener);
         if (rowId != null && finalStart != null && finalEnd != null) {
             emit('alloc-drag-end', { rowId: rowId, allocId: aId, start: finalStart, end: finalEnd });
         }
-        lastDraggedAllocId = draggingState.allocId ?? null;
-        pendingApply = true;
-        document.removeEventListener('mousemove', moveListener);
-        document.removeEventListener('mouseup', upListener);
-        _activeDrag = null;
-        draggingState = null;
     };
 
     document.addEventListener('mousemove', moveListener);
