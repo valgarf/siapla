@@ -208,7 +208,6 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
     })),
     removedVacations: resource.value.removedVacations || [],
   };
-  console.log("Storing resource:", result);
   return result;
 }
 

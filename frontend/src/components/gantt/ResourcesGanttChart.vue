@@ -2,7 +2,9 @@
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="resources"
-    @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
+    @alloc-click="onAllocClick" @row-click="onResourceClick" @alloc-drag-end="onAllocDragEnd"
+    @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
+    key="gantt-resources">
     <template #corner>
       <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
         <template #activator="{ toggle }">
@@ -142,10 +144,33 @@ function onResourceClick(rid: number) {
   sidebarStore.toggle(new ResourceSidebarData(rid));
 }
 
-function onAllocClick(data: { taskId: number | null }) {
-  if (data.taskId != null) {
-    sidebarStore.toggle(new TaskSidebarData(data.taskId));
+function onAllocClick(evt: { taskId: number | null }) {
+  if (evt.taskId != null) {
+    sidebarStore.toggle(new TaskSidebarData(evt.taskId));
   }
+}
+
+// handlers for GanttChart emitted events
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+  if (!evt.allocId) {
+    return
+  }
+  const alloc = planStore.allocation(evt.allocId);
+  if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+  if (!payload?.allocId) return;
+  await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+  if (!payload?.allocId) return;
+  await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+  await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
 }
 
 function onNewTask() {

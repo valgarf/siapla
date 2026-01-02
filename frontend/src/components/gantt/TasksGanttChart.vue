@@ -1,7 +1,9 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="tasks"
-        @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
+        @alloc-click="onAllocClick" @row-click="onTaskClick" @alloc-drag-end="onAllocDragEnd"
+        @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
+        key="gantt-tasks">
         <template #corner>
             <SortMenu :modelValue="taskSortOptions" @update:modelValue="updateSortOptions">
                 <template #activator="{ toggle }">
@@ -20,14 +22,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import SortMenu from './SortMenu.vue';
 
 
 import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
-import { useTaskStore, type Task } from 'src/stores/task';
+import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 import { taskSortOptions, type SortOption } from './sortOptions'
@@ -46,6 +48,42 @@ function onTaskClick(tid: number | null) {
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
+}
+
+// handlers for GanttChart events
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+    if (evt.allocId) {
+        const alloc = planStore.allocation(evt.allocId);
+        if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+        return;
+    }
+    // row-level change (requirement / milestone)
+    if (!evt.rowId) return;
+    const task = taskStore.task(evt.rowId);
+    if (!task) return;
+    const taskRef = ref<TaskInput>({ ...task });
+    if (task.designation === TaskDesignation.Requirement) {
+        taskRef.value.earliestStart = evt.start;
+    } else if (task.designation === TaskDesignation.Milestone) {
+        taskRef.value.scheduleTarget = evt.start;
+    } else {
+        return;
+    }
+    await taskStore.saveTask(taskRef);
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+    if (!payload?.allocId) return;
+    await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+    if (!payload?.allocId) return;
+    await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+    await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
 }
 function onNewTask() {
     sidebarStore.createNew(new NewTaskSidebarData());
