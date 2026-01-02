@@ -1005,9 +1005,13 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
 
     const initDate = clientXToDate(e.clientX);
     draggingState = { rowId, allocId, edge, origStart, origEnd };
-    if (edge === 'move' && origStart) {
+    if ((edge === 'move' || edge === 'start') && origStart) {
         const ds = draggingState;
         ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
+    }
+    else if (edge === 'end' && origEnd) {
+        const ds = draggingState;
+        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
     }
 
     if (allocId != null && origStart && origEnd) {
@@ -1033,13 +1037,13 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 dragRowOverwrites.value.set(rowId, date);
             }
         } else {
+            const offset = draggingState.grabOffsetMs ?? 0;
             if (draggingState.edge === 'start') {
-                newS = date;
+                newS = new Date(date.getTime() - offset);
             } else if (draggingState.edge === 'end') {
-                newE = date;
+                newE = new Date(date.getTime() - offset);
             } else {
                 const duration = t.getTime() - s.getTime();
-                const offset = draggingState.grabOffsetMs ?? 0;
                 newS = new Date(date.getTime() - offset);
                 newE = new Date(newS.getTime() + duration);
             }
