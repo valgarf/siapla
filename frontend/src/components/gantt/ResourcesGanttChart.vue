@@ -151,7 +151,10 @@ function onAllocClick(evt: { taskId: number | null }) {
 }
 
 // handlers for GanttChart emitted events
-async function onAllocDragEnd(evt: { rowId: number, allocId: number, start: Date, end: Date }) {
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+  if (!evt.allocId) {
+    return
+  }
   const alloc = planStore.allocation(evt.allocId);
   if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
 }

@@ -22,14 +22,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import SortMenu from './SortMenu.vue';
 
 
 import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
-import { useTaskStore, type Task } from 'src/stores/task';
+import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 import { taskSortOptions, type SortOption } from './sortOptions'
@@ -51,9 +51,25 @@ function onAllocClick(data: { rowId: number | null }) {
 }
 
 // handlers for GanttChart events
-async function onAllocDragEnd(evt: { rowId: number, allocId: number, start: Date, end: Date }) {
-    const alloc = planStore.allocation(evt.allocId);
-    if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+    if (evt.allocId) {
+        const alloc = planStore.allocation(evt.allocId);
+        if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+        return;
+    }
+    // row-level change (requirement / milestone)
+    if (!evt.rowId) return;
+    const task = taskStore.task(evt.rowId);
+    if (!task) return;
+    const taskRef = ref<TaskInput>({ ...task });
+    if (task.designation === TaskDesignation.Requirement) {
+        taskRef.value.earliestStart = evt.start;
+    } else if (task.designation === TaskDesignation.Milestone) {
+        taskRef.value.scheduleTarget = evt.start;
+    } else {
+        return;
+    }
+    await taskStore.saveTask(taskRef);
 }
 
 async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {

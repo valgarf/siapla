@@ -143,7 +143,7 @@
                         <template
                             v-if="rw.row.designation == TaskDesignation.Milestone && rw.row.scheduleTarget && rw.row.allocations && rw.row.allocations.length > 0">
                             <line :x1="dateToX(firstAllocStart(rw.row)!)" :y1="i * rowHeight + rowHeight / 2"
-                                :x2="dateToX(rw.row.scheduleTarget)" :y2="i * rowHeight + rowHeight / 2"
+                                :x2="rowTimestampX(rw.row)" :y2="i * rowHeight + rowHeight / 2"
                                 :stroke="firstAllocStart(rw.row)! <= rw.row.scheduleTarget! ? '#66bb6a' : '#ef5350'"
                                 stroke-width="3" />
                         </template>
@@ -188,29 +188,26 @@
                     </template>
                     <!-- requirements -->
                     <template v-if="rw.row.designation === TaskDesignation.Requirement && rw.row.earliestStart">
-                        <g :transform="`translate(${dateToX(rw.row.earliestStart)}, ${i * rowHeight + rowHeight / 2})`">
+                        <g :transform="`translate(${rowTimestampX(rw.row)}, ${i * rowHeight + rowHeight / 2})`">
                             <circle r="6" fill="#ffb74d" stroke="#b06b00" @click.stop="() => emitRowClick(rw.row.id)"
                                 class="clickable" />
                             <!-- drag handle for requirement (on top of symbol) -->
-                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle"
+                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle move"
                                 @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
-                                <rect x="-6" y="-6" width="12" height="12" rx="2" fill="#424242" opacity="0.95" />
-                                <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
+                                <circle r="6" fill="#ffffff00" />
                             </g>
                         </g>
                     </template>
 
                     <!-- milestones -->
                     <template v-if="rw.row.designation === TaskDesignation.Milestone && rw.row.scheduleTarget">
-                        <g
-                            :transform="`translate(${dateToX(rw.row.scheduleTarget)}, ${i * rowHeight + rowHeight / 2})`">
+                        <g :transform="`translate(${rowTimestampX(rw.row)}, ${i * rowHeight + rowHeight / 2})`">
                             <rect :x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
                                 stroke="#b06b00" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
                             <!-- drag handle for milestone (on top of symbol) -->
-                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle"
+                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle move"
                                 @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
-                                <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#424242" opacity="0.95" />
-                                <text x="0" y="5" font-size="10" fill="#fff" text-anchor="middle">↔</text>
+                                <rect :x="-7" y="-7" width="14" height="14" fill="#ffffff00" transform="rotate(45)" />
                             </g>
                         </g>
                     </template>
@@ -218,7 +215,7 @@
                         v-if="rw.row.designation === TaskDesignation.Milestone && rw.row.allocations && rw.row.allocations.length > 0">
                         <g
                             :transform="`translate(${dateToX(firstAllocStart(rw.row)!)}, ${i * rowHeight + rowHeight / 2})`">
-                            <rect x="-6" y="-6" width="12" height="12"
+                            <rect x="-7" y="-7" width="14" height="14"
                                 :fill="allocBeforeTarget(rw.row) === true ? '#66bb6a' : '#ef5350'"
                                 :stroke="allocBeforeTarget(rw.row) === true ? '#3f8d43' : '#d21714'"
                                 transform="rotate(45)" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
@@ -283,7 +280,7 @@
                             <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
                                 :transform="`translate(${allocStartX(alloc) + (allocEndX(alloc) - allocStartX(alloc)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
                                 <!-- delete button -->
-                                <g class="action-btn" :transform="`translate(${-barHeight / 2 - 2},0)`"
+                                <g class="action-btn clickable" :transform="`translate(${-barHeight / 2 - 2},0)`"
                                     @click.stop.prevent="() => onDeleteBooking(rw.row.id, alloc.dbId)">
                                     <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
                                         fill="#e53935" />
@@ -291,7 +288,7 @@
                                         text-anchor="middle">🗑</text>
                                 </g>
                                 <!-- split button -->
-                                <g class="action-btn" :transform="`translate(${barHeight / 2 + 2},0)`"
+                                <g class="action-btn clickable" :transform="`translate(${barHeight / 2 + 2},0)`"
                                     @click.stop.prevent="() => onSplitBooking(rw.row.id, alloc.dbId)">
                                     <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
                                         fill="#fb8c00" />
@@ -302,7 +299,7 @@
                             <!-- join button between this and previous booking -->
                             <g v-if="prevAlloc(rw, ai) && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id)) && alloc.allocationType === AllocationType.Booking && prevAlloc(rw, ai)!.allocationType === AllocationType.Booking"
                                 :transform="`translate(${allocEndX(prevAlloc(rw, ai)!) + (allocStartX(alloc) - allocEndX(prevAlloc(rw, ai)!)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
-                                <g class="action-btn" @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId,
+                                <g class="action-btn clickable" @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId,
                                     alloc.dbId)">
                                     <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
                                         fill="#4caf50" />
@@ -364,7 +361,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
-    (e: 'alloc-drag-end', data: { rowId: number, allocId: number, start: Date, end: Date }): void
+    (e: 'alloc-drag-end', data: { rowId: number, allocId: number | null, start: Date, end: Date }): void
     (e: 'delete-booking', data: { rowId: number | null, allocId: number | null }): void
     (e: 'split-booking', data: { rowId: number | null, allocId: number | null, zoom: number }): void
     (e: 'join-bookings', data: { rowId: number | null, leftAllocId: number, rightAllocId: number }): void
@@ -386,6 +383,8 @@ let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' |
 
 // internal drag state and overwrites
 const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
+// row-level single-date overwrites (for requirements / milestones)
+const dragRowOverwrites = ref(new Map<number, Date>());
 let draggingState: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined } | null = null;
 let lastDraggedAllocId: number | null = null;
 let pendingApply = false;
@@ -783,6 +782,10 @@ function dateToX(d: string | Date | undefined) {
 }
 
 function fallbackTimestamp(row: Row): string | Date | null {
+    if (row.designation && [TaskDesignation.Requirement, TaskDesignation.Milestone].includes(row.designation)) {
+        const ro = dragRowOverwrites.value.get(row.id)
+        if (ro) return ro
+    }
     if (row.designation == TaskDesignation.Requirement) {
         return row.earliestStart ?? null;
     }
@@ -821,10 +824,15 @@ function allocEndX(alloc: Allocation) {
     const d = over ? over.end : parseDate(alloc.end)
     return dateToX(d)
 }
+function rowTimestampX(row: Row) {
+    // prefer row-level overwrite when dragging requirements/milestones
+    return dateToX(fallbackTimestamp(row) ?? undefined)
+}
 function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
-    if (!row.scheduleTarget || !first) return false
-    return parseDate(first).getTime() <= parseDate(row.scheduleTarget).getTime()
+    const schedule = fallbackTimestamp(row)
+    if (!schedule || !first) return false
+    return parseDate(first).getTime() <= parseDate(schedule).getTime()
 }
 
 // wheel zoom handler: zoom along x axis only
@@ -973,6 +981,7 @@ function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
 // NOTE: move-start handler removed (not needed currently)
 
 function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
+    if (!rowId) return;
     // clear previous listeners/state
     if (_activeDrag) {
         document.removeEventListener('mousemove', _activeDrag.moveListener);
@@ -994,6 +1003,17 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
             }
         }
     }
+    else {
+        const row = props.rows.find(r => r.id == rowId);
+        if (row?.designation === TaskDesignation.Requirement) {
+            origStart = row.earliestStart ? new Date(row.earliestStart) : undefined
+            origEnd = origStart
+        }
+        if (row?.designation === TaskDesignation.Milestone) {
+            origStart = row.scheduleTarget ? new Date(row.scheduleTarget) : undefined
+            origEnd = origStart
+        }
+    }
 
     const initDate = clientXToDate(e.clientX);
     draggingState = { rowId, allocId, edge, origStart, origEnd };
@@ -1007,28 +1027,44 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
         m.set(allocId, { start: origStart, end: origEnd });
         dragOverwrites.value = m;
     }
+    else if (rowId != null && origStart) {
+        const m = new Map(dragRowOverwrites.value);
+        m.set(rowId, origStart);
+        dragRowOverwrites.value = m;
+
+    }
 
     const moveListener = (ev: MouseEvent) => {
-        if (!draggingState || draggingState.allocId == null) return;
+        if (!draggingState) return;
         const date = clientXToDate(ev.clientX);
         const aId = draggingState.allocId;
         const s = draggingState.origStart ?? new Date();
         const t = draggingState.origEnd ?? new Date();
         let newS = s;
         let newE = t;
-        if (draggingState.edge === 'start') {
-            newS = date;
-        } else if (draggingState.edge === 'end') {
-            newE = date;
+        if (aId == null) {
+            // row-level single date (requirement/milestone)
+            const rowId = draggingState.rowId;
+            if (rowId != null) {
+                const m = new Map(dragRowOverwrites.value);
+                m.set(rowId, date);
+                dragRowOverwrites.value = m;
+            }
         } else {
-            const duration = t.getTime() - s.getTime();
-            const offset = draggingState.grabOffsetMs ?? 0;
-            newS = new Date(date.getTime() - offset);
-            newE = new Date(newS.getTime() + duration);
+            if (draggingState.edge === 'start') {
+                newS = date;
+            } else if (draggingState.edge === 'end') {
+                newE = date;
+            } else {
+                const duration = t.getTime() - s.getTime();
+                const offset = draggingState.grabOffsetMs ?? 0;
+                newS = new Date(date.getTime() - offset);
+                newE = new Date(newS.getTime() + duration);
+            }
+            const m = new Map(dragOverwrites.value);
+            m.set(aId, { start: newS, end: newE });
+            dragOverwrites.value = m;
         }
-        const m = new Map(dragOverwrites.value);
-        m.set(aId, { start: newS, end: newE });
-        dragOverwrites.value = m;
     };
 
     const upListener = () => {
@@ -1038,6 +1074,7 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
             _activeDrag = null;
             return;
         }
+        const rowId = draggingState.rowId;
         const aId = draggingState.allocId;
         let finalStart: Date | undefined = undefined;
         let finalEnd: Date | undefined = undefined;
@@ -1047,9 +1084,15 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 finalStart = over.start;
                 finalEnd = over.end;
             }
+        } else if (rowId != null) {
+            const over = dragRowOverwrites.value.get(rowId);
+            if (over) {
+                finalStart = over;
+                finalEnd = over;
+            }
         }
-        if (draggingState.rowId != null && draggingState.allocId != null && finalStart != null && finalEnd != null) {
-            emit('alloc-drag-end', { rowId: draggingState.rowId, allocId: draggingState.allocId, start: finalStart, end: finalEnd })
+        if (rowId != null && finalStart != null && finalEnd != null) {
+            emit('alloc-drag-end', { rowId: rowId, allocId: aId, start: finalStart, end: finalEnd });
         }
         lastDraggedAllocId = draggingState.allocId ?? null;
         pendingApply = true;
