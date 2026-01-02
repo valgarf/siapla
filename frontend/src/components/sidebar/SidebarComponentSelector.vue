@@ -37,6 +37,9 @@ function mapSidebarDataToComponent(cd: SidebarData): [number, Component, object]
         if (cd.successorIds !== undefined && cd.successorIds.length > 0) {
             t.successors = cd.successorIds.map((id) => taskStore.task(id)).filter((x) => x != null);
         }
+        if (cd.resourceConstraints !== undefined && cd.resourceConstraints.length > 0) {
+            t.resourceConstraints = cd.resourceConstraints.map(obj => ({ ...obj }))
+        }
         return [0, TaskSidebar, { task: t }];
     }
     if (cd instanceof ResourceSidebarData) {

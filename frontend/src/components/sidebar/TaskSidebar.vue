@@ -33,7 +33,7 @@
                     v-model="localTask.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ localTask.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ localTask.designation
-                        }}</q-chip>
+                    }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="localTask.description" />
                 <q-markdown v-else-if="localTask.description" :src="localTask.description" />
@@ -82,7 +82,7 @@
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                    }}
+                                }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -494,13 +494,15 @@ function onCreateChild() {
 function onCreateSuccessor() {
     const predecessorIds = localTask.value.dbId != null ? [localTask.value.dbId] : [];
     const parentId = localTask.value.parent?.dbId ?? null;
-    sidebarStore.createNew(new NewTaskSidebarData({ predecessorIds, parentId }));
+    const resourceConstraints = localTask.value.resourceConstraints ?? [];
+    sidebarStore.createNew(new NewTaskSidebarData({ predecessorIds, parentId, resourceConstraints }));
 }
 
 function onCreatePredecessor() {
     const successorIds = localTask.value.dbId != null ? [localTask.value.dbId] : [];
     const parentId = localTask.value.parent?.dbId ?? null;
-    sidebarStore.createNew(new NewTaskSidebarData({ successorIds, parentId }));
+    const resourceConstraints = localTask.value.resourceConstraints ?? [];
+    sidebarStore.createNew(new NewTaskSidebarData({ successorIds, parentId, resourceConstraints }));
 }
 
 // ...existing code...

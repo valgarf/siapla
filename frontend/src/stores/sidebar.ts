@@ -1,7 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { computed, ref, type Ref } from 'vue';
 
-import { useTaskStore } from './task';
+import { type ResourceConstraint, useTaskStore } from './task';
 import { useResourceStore } from './resource';
 
 export interface SidebarData {
@@ -22,17 +22,20 @@ export interface NewTaskDefaults {
   parentId?: number | null;
   predecessorIds?: number[];
   successorIds?: number[];
+  resourceConstraints?: ResourceConstraint[];
 }
 
 export class NewTaskSidebarData implements SidebarData {
   parentId: number | null | undefined;
   predecessorIds: number[] | undefined;
   successorIds: number[] | undefined;
+  resourceConstraints: ResourceConstraint[] | undefined;
   constructor(defaults?: NewTaskDefaults) {
     if (defaults) {
       this.parentId = defaults.parentId;
       this.predecessorIds = defaults.predecessorIds;
       this.successorIds = defaults.successorIds;
+      this.resourceConstraints = defaults.resourceConstraints;
     }
   }
   valid(): boolean {
