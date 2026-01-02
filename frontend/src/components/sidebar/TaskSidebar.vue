@@ -107,12 +107,14 @@
             </section>
             <section class="sidebar-section column q-gutter-xs">
                 <EditableTaskList v-model="localTask.predecessors" label="Predecessors" :possible="possiblePredecessors"
-                    v-show="localTask.designation != TaskDesignation.Requirement" :edit="edit" />
+                    v-show="localTask.designation != TaskDesignation.Requirement" :edit="edit"
+                    @create="onCreatePredecessor" />
                 <EditableTaskList v-model="localTask.successors" label="Successors" :possible="possibleSuccessors"
-                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit" />
+                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit"
+                    @create="onCreateSuccessor" />
                 <TaskSelect v-show="edit" v-model="localTask.parent" :possible="possibleParents" label="parent" />
                 <EditableTaskList v-model="localTask.children" label="Children" :possible="possibleChildren"
-                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" />
+                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild" />
                 <div class="col" v-show="effectiveRequirements.length > 0">
                     <div class="text-subtitle2">Requirements</div>
                     <TaskChip v-for="task in effectiveRequirements" :clickable="!edit" :key="task.dbId" :task="task" />
@@ -156,7 +158,7 @@
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
 import { TaskDesignation } from 'src/gql/graphql';
-import { TaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
+import { TaskSidebarData, NewTaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
 import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
@@ -181,7 +183,7 @@ const edit = ref(localTask.value.dbId == null)
 
 
 interface Props {
-    task: TaskInput;
+    task: Partial<TaskInput>;
 };
 
 const props = defineProps<Props>();
@@ -482,6 +484,23 @@ async function deleteBookingLocal(b: Allocation) {
 
 function createBooking() {
     void planStore.createBookingFromPlan(localTask.value.dbId ?? null);
+}
+
+function onCreateChild() {
+    const parentId = localTask.value.dbId ?? null;
+    sidebarStore.createNew(new NewTaskSidebarData({ parentId }));
+}
+
+function onCreateSuccessor() {
+    const predecessorIds = localTask.value.dbId != null ? [localTask.value.dbId] : [];
+    const parentId = localTask.value.parent?.dbId ?? null;
+    sidebarStore.createNew(new NewTaskSidebarData({ predecessorIds, parentId }));
+}
+
+function onCreatePredecessor() {
+    const successorIds = localTask.value.dbId != null ? [localTask.value.dbId] : [];
+    const parentId = localTask.value.parent?.dbId ?? null;
+    sidebarStore.createNew(new NewTaskSidebarData({ successorIds, parentId }));
 }
 
 // ...existing code...

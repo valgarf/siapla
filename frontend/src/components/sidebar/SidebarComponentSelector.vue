@@ -12,7 +12,7 @@ import { type SidebarData, NewResourceSidebarData, NewTaskSidebarData, ResourceS
 import { type Component, computed } from 'vue';
 import TaskSidebar from './TaskSidebar.vue';
 import ResourceSidebar from './ResourceSidebar.vue';
-import { useTaskStore } from 'src/stores/task';
+import { type TaskInput, useTaskStore } from 'src/stores/task';
 import { useResourceStore } from 'src/stores/resource';
 // no external assert import: throw errors directly
 
@@ -26,7 +26,18 @@ function mapSidebarDataToComponent(cd: SidebarData): [number, Component, object]
         return [cd.taskId, TaskSidebar, { task: taskStore.task(cd.taskId) }];
     }
     if (cd instanceof NewTaskSidebarData) {
-        return [0, TaskSidebar, { task: {} }];
+        // build initial task object from defaults (resolve ids to task objects)
+        const t: Partial<TaskInput> = {};
+        if (cd.parentId !== undefined && cd.parentId !== null) {
+            t.parent = taskStore.task(cd.parentId) ?? null;
+        }
+        if (cd.predecessorIds !== undefined && cd.predecessorIds.length > 0) {
+            t.predecessors = cd.predecessorIds.map((id) => taskStore.task(id)).filter((x) => x != null);
+        }
+        if (cd.successorIds !== undefined && cd.successorIds.length > 0) {
+            t.successors = cd.successorIds.map((id) => taskStore.task(id)).filter((x) => x != null);
+        }
+        return [0, TaskSidebar, { task: t }];
     }
     if (cd instanceof ResourceSidebarData) {
         return [cd.resourceId, ResourceSidebar, { resource: resourceStore.resource(cd.resourceId) }];

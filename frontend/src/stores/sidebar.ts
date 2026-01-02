@@ -18,8 +18,23 @@ export class TaskSidebarData implements SidebarData {
   }
 }
 
+export interface NewTaskDefaults {
+  parentId?: number | null;
+  predecessorIds?: number[];
+  successorIds?: number[];
+}
+
 export class NewTaskSidebarData implements SidebarData {
-  constructor() { }
+  parentId: number | null | undefined;
+  predecessorIds: number[] | undefined;
+  successorIds: number[] | undefined;
+  constructor(defaults?: NewTaskDefaults) {
+    if (defaults) {
+      this.parentId = defaults.parentId;
+      this.predecessorIds = defaults.predecessorIds;
+      this.successorIds = defaults.successorIds;
+    }
+  }
   valid(): boolean {
     return true;
   }
