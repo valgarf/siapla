@@ -33,7 +33,7 @@
                     v-model="localTask.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ localTask.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ localTask.designation
-                    }}</q-chip>
+                        }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="localTask.description" />
                 <q-markdown v-else-if="localTask.description" :src="localTask.description" />
@@ -78,11 +78,12 @@
                         <div class="col">
                             <EditableResourceList v-model="option.resources"
                                 :name="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
-                                :possible="allResources" :edit="edit" class="full-width" />
+                                :possible="allResources" :edit="edit" class="full-width"
+                                :selectKey="'resource-constraint-' + idx" />
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                }}
+                                    }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -108,13 +109,14 @@
             <section class="sidebar-section column q-gutter-xs">
                 <EditableTaskList v-model="localTask.predecessors" label="Predecessors" :possible="possiblePredecessors"
                     v-show="localTask.designation != TaskDesignation.Requirement" :edit="edit"
-                    @create="onCreatePredecessor" />
+                    @create="onCreatePredecessor" :selectKey="'predecessors'" />
                 <EditableTaskList v-model="localTask.successors" label="Successors" :possible="possibleSuccessors"
-                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit"
-                    @create="onCreateSuccessor" />
+                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit" @create="onCreateSuccessor"
+                    :selectKey="'successors'" />
                 <TaskSelect v-show="edit" v-model="localTask.parent" :possible="possibleParents" label="parent" />
                 <EditableTaskList v-model="localTask.children" label="Children" :possible="possibleChildren"
-                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild" />
+                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild"
+                    :selectKey="'children'" />
                 <div class="col" v-show="effectiveRequirements.length > 0">
                     <div class="text-subtitle2">Requirements</div>
                     <TaskChip v-for="task in effectiveRequirements" :clickable="!edit" :key="task.dbId" :task="task" />
@@ -135,7 +137,8 @@
                                 @update:modelValue="() => saveBookingLocal(b)" />
                             <div class="booking-resources">
                                 <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
-                                    :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                                    :edit="true" @update:modelValue="() => saveBookingLocal(b)"
+                                    :selectKey="'booking-' + idx + '-resources'" />
                             </div>
                             <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218" class="responsive-field"
                                 @update:modelValue="(start) => saveBookingLocal(b, start, null)" />

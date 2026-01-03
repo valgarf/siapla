@@ -51,10 +51,13 @@
         }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
-                    'gantt-row-description': true, 'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description': true,
+                    'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description-selected': (selectionMode && rw.row.selected),
+                    'gantt-row-description-not-selectable': selectionMode && rw.row.selectable === false,
                     'clickable': true
                 }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
-                    @click.stop="emitRowClick(rw.row.id)">
+                    @click.stop="selectionMode ? (rw.row.selectable ? emit('toggle-selection', rw.row.id) : undefined) : emitRowClick(rw.row.id)">
                     <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
@@ -336,6 +339,8 @@ export type Row = {
     symbol?: { symbolUTF8: string; title?: string } | undefined | null
     availability: Availability[]
     depth: number
+    selectable?: boolean
+    selected?: boolean
 }
 export type Availability = { start: string | Date; end: string | Date }
 export type Dependency = { predId: number; succId: number }
@@ -355,12 +360,15 @@ interface Props {
     selectedAllocIds?: number[]
     // key used to store state information for, e.g. scrolling or collapsed status
     dataKey: string
+    // whether gantt is in selection mode; when true rows may have `selectable` and `selected`
+    selectionMode?: boolean
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
+    (e: 'toggle-selection', id: number): void
     (e: 'alloc-drag-end', data: { rowId: number, allocId: number | null, start: Date, end: Date }): void
     (e: 'delete-booking', data: { rowId: number | null, allocId: number | null }): void
     (e: 'split-booking', data: { rowId: number | null, allocId: number | null, zoom: number }): void
@@ -988,6 +996,8 @@ function emitAllocClick(rowId: number | null, allocId: number | null, taskId: nu
     emit('alloc-click', { rowId, allocId, taskId })
 }
 
+// TODO: used for multiple different cases (requirements, milestones, groups)
+// -> split into different functions, find better name for general purpose event
 function emitRowClick(id: number) {
     emit('row-click', id)
 }
@@ -996,8 +1006,6 @@ function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
     if (!rw.row.allocations) return null
     return rw.row.allocations[ai - 1] ?? null
 }
-
-// NOTE: move-start handler removed (not needed currently)
 
 function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
     if (!rowId) return;
@@ -1294,6 +1302,15 @@ function toggleGroup(id: number) {
 
 .gantt-row-description-highlight {
     background-color: #0074d330;
+}
+
+.gantt-row-description-selected {
+    background-color: #ede7f6;
+    /* light violet */
+}
+
+.gantt-row-description-not-selectable {
+    color: #9e9e9e;
 }
 
 .selected-alloc {

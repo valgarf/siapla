@@ -2,6 +2,7 @@
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="resources"
+    :selectionMode="selection.mode === 'RESOURCE'" @toggle-selection="(id) => selection.toggle(id)"
     @alloc-click="onAllocClick" @row-click="onResourceClick" @alloc-drag-end="onAllocDragEnd"
     @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
     key="gantt-resources">
@@ -67,6 +68,9 @@ function updateSortOptions(newOpts: SortOption[]) {
   resourceSortOptions.splice(0, resourceSortOptions.length, ...newOpts);
 }
 
+import { useSelectionStore } from 'src/stores/selection'
+const selection = useSelectionStore()
+
 const resourceRows = computed(() => {
   const arr = Array.from(resourceStore.resources).map(r => ({
     id: r.dbId,
@@ -74,7 +78,10 @@ const resourceRows = computed(() => {
     designation: TaskDesignation.Task,
     depth: 0,
     allocations: planStore.by_resource(r.dbId).map(a => ({ dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType })),
-    availability: availability.value[r.dbId] ?? []
+    availability: availability.value[r.dbId] ?? [],
+    // selection info
+    selectable: selection.mode === 'RESOURCE' ? selection.isSelectable(r.dbId) : true,
+    selected: selection.mode === 'RESOURCE' ? selection.isSelected(r.dbId) : false,
   }));
 
   function cmp(a: Row, b: Row) {

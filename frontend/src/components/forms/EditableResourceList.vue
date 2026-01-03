@@ -1,6 +1,6 @@
 <template>
     <q-select v-if="edit" filled v-model="select_model" multiple :options="select_possible" use-chips stack-label
-        :label="name" />
+        :label="name" @focus="beginSelection" @blur="endSelection" />
     <div v-else-if="model.length" class="col">
         <div class="text-subtitle2">{{ name }}</div>
         <ResourceChip v-for="resource in model" :key="resource.dbId" :resource="resource" />
@@ -16,8 +16,10 @@ interface Props {
     name: string;
     edit: boolean;
     possible: Resource[];
+    single?: boolean;
+    selectKey?: string;
 };
-const props = withDefaults(defineProps<Props>(), {});
+const props = withDefaults(defineProps<Props>(), { single: false, selectKey: '' });
 const model: Ref<Resource[]> = defineModel({ required: true })
 
 const resourceStore = useResourceStore();
@@ -28,20 +30,66 @@ interface SelectOpt {
     value: number,
 }
 
-function to_select_opt(r: Resource): SelectOpt {
+function toSelectOpt(r: Resource): SelectOpt {
     return { label: r.name, value: r.dbId }
 }
-function from_select_opt(r: SelectOpt): Resource | undefined {
+function fromSelectOpt(r: SelectOpt): Resource | undefined {
     return resourceStore.resource(r.value)
 }
 
 const select_model = computed({
     get() {
-        return model.value.map(to_select_opt) || []
+        return model.value.map(toSelectOpt) || []
     },
     set(value: SelectOpt[]) {
-        model.value = value.map(from_select_opt).filter((v: Resource | undefined) => v != undefined)
+        model.value = value.map(fromSelectOpt).filter((v: Resource | undefined) => v != undefined)
     }
 })
-const select_possible = computed(() => { return props.possible.map(to_select_opt) })
+const select_possible = computed(() => { return props.possible.map(toSelectOpt) })
+
+// selection store sync
+import { onUnmounted, watch } from 'vue'
+import { useSelectionStore } from 'src/stores/selection'
+const selection = useSelectionStore()
+
+function possibleIds(arr: Resource[]) { return arr.map(r => r.dbId) }
+
+let selStop: (() => void) | null = null
+let possibleStop: (() => void) | null = null
+let modelStop: (() => void) | null = null
+let focused = false
+
+function beginSelection() {
+    if (focused) return
+    focused = true
+    selection.setMode('RESOURCE')
+    selection.setKey(props.selectKey)
+    selection.setPossible(possibleIds(props.possible))
+    selection.setSingle(!!props.single)
+    selection.setSelected(model.value.map(r => r.dbId))
+
+    possibleStop = watch(() => props.possible, (n) => selection.setPossible(possibleIds(n)), { deep: true })
+    modelStop = watch(model, (nv) => selection.setSelected(nv.map(r => r.dbId)), { deep: true })
+    selStop = watch(() => selection.selected, (ids) => {
+        if (selection.mode !== 'RESOURCE') return
+        if (selection.key() !== props.selectKey) return
+        if (model.value?.length == ids.length && model.value?.every((v, i) => v.dbId == ids[i])) return
+        model.value = ids.map(id => fromSelectOpt({ label: '', value: id })).filter((v) => v != undefined)
+
+    }, { deep: true })
+}
+
+function endSelection() {
+    if (!focused) return
+    focused = false
+    if (possibleStop) { possibleStop(); possibleStop = null }
+    if (modelStop) { modelStop(); modelStop = null }
+    if (selStop) { selStop(); selStop = null }
+    if (selection.mode === 'RESOURCE' && selection.key() === props.selectKey) selection.clear()
+
+}
+
+onUnmounted(() => {
+    endSelection()
+})
 </script>

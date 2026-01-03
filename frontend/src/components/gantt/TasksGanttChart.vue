@@ -1,6 +1,7 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="tasks"
+        :selectionMode="(selection.mode === 'TASK')" @toggle-selection="(id) => selection.toggle(id)"
         @alloc-click="onAllocClick" @row-click="onTaskClick" @alloc-drag-end="onAllocDragEnd"
         @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
         key="gantt-tasks">
@@ -23,6 +24,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useSelectionStore } from 'src/stores/selection';
 import SortMenu from './SortMenu.vue';
 
 
@@ -37,6 +39,7 @@ import { taskSortOptions, type SortOption } from './sortOptions'
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
 const sidebarStore = useSidebarStore();
+const selection = useSelectionStore();
 
 
 // collapse state moved to GanttChart component
@@ -189,7 +192,10 @@ const ganttRows = computed(() => {
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
         availability: [],
-        symbol: rowSymbols.value[r.task.dbId]
+        symbol: rowSymbols.value[r.task.dbId],
+        // selection info (filled by parent according to selection store)
+        selectable: selection.mode === 'TASK' ? selection.isSelectable(r.task.dbId) : true,
+        selected: selection.mode === 'TASK' ? selection.isSelected(r.task.dbId) : false,
     }));
 });
 

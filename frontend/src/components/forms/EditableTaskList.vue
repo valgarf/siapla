@@ -1,6 +1,6 @@
 <template>
     <q-select v-if="edit" filled v-model="selectModel" multiple :options="selectPossible" use-chips stack-label
-        :label="label" />
+        :label="label" @focus="beginSelection" @blur="endSelection" />
     <div v-else-if="model?.length || createButton" class="col">
         <div class="text-subtitle2">{{ label }}</div>
         <TaskChip v-for="task in model" :key="task.dbId" :task="task" />
@@ -19,8 +19,10 @@ interface Props {
     edit: boolean;
     createButton?: boolean;
     possible: Task[];
+    single?: boolean;
+    selectKey?: string;
 };
-const props = withDefaults(defineProps<Props>(), { createButton: true });
+const props = withDefaults(defineProps<Props>(), { createButton: true, single: false, selectKey: '' });
 const emit = defineEmits<{
     (e: 'create'): void
 }>()
@@ -51,6 +53,50 @@ const selectModel = computed({
     }
 })
 const selectPossible = computed(() => { return props.possible.map(toSelectOpt) })
+
+// selection store sync
+import { onUnmounted, watch } from 'vue'
+import { useSelectionStore } from 'src/stores/selection'
+const selection = useSelectionStore()
+
+function possibleIds(arr: Task[]) { return arr.map(r => r.dbId) }
+
+let selStop: (() => void) | null = null
+let possibleStop: (() => void) | null = null
+let modelStop: (() => void) | null = null
+let focused = false
+
+function beginSelection() {
+    if (focused) return
+    focused = true
+    selection.setMode('TASK')
+    selection.setKey(props.selectKey)
+    selection.setPossible(possibleIds(props.possible))
+    selection.setSingle(!!props.single)
+    selection.setSelected((model.value ?? []).map(r => r.dbId))
+
+    possibleStop = watch(() => props.possible, (n) => selection.setPossible(possibleIds(n)), { deep: true })
+    modelStop = watch(model, (nv) => selection.setSelected((nv ?? []).map(r => r.dbId)), { deep: true })
+    selStop = watch(() => selection.selected, (ids) => {
+        if (selection.mode !== 'TASK') return
+        if (selection.key() !== props.selectKey) return
+        if (model.value?.length == ids.length && model.value?.every((v, i) => v.dbId == ids[i])) return
+        model.value = ids.map(id => fromSelectOpt({ label: '', value: id })).filter((v) => v != undefined)
+    }, { deep: true })
+}
+
+function endSelection() {
+    if (!focused) return
+    focused = false
+    if (possibleStop) { possibleStop(); possibleStop = null }
+    if (modelStop) { modelStop(); modelStop = null }
+    if (selStop) { selStop(); selStop = null }
+    if (selection.mode === 'TASK' && selection.key() === props.selectKey) selection.clear()
+}
+
+onUnmounted(() => {
+    endSelection()
+})
 
 
 
