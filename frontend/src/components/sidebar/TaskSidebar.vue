@@ -33,7 +33,7 @@
                     v-model="localTask.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ localTask.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ localTask.designation
-                    }}</q-chip>
+                        }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="localTask.description" />
                 <q-markdown v-else-if="localTask.description" :src="localTask.description" />
@@ -77,12 +77,13 @@
                     <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                         <div class="col">
                             <EditableResourceList v-model="option.resources"
-                                :name="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
-                                :possible="allResources" :edit="edit" class="full-width" />
+                                :label="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
+                                :possible="allResources" :edit="edit" class="full-width"
+                                :selectKey="'resource-constraint-' + idx" />
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                }}
+                                    }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -108,13 +109,15 @@
             <section class="sidebar-section column q-gutter-xs">
                 <EditableTaskList v-model="localTask.predecessors" label="Predecessors" :possible="possiblePredecessors"
                     v-show="localTask.designation != TaskDesignation.Requirement" :edit="edit"
-                    @create="onCreatePredecessor" />
+                    @create="onCreatePredecessor" :selectKey="'predecessors'" />
                 <EditableTaskList v-model="localTask.successors" label="Successors" :possible="possibleSuccessors"
-                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit"
-                    @create="onCreateSuccessor" />
-                <TaskSelect v-show="edit" v-model="localTask.parent" :possible="possibleParents" label="parent" />
+                    v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit" @create="onCreateSuccessor"
+                    :selectKey="'successors'" />
+                <EditableTaskList v-show="edit" :edit="edit" v-model="localTask.parent" :possible="possibleParents"
+                    :single="true" label="parent" :selectKey="'parent'" />
                 <EditableTaskList v-model="localTask.children" label="Children" :possible="possibleChildren"
-                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild" />
+                    v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild"
+                    :selectKey="'children'" />
                 <div class="col" v-show="effectiveRequirements.length > 0">
                     <div class="text-subtitle2">Requirements</div>
                     <TaskChip v-for="task in effectiveRequirements" :clickable="!edit" :key="task.dbId" :task="task" />
@@ -134,8 +137,9 @@
                             <q-checkbox dense v-model="b.final" label="Final"
                                 @update:modelValue="() => saveBookingLocal(b)" />
                             <div class="booking-resources">
-                                <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
-                                    :edit="true" @update:modelValue="() => saveBookingLocal(b)" />
+                                <EditableResourceList :label="`Resources`" v-model="b.resources"
+                                    :possible="allResources" :edit="true" @update:modelValue="() => saveBookingLocal(b)"
+                                    :selectKey="'booking-' + idx + '-resources'" />
                             </div>
                             <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218" class="responsive-field"
                                 @update:modelValue="(start) => saveBookingLocal(b, start, null)" />
@@ -169,7 +173,6 @@ import EditableResourceList from '../forms/EditableResourceList.vue';
 import EditableTaskList from '../forms/EditableTaskList.vue';
 import MarkdownEditor from '../forms/MarkdownEditor.vue';
 import TaskChip from '../common/TaskChip.vue';
-import TaskSelect from '../forms/TaskSelect.vue';
 import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();
@@ -197,7 +200,7 @@ watchEffect(() => {
 
 
 const recursiveParents = computed(() => {
-    const parents = [];
+    const parents: Task[] = [];
     let parent = localTask.value.parent;
     while (parent != null && parent.dbId != localTask.value.dbId) {
         parents.push(parent)
@@ -211,20 +214,20 @@ function _sortByTitle(t1: Task, t2: Task): number {
 }
 
 const possiblePredecessors = computed(() => {
-    const excludeIds = new Set(recursiveSuccessors.value.map((t) => t.dbId))
+    const excludeIds = new Set(([...recursiveSuccessors.value, ...recursiveParents.value, ...recursiveChildren.value]).map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Milestone && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleSuccessors = computed(() => {
-    const excludeIds = new Set(recursivePredecessors.value.map((t) => t.dbId))
+    const excludeIds = new Set([...recursivePredecessors.value, ...recursiveParents.value, ...recursiveChildren.value].map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Requirement && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleParents = computed(() => {
-    const excludeIds = new Set(recursiveChildren.value.map((t) => t.dbId))
+    const excludeIds = new Set([...recursiveChildren.value, ...recursivePredecessors.value, ...recursiveSuccessors.value].map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation == TaskDesignation.Group && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleChildren = computed(() => {
-    const excludeIds = recursiveParents.value.map((p) => p.dbId);
-    return taskStore.tasks.filter((t) => localTask.value.dbId != t.dbId && !excludeIds.includes(t.dbId)).sort(_sortByTitle)
+    const excludeIds = new Set([...recursiveParents.value, ...recursivePredecessors.value, ...recursiveSuccessors.value].map((p) => p.dbId));
+    return taskStore.tasks.filter((t) => localTask.value.dbId != t.dbId && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 
 const resourceConstraints = computed(() => {

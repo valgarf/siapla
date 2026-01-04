@@ -1,12 +1,12 @@
 <template>
-    <div class="gantt-grid">
+    <div class="gantt-grid" :class="{ 'dragging': draggingState != null || isPanning }" @mousedown.stop.prevent>
         <div class="gantt-corner corner-buttons" style="display:flex;align-items:center;">
             <q-btn aria-label="Reset Zoom" flat @click.stop="resetZoom" icon="refresh">
                 <q-tooltip>Reset Zoom</q-tooltip></q-btn>
             <slot name="corner" />
         </div>
 
-        <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
+        <div class="gantt-header" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
             @mouseleave="onPanEnd" @wheel.prevent="onWheel">
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
@@ -48,13 +48,16 @@
         <div class="gantt-descriptions-list" :style="{
             height: chartHeight + 'px', width: descriptionColWidth + 'px', position: 'relative',
             overflow: 'hidden'
-        }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
+        }" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
-                    'gantt-row-description': true, 'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description': true,
+                    'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description-selected': (selectionMode && rw.row.selected),
+                    'gantt-row-description-not-selectable': selectionMode && rw.row.selectable === false,
                     'clickable': true
                 }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
-                    @click.stop="emitRowClick(rw.row.id)">
+                    @click.stop="selectionMode ? (rw.row.selectable ? emit('toggle-selection', rw.row.id) : undefined) : emitRowClick(rw.row.id)">
                     <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
@@ -70,7 +73,7 @@
             </div>
         </div>
 
-        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove"
+        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMove"
             @mouseup="onPanEnd" @mouseleave="onPanEnd" @wheel.prevent="onWheel" style="grid-column: 2; grid-row: 2;">
             <svg :width="timelineWidth" :height="chartHeight"
                 :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
@@ -336,6 +339,8 @@ export type Row = {
     symbol?: { symbolUTF8: string; title?: string } | undefined | null
     availability: Availability[]
     depth: number
+    selectable?: boolean
+    selected?: boolean
 }
 export type Availability = { start: string | Date; end: string | Date }
 export type Dependency = { predId: number; succId: number }
@@ -355,12 +360,15 @@ interface Props {
     selectedAllocIds?: number[]
     // key used to store state information for, e.g. scrolling or collapsed status
     dataKey: string
+    // whether gantt is in selection mode; when true rows may have `selectable` and `selected`
+    selectionMode?: boolean
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
+    (e: 'toggle-selection', id: number): void
     (e: 'alloc-drag-end', data: { rowId: number, allocId: number | null, start: Date, end: Date }): void
     (e: 'delete-booking', data: { rowId: number | null, allocId: number | null }): void
     (e: 'split-booking', data: { rowId: number | null, allocId: number | null, zoom: number }): void
@@ -379,13 +387,13 @@ const dayRowHeight = computed(() => 22);
 const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
 const now = ref<Date>(new Date(Date.now()));
 
-let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
+// let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
 
 // internal drag state and overwrites
 const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
 // row-level single-date overwrites (for requirements / milestones)
 const dragRowOverwrites = ref(new Map<number, Date>());
-let draggingState: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined } | null = null;
+const draggingState = ref<{ rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined, moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null>(null);
 
 function clientXToDate(clientX: number): Date {
     const rect = scrollCell.value?.getBoundingClientRect();
@@ -636,16 +644,16 @@ const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.v
 watch(() => props.rows, () => {
     const allocMap: Map<number, { start: Date, end: Date }> = new Map();
     const rowMap: Map<number, Date> = new Map();
-    if (draggingState?.allocId != null) {
-        const allocOver = dragOverwrites.value.get(draggingState.allocId);
+    if (draggingState.value?.allocId != null) {
+        const allocOver = dragOverwrites.value.get(draggingState.value.allocId);
         if (allocOver) {
-            allocMap.set(draggingState.allocId, allocOver);
+            allocMap.set(draggingState.value.allocId, allocOver);
         }
     }
-    else if (draggingState?.rowId != null) {
-        const rowOver = dragRowOverwrites.value.get(draggingState.rowId);
+    else if (draggingState.value?.rowId != null) {
+        const rowOver = dragRowOverwrites.value.get(draggingState.value.rowId);
         if (rowOver) {
-            rowMap.set(draggingState.rowId, rowOver);
+            rowMap.set(draggingState.value.rowId, rowOver);
         }
     }
     dragRowOverwrites.value = rowMap;
@@ -988,6 +996,8 @@ function emitAllocClick(rowId: number | null, allocId: number | null, taskId: nu
     emit('alloc-click', { rowId, allocId, taskId })
 }
 
+// TODO: used for multiple different cases (requirements, milestones, groups)
+// -> split into different functions, find better name for general purpose event
 function emitRowClick(id: number) {
     emit('row-click', id)
 }
@@ -997,16 +1007,13 @@ function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
     return rw.row.allocations[ai - 1] ?? null
 }
 
-// NOTE: move-start handler removed (not needed currently)
-
 function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
     if (!rowId) return;
     // clear previous listeners/state
-    if (_activeDrag) {
-        document.removeEventListener('mousemove', _activeDrag.moveListener);
-        document.removeEventListener('mouseup', _activeDrag.upListener);
-        _activeDrag = null;
-        draggingState = null;
+    if (draggingState.value != null) {
+        document.removeEventListener('mousemove', draggingState.value.moveListener);
+        document.removeEventListener('mouseup', draggingState.value.upListener);
+        draggingState.value = null;
     }
 
     // locate original allocation bounds when available
@@ -1035,43 +1042,26 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
     }
 
     const initDate = clientXToDate(e.clientX);
-    draggingState = { rowId, allocId, edge, origStart, origEnd };
-    if ((edge === 'move' || edge === 'start') && origStart) {
-        const ds = draggingState;
-        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
-    }
-    else if (edge === 'end' && origEnd) {
-        const ds = draggingState;
-        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
-    }
-
-    if (allocId != null && origStart && origEnd) {
-        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
-    }
-    else if (rowId != null && origStart) {
-        dragRowOverwrites.value.set(rowId, origStart);
-
-    }
 
     const moveListener = (ev: MouseEvent) => {
-        if (!draggingState) return;
+        if (!draggingState.value) return;
         const date = clientXToDate(ev.clientX);
-        const aId = draggingState.allocId;
-        const s = draggingState.origStart ?? new Date();
-        const t = draggingState.origEnd ?? new Date();
+        const aId = draggingState.value.allocId;
+        const s = draggingState.value.origStart ?? new Date();
+        const t = draggingState.value.origEnd ?? new Date();
         let newS = s;
         let newE = t;
         if (aId == null) {
             // row-level single date (requirement/milestone)
-            const rowId = draggingState.rowId;
+            const rowId = draggingState.value.rowId;
             if (rowId != null) {
                 dragRowOverwrites.value.set(rowId, roundToZoomRes(date));
             }
         } else {
-            const offset = draggingState.grabOffsetMs ?? 0;
-            if (draggingState.edge === 'start') {
+            const offset = draggingState.value.grabOffsetMs ?? 0;
+            if (draggingState.value.edge === 'start') {
                 newS = roundToZoomRes(new Date(date.getTime() - offset))
-            } else if (draggingState.edge === 'end') {
+            } else if (draggingState.value.edge === 'end') {
                 newE = roundToZoomRes(new Date(date.getTime() - offset))
             } else {
                 const duration = t.getTime() - s.getTime()
@@ -1083,14 +1073,13 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
     };
 
     const upListener = () => {
-        if (!draggingState) {
+        if (!draggingState.value) {
             document.removeEventListener('mousemove', moveListener);
             document.removeEventListener('mouseup', upListener);
-            _activeDrag = null;
             return;
         }
-        const rowId = draggingState.rowId;
-        const aId = draggingState.allocId;
+        const rowId = draggingState.value.rowId;
+        const aId = draggingState.value.allocId;
         let finalStart: Date | undefined = undefined;
         let finalEnd: Date | undefined = undefined;
         if (aId != null) {
@@ -1106,8 +1095,7 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 finalEnd = over;
             }
         }
-        _activeDrag = null;
-        draggingState = null;
+        draggingState.value = null;
         document.removeEventListener('mousemove', moveListener);
         document.removeEventListener('mouseup', upListener);
         if (rowId != null && finalStart != null && finalEnd != null) {
@@ -1115,9 +1103,27 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
         }
     };
 
+    const newDraggingState = { rowId, allocId, edge, origStart, origEnd, grabOffsetMs: 0, moveListener, upListener };
+    if ((edge === 'move' || edge === 'start') && origStart) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
+    }
+    else if (edge === 'end' && origEnd) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
+    }
+
+    if (allocId != null && origStart && origEnd) {
+        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
+    }
+    else if (rowId != null && origStart) {
+        dragRowOverwrites.value.set(rowId, origStart);
+
+    }
+
+    draggingState.value = newDraggingState
     document.addEventListener('mousemove', moveListener);
     document.addEventListener('mouseup', upListener);
-    _activeDrag = { rowId, allocId, edge, moveListener, upListener };
 }
 
 function onDeleteBooking(rowId: number | null, allocId: number | null) {
@@ -1154,9 +1160,13 @@ function toggleGroup(id: number) {
     cursor: grab;
 }
 
-.gantt-descriptions-list:active,
-.gantt-header:active,
-.gantt-chart-scroll:active {
+.dragging>.gantt-descriptions-list,
+.dragging>.gantt-header,
+.dragging>.gantt-chart-scroll {
+    cursor: grabbing;
+}
+
+.gantt-grid.dragging {
     cursor: grabbing;
 }
 
@@ -1294,6 +1304,15 @@ function toggleGroup(id: number) {
 
 .gantt-row-description-highlight {
     background-color: #0074d330;
+}
+
+.gantt-row-description-selected {
+    background-color: #ede7f6;
+    /* light violet */
+}
+
+.gantt-row-description-not-selectable {
+    color: #9e9e9e;
 }
 
 .selected-alloc {
