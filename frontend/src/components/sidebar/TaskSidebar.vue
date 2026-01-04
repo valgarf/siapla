@@ -200,7 +200,7 @@ watchEffect(() => {
 
 
 const recursiveParents = computed(() => {
-    const parents = [];
+    const parents: Task[] = [];
     let parent = localTask.value.parent;
     while (parent != null && parent.dbId != localTask.value.dbId) {
         parents.push(parent)
@@ -214,20 +214,20 @@ function _sortByTitle(t1: Task, t2: Task): number {
 }
 
 const possiblePredecessors = computed(() => {
-    const excludeIds = new Set(recursiveSuccessors.value.map((t) => t.dbId))
+    const excludeIds = new Set(([...recursiveSuccessors.value, ...recursiveParents.value, ...recursiveChildren.value]).map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Milestone && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleSuccessors = computed(() => {
-    const excludeIds = new Set(recursivePredecessors.value.map((t) => t.dbId))
+    const excludeIds = new Set([...recursivePredecessors.value, ...recursiveParents.value, ...recursiveChildren.value].map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation != TaskDesignation.Requirement && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleParents = computed(() => {
-    const excludeIds = new Set(recursiveChildren.value.map((t) => t.dbId))
+    const excludeIds = new Set([...recursiveChildren.value, ...recursivePredecessors.value, ...recursiveSuccessors.value].map((t) => t.dbId))
     return taskStore.tasks.filter((t) => t.dbId != localTask.value.dbId && t.designation == TaskDesignation.Group && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 const possibleChildren = computed(() => {
-    const excludeIds = recursiveParents.value.map((p) => p.dbId);
-    return taskStore.tasks.filter((t) => localTask.value.dbId != t.dbId && !excludeIds.includes(t.dbId)).sort(_sortByTitle)
+    const excludeIds = new Set([...recursiveParents.value, ...recursivePredecessors.value, ...recursiveSuccessors.value].map((p) => p.dbId));
+    return taskStore.tasks.filter((t) => localTask.value.dbId != t.dbId && !excludeIds.has(t.dbId)).sort(_sortByTitle)
 })
 
 const resourceConstraints = computed(() => {
