@@ -1,7 +1,10 @@
 <template>
     <GanttChart :start="planStore.start" :end="planStore.end" :rows="ganttRows" :dependencies="dependencies"
         :rowSymbols="rowSymbols" :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="tasks"
-        @alloc-click="onAllocClick" @row-click="onTaskClick" key="gantt-tasks">
+        :selectionMode="(selection.mode === 'TASK')" @toggle-selection="(id) => selection.toggle(id)"
+        @alloc-click="onAllocClick" @row-click="onTaskClick" @alloc-drag-end="onAllocDragEnd"
+        @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
+        key="gantt-tasks">
         <template #corner>
             <SortMenu :modelValue="taskSortOptions" @update:modelValue="updateSortOptions">
                 <template #activator="{ toggle }">
@@ -20,14 +23,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useSelectionStore } from 'src/stores/selection';
 import SortMenu from './SortMenu.vue';
 
 
 import { useIssueStore } from 'src/stores/issue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
-import { useTaskStore, type Task } from 'src/stores/task';
+import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { TaskDesignation } from 'src/gql/graphql';
 import { useSidebarStore, TaskSidebarData, ResourceSidebarData, NewTaskSidebarData, NewResourceSidebarData } from 'src/stores/sidebar';
 import { taskSortOptions, type SortOption } from './sortOptions'
@@ -35,23 +39,60 @@ import { taskSortOptions, type SortOption } from './sortOptions'
 const planStore = usePlanStore();
 const taskStore = useTaskStore();
 const sidebarStore = useSidebarStore();
+const selection = useSelectionStore();
 
 
 // collapse state moved to GanttChart component
 
 function onTaskClick(tid: number | null) {
     if (tid != null) {
-        sidebarStore.toggleSidebar(new TaskSidebarData(tid));
+        sidebarStore.toggle(new TaskSidebarData(tid));
     }
 }
 function onAllocClick(data: { rowId: number | null }) {
     onTaskClick(data.rowId)
 }
+
+// handlers for GanttChart events
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+    if (evt.allocId) {
+        const alloc = planStore.allocation(evt.allocId);
+        if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+        return;
+    }
+    // row-level change (requirement / milestone)
+    if (!evt.rowId) return;
+    const task = taskStore.task(evt.rowId);
+    if (!task) return;
+    const taskRef = ref<TaskInput>({ ...task });
+    if (task.designation === TaskDesignation.Requirement) {
+        taskRef.value.earliestStart = evt.start;
+    } else if (task.designation === TaskDesignation.Milestone) {
+        taskRef.value.scheduleTarget = evt.start;
+    } else {
+        return;
+    }
+    await taskStore.saveTask(taskRef);
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+    if (!payload?.allocId) return;
+    await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+    if (!payload?.allocId) return;
+    await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+    await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
+}
 function onNewTask() {
-    sidebarStore.pushSidebar(new NewTaskSidebarData());
+    sidebarStore.createNew(new NewTaskSidebarData());
 }
 function onNewResource() {
-    sidebarStore.pushSidebar(new NewResourceSidebarData());
+    sidebarStore.createNew(new NewResourceSidebarData());
 }
 
 
@@ -151,14 +192,17 @@ const ganttRows = computed(() => {
         scheduleTarget: r.task.scheduleTarget,
         earliestStart: r.task.earliestStart,
         availability: [],
-        symbol: rowSymbols.value[r.task.dbId]
+        symbol: rowSymbols.value[r.task.dbId],
+        // selection info (filled by parent according to selection store)
+        selectable: selection.mode === 'TASK' ? selection.isSelectable(r.task.dbId) : true,
+        selected: selection.mode === 'TASK' ? selection.isSelected(r.task.dbId) : false,
     }));
 });
 
 // compute selections based on sidebar
 const selectedRowIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (!active || !sidebarStore.isOpen) return [] as number[];
     if (active instanceof TaskSidebarData) {
         return [active.taskId];
     }
@@ -167,7 +211,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
     const active = sidebarStore.activeSidebar;
-    if (!active || !sidebarStore.isSelected) return [] as number[];
+    if (!active || !sidebarStore.isOpen) return [] as number[];
     if (active instanceof ResourceSidebarData) {
         const resId = active.resourceId;
         return planStore.by_resource(resId).map(a => a.dbId);

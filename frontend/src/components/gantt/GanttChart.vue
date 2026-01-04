@@ -1,12 +1,12 @@
 <template>
-    <div class="gantt-grid">
+    <div class="gantt-grid" :class="{ 'dragging': draggingState != null || isPanning }" @mousedown.stop.prevent>
         <div class="gantt-corner corner-buttons" style="display:flex;align-items:center;">
             <q-btn aria-label="Reset Zoom" flat @click.stop="resetZoom" icon="refresh">
                 <q-tooltip>Reset Zoom</q-tooltip></q-btn>
             <slot name="corner" />
         </div>
 
-        <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
+        <div class="gantt-header" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
             @mouseleave="onPanEnd" @wheel.prevent="onWheel">
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
@@ -48,13 +48,16 @@
         <div class="gantt-descriptions-list" :style="{
             height: chartHeight + 'px', width: descriptionColWidth + 'px', position: 'relative',
             overflow: 'hidden'
-        }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
+        }" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
-                    'gantt-row-description': true, 'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description': true,
+                    'gantt-row-description-highlight': rowIsSelected(rw),
+                    'gantt-row-description-selected': (selectionMode && rw.row.selected),
+                    'gantt-row-description-not-selectable': selectionMode && rw.row.selectable === false,
                     'clickable': true
                 }" :style="{ height: rowHeight + 'px', paddingLeft: (8 + (rw.row.depth ?? 0) * 12) + 'px' }"
-                    @click.stop="emitRowClick(rw.row.id)">
+                    @click.stop="selectionMode ? (rw.row.selectable ? emit('toggle-selection', rw.row.id) : undefined) : emitRowClick(rw.row.id)">
                     <q-btn v-if="rw.row.designation == TaskDesignation.Group" flat dense size="sm" class="clickable"
                         @click.stop="() => toggleGroup(rw.row.id)"
                         :icon="collapsedGroups.has(rw.row.id) ? 'chevron_right' : 'expand_more'"
@@ -70,7 +73,7 @@
             </div>
         </div>
 
-        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove"
+        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMove"
             @mouseup="onPanEnd" @mouseleave="onPanEnd" @wheel.prevent="onWheel" style="grid-column: 2; grid-row: 2;">
             <svg :width="timelineWidth" :height="chartHeight"
                 :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
@@ -143,7 +146,7 @@
                         <template
                             v-if="rw.row.designation == TaskDesignation.Milestone && rw.row.scheduleTarget && rw.row.allocations && rw.row.allocations.length > 0">
                             <line :x1="dateToX(firstAllocStart(rw.row)!)" :y1="i * rowHeight + rowHeight / 2"
-                                :x2="dateToX(rw.row.scheduleTarget)" :y2="i * rowHeight + rowHeight / 2"
+                                :x2="rowTimestampX(rw.row)" :y2="i * rowHeight + rowHeight / 2"
                                 :stroke="firstAllocStart(rw.row)! <= rw.row.scheduleTarget! ? '#66bb6a' : '#ef5350'"
                                 stroke-width="3" />
                         </template>
@@ -188,25 +191,34 @@
                     </template>
                     <!-- requirements -->
                     <template v-if="rw.row.designation === TaskDesignation.Requirement && rw.row.earliestStart">
-                        <g :transform="`translate(${dateToX(rw.row.earliestStart)}, ${i * rowHeight + rowHeight / 2})`">
+                        <g :transform="`translate(${rowTimestampX(rw.row)}, ${i * rowHeight + rowHeight / 2})`">
                             <circle r="6" fill="#ffb74d" stroke="#b06b00" @click.stop="() => emitRowClick(rw.row.id)"
                                 class="clickable" />
+                            <!-- drag handle for requirement (on top of symbol) -->
+                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle move"
+                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
+                                <circle r="6" fill="#ffffff00" />
+                            </g>
                         </g>
                     </template>
 
                     <!-- milestones -->
                     <template v-if="rw.row.designation === TaskDesignation.Milestone && rw.row.scheduleTarget">
-                        <g
-                            :transform="`translate(${dateToX(rw.row.scheduleTarget)}, ${i * rowHeight + rowHeight / 2})`">
+                        <g :transform="`translate(${rowTimestampX(rw.row)}, ${i * rowHeight + rowHeight / 2})`">
                             <rect :x="-6" y="-6" width="12" height="12" fill="#ffb74d" transform="rotate(45)"
                                 stroke="#b06b00" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
+                            <!-- drag handle for milestone (on top of symbol) -->
+                            <g v-if="selectedRowIdsSet.has(rw.row.id)" class="drag-handle move"
+                                @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, null, 'move', e)">
+                                <rect :x="-7" y="-7" width="14" height="14" fill="#ffffff00" transform="rotate(45)" />
+                            </g>
                         </g>
                     </template>
                     <template
                         v-if="rw.row.designation === TaskDesignation.Milestone && rw.row.allocations && rw.row.allocations.length > 0">
                         <g
                             :transform="`translate(${dateToX(firstAllocStart(rw.row)!)}, ${i * rowHeight + rowHeight / 2})`">
-                            <rect x="-6" y="-6" width="12" height="12"
+                            <rect x="-7" y="-7" width="14" height="14"
                                 :fill="allocBeforeTarget(rw.row) === true ? '#66bb6a' : '#ef5350'"
                                 :stroke="allocBeforeTarget(rw.row) === true ? '#3f8d43' : '#d21714'"
                                 transform="rotate(45)" @click.stop="() => emitRowClick(rw.row.id)" class="clickable" />
@@ -216,25 +228,91 @@
                     <!-- tasks -->
                     <template v-if="rw.row.designation === TaskDesignation.Task && rw.row.allocations">
                         <template v-for="alloc in rw.row.allocations" :key="rw.row.id + '-alloc-' + alloc.dbId">
-                            <rect :x="dateToX(alloc.start)" :y="i * rowHeight + barPadding"
-                                :width="dateToX(alloc.end) - dateToX(alloc.start)" :height="barHeight" rx="3"
+                            <rect :x="allocStartX(alloc)" :y="i * rowHeight + barPadding"
+                                :width="allocEndX(alloc) - allocStartX(alloc)" :height="barHeight" rx="3"
                                 :fill="alloc.allocationType === AllocationType.Booking ? '#ffb74d' : '#42a5f5'"
                                 :stroke="alloc.allocationType === AllocationType.Booking ? '#b06b00' : '#0a6fc2'"
                                 @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)"
                                 class="clickable" :class="{ 'selected-alloc': allocationIsSelected(rw, alloc) }" />
                             <!-- only render allocation text if the bar is wide enough -->
-                            <template v-if="(dateToX(alloc.end) - dateToX(alloc.start)) > 23">
-                                <foreignObject :x="dateToX(alloc.start) + 4" :y="i * rowHeight + barPadding"
-                                    :width="(dateToX(alloc.end) - dateToX(alloc.start) - 8)" :height="barHeight">
+                            <template v-if="(allocEndX(alloc) - allocStartX(alloc)) > 23">
+                                <foreignObject :x="allocStartX(alloc) + 4" :y="i * rowHeight + barPadding"
+                                    :width="(allocEndX(alloc) - allocStartX(alloc) - 8)" :height="barHeight">
                                     <div class="svg-text-ellipsis svg-text-alloc clickable"
                                         xmlns="http://www.w3.org/1999/xhtml"
                                         @click.stop="() => emitAllocClick(rw.row.id, alloc.dbId, alloc.task?.dbId ?? null)">
                                         {{ alloc.task?.title ?? '' }}</div>
                                 </foreignObject>
                             </template>
+                            <!-- handles and action buttons are rendered in the overlay group at the end of the SVG -->
                         </template>
                     </template>
                 </template>
+
+                <!-- overlay handles and action buttons rendered last so they appear above chart elements -->
+                <g class="overlay-handles">
+                    <template v-for="(rw) in visibleRows" :key="'overlay-'+rw.row.id">
+                        <template v-for="(alloc, ai) in rw.row.allocations ?? []" :key="'ov-'+rw.row.id+'-'+alloc.dbId">
+                            <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
+                                :transform="`translate(${allocStartX(alloc)}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding})`">
+                                <!-- start handle -->
+                                <g class="drag-handle start"
+                                    @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'start', e)">
+                                    <rect :x="-barHeight - 2" y="0" :width="barHeight" :height="barHeight"
+                                        fill="#1e88e5" rx="2" />
+                                    <text :x="-barHeight / 2 - 3" :y="barHeight / 2 + 3" font-size="10" fill="#fff"
+                                        text-anchor="middle">◀</text>
+                                </g>
+                                <!-- move handle (center) -->
+                                <g class="drag-handle move"
+                                    @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'move', e)">
+                                    <rect x="0" y="0" :width="allocEndX(alloc) - allocStartX(alloc)" :height="barHeight"
+                                        fill="#ffffff00" />
+                                </g>
+                                <!-- end handle -->
+                                <g class="drag-handle end"
+                                    @mousedown.stop.prevent="(e) => onAllocDragStart(rw.row.id, alloc.dbId, 'end', e)"
+                                    :transform="`translate(${allocEndX(alloc) - allocStartX(alloc)},0)`">
+                                    <rect x="2" y="0" :width="barHeight" :height="barHeight" fill="#1e88e5" rx="2" />
+                                    <text :x="barHeight / 2 + 3" :y="barHeight / 2 + 3" font-size="10" fill="#fff"
+                                        text-anchor="middle">▶</text>
+                                </g>
+                            </g>
+
+                            <!-- centered action buttons for selected task's bookings -->
+                            <g v-if="alloc.allocationType === AllocationType.Booking && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id))"
+                                :transform="`translate(${allocStartX(alloc) + (allocEndX(alloc) - allocStartX(alloc)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
+                                <!-- delete button -->
+                                <g class="action-btn clickable" :transform="`translate(${-barHeight / 2 - 2},0)`"
+                                    @click.stop.prevent="() => onDeleteBooking(rw.row.id, alloc.dbId)">
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#e53935" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">🗑</text>
+                                </g>
+                                <!-- split button -->
+                                <g class="action-btn clickable" :transform="`translate(${barHeight / 2 + 2},0)`"
+                                    @click.stop.prevent="() => onSplitBooking(rw.row.id, alloc.dbId)">
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#fb8c00" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">✂</text>
+                                </g>
+                            </g>
+                            <!-- join button between this and previous booking -->
+                            <g v-if="prevAlloc(rw, ai) && (selectedAllocIdsSet.has(alloc.dbId) || (rw.row.designation === TaskDesignation.Task && selectedRowIdsSet.has(rw.row.id) && alloc.task?.dbId === rw.row.id)) && alloc.allocationType === AllocationType.Booking && prevAlloc(rw, ai)!.allocationType === AllocationType.Booking"
+                                :transform="`translate(${allocEndX(prevAlloc(rw, ai)!) + (allocStartX(alloc) - allocEndX(prevAlloc(rw, ai)!)) / 2}, ${visibleRows.findIndex(x => x.row.id === rw.row.id) * rowHeight + barPadding + barHeight + 6})`">
+                                <g class="action-btn clickable" @click.stop.prevent="() => onJoinBookings(rw.row.id, prevAlloc(rw, ai)!.dbId,
+                                    alloc.dbId)">
+                                    <rect :x="-barHeight / 2" y="0" :width="barHeight" :height="barHeight" rx="3"
+                                        fill="#4caf50" />
+                                    <text x="0" :y="4 + barHeight / 2" font-size="12" fill="#fff"
+                                        text-anchor="middle">🔗</text>
+                                </g>
+                            </g>
+                        </template>
+                    </template>
+                </g>
 
             </svg>
         </div>
@@ -261,6 +339,8 @@ export type Row = {
     symbol?: { symbolUTF8: string; title?: string } | undefined | null
     availability: Availability[]
     depth: number
+    selectable?: boolean
+    selected?: boolean
 }
 export type Availability = { start: string | Date; end: string | Date }
 export type Dependency = { predId: number; succId: number }
@@ -280,12 +360,19 @@ interface Props {
     selectedAllocIds?: number[]
     // key used to store state information for, e.g. scrolling or collapsed status
     dataKey: string
+    // whether gantt is in selection mode; when true rows may have `selectable` and `selected`
+    selectionMode?: boolean
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
     (e: 'alloc-click', data: { rowId: number | null, allocId: number | null, taskId: number | null }): void
     (e: 'row-click', id: number): void
+    (e: 'toggle-selection', id: number): void
+    (e: 'alloc-drag-end', data: { rowId: number, allocId: number | null, start: Date, end: Date }): void
+    (e: 'delete-booking', data: { rowId: number | null, allocId: number | null }): void
+    (e: 'split-booking', data: { rowId: number | null, allocId: number | null, zoom: number }): void
+    (e: 'join-bookings', data: { rowId: number | null, leftAllocId: number, rightAllocId: number }): void
 }>()
 
 const weekendColor = "#fff7ce"
@@ -299,6 +386,22 @@ const monthRowHeight = computed(() => 28);
 const dayRowHeight = computed(() => 22);
 const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
 const now = ref<Date>(new Date(Date.now()));
+
+// let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
+
+// internal drag state and overwrites
+const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
+// row-level single-date overwrites (for requirements / milestones)
+const dragRowOverwrites = ref(new Map<number, Date>());
+const draggingState = ref<{ rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined, moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null>(null);
+
+function clientXToDate(clientX: number): Date {
+    const rect = scrollCell.value?.getBoundingClientRect();
+    const offset = rect ? clientX - rect.left : clientX;
+    const x = scrollX.value + offset;
+    const ms = startDate.value.getTime() + x / dayWidth.value * msPerDay;
+    return new Date(ms);
+}
 
 function parseDate(d: string | Date) {
     return d instanceof Date ? d : new Date(d)
@@ -385,6 +488,37 @@ const topRowSegments = computed(() => {
     })
     return Array.from(map.values())
 })
+
+const zoomTimeResMs = computed(() => {
+    if (zoomX.value > 20) {
+        // 1/4 hour
+        return 3600 * 1000 / 4
+    }
+    if (zoomX.value > 5) {
+        // 1/2 hour
+        return 3600 * 1000 / 2
+    }
+    if (zoomX.value > 0.6) {
+        // 1 hour
+        return 3600 * 1000
+    }
+    // 1 day
+    return 24 * 3600 * 1000
+})
+
+function roundToZoomRes(d: Date): Date {
+    const res = zoomTimeResMs.value
+    const result = new Date(Math.round((d.getTime() - startDate.value.getTime()) / res) * res + startDate.value.getTime());
+    if (res >= 24 * 3600 * 1000) {
+        if (d.getHours() > 12) {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+        }
+        else {
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        }
+    }
+    return result
+}
 
 const bottomRowSegments = computed(() => {
     // zoom < 0.25 => months
@@ -504,6 +638,27 @@ const rowMap = computed(() => {
 const visibleRows = computed(() => [...rowMap.value.values()].filter((r) => r.visible));
 
 const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.value)
+
+// when external data arrives after a drag ended, clear the overwrite and only keep the overwrite 
+// for any active drag
+watch(() => props.rows, () => {
+    const allocMap: Map<number, { start: Date, end: Date }> = new Map();
+    const rowMap: Map<number, Date> = new Map();
+    if (draggingState.value?.allocId != null) {
+        const allocOver = dragOverwrites.value.get(draggingState.value.allocId);
+        if (allocOver) {
+            allocMap.set(draggingState.value.allocId, allocOver);
+        }
+    }
+    else if (draggingState.value?.rowId != null) {
+        const rowOver = dragRowOverwrites.value.get(draggingState.value.rowId);
+        if (rowOver) {
+            rowMap.set(draggingState.value.rowId, rowOver);
+        }
+    }
+    dragRowOverwrites.value = rowMap;
+    dragOverwrites.value = allocMap;
+}, { deep: true })
 
 
 // panning logic
@@ -654,6 +809,10 @@ function dateToX(d: string | Date | undefined) {
 }
 
 function fallbackTimestamp(row: Row): string | Date | null {
+    if (row.designation && [TaskDesignation.Requirement, TaskDesignation.Milestone].includes(row.designation)) {
+        const ro = dragRowOverwrites.value.get(row.id)
+        if (ro) return ro
+    }
     if (row.designation == TaskDesignation.Requirement) {
         return row.earliestStart ?? null;
     }
@@ -664,16 +823,43 @@ function fallbackTimestamp(row: Row): string | Date | null {
 }
 
 function firstAllocStart(row: Row) {
-    return row.allocations?.[0]?.start ?? fallbackTimestamp(row)
+    const alloc = row.allocations?.[0]
+    if (alloc) {
+        const over = dragOverwrites.value.get(alloc.dbId)
+        return over ? over.start : parseDate(alloc.start)
+    }
+    return fallbackTimestamp(row)
 }
 function lastAllocEnd(row: Row) {
     const allocs: Allocation[] = row.allocations ?? []
-    return (allocs.length > 0 ? allocs[allocs.length - 1]!.end : fallbackTimestamp(row))
+    if (allocs.length > 0) {
+        const last = allocs[allocs.length - 1]!
+        const over = dragOverwrites.value.get(last.dbId)
+        return over ? over.end : parseDate(last.end)
+    }
+    return fallbackTimestamp(row)
+}
+
+// helpers that return pixel positions for allocations, preferring drag overwrites when present
+function allocStartX(alloc: Allocation) {
+    const over = dragOverwrites.value.get(alloc.dbId)
+    const d = over ? over.start : parseDate(alloc.start)
+    return dateToX(d)
+}
+function allocEndX(alloc: Allocation) {
+    const over = dragOverwrites.value.get(alloc.dbId)
+    const d = over ? over.end : parseDate(alloc.end)
+    return dateToX(d)
+}
+function rowTimestampX(row: Row) {
+    // prefer row-level overwrite when dragging requirements/milestones
+    return dateToX(fallbackTimestamp(row) ?? undefined)
 }
 function allocBeforeTarget(row: Row) {
     const first = row.allocations?.[0]?.start
-    if (!row.scheduleTarget || !first) return false
-    return parseDate(first).getTime() <= parseDate(row.scheduleTarget).getTime()
+    const schedule = fallbackTimestamp(row)
+    if (!schedule || !first) return false
+    return parseDate(first).getTime() <= parseDate(schedule).getTime()
 }
 
 // wheel zoom handler: zoom along x axis only
@@ -810,8 +996,146 @@ function emitAllocClick(rowId: number | null, allocId: number | null, taskId: nu
     emit('alloc-click', { rowId, allocId, taskId })
 }
 
+// TODO: used for multiple different cases (requirements, milestones, groups)
+// -> split into different functions, find better name for general purpose event
 function emitRowClick(id: number) {
     emit('row-click', id)
+}
+
+function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
+    if (!rw.row.allocations) return null
+    return rw.row.allocations[ai - 1] ?? null
+}
+
+function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
+    if (!rowId) return;
+    // clear previous listeners/state
+    if (draggingState.value != null) {
+        document.removeEventListener('mousemove', draggingState.value.moveListener);
+        document.removeEventListener('mouseup', draggingState.value.upListener);
+        draggingState.value = null;
+    }
+
+    // locate original allocation bounds when available
+    let origStart: Date | undefined = undefined;
+    let origEnd: Date | undefined = undefined;
+    if (allocId != null) {
+        for (const rw of props.rows ?? []) {
+            const found = (rw.allocations ?? []).find(a => a.dbId === allocId);
+            if (found) {
+                origStart = (found.start instanceof Date) ? found.start : new Date(found.start);
+                origEnd = (found.end instanceof Date) ? found.end : new Date(found.end);
+                break;
+            }
+        }
+    }
+    else {
+        const row = props.rows.find(r => r.id == rowId);
+        if (row?.designation === TaskDesignation.Requirement) {
+            origStart = row.earliestStart ? new Date(row.earliestStart) : undefined
+            origEnd = origStart
+        }
+        if (row?.designation === TaskDesignation.Milestone) {
+            origStart = row.scheduleTarget ? new Date(row.scheduleTarget) : undefined
+            origEnd = origStart
+        }
+    }
+
+    const initDate = clientXToDate(e.clientX);
+
+    const moveListener = (ev: MouseEvent) => {
+        if (!draggingState.value) return;
+        const date = clientXToDate(ev.clientX);
+        const aId = draggingState.value.allocId;
+        const s = draggingState.value.origStart ?? new Date();
+        const t = draggingState.value.origEnd ?? new Date();
+        let newS = s;
+        let newE = t;
+        if (aId == null) {
+            // row-level single date (requirement/milestone)
+            const rowId = draggingState.value.rowId;
+            if (rowId != null) {
+                dragRowOverwrites.value.set(rowId, roundToZoomRes(date));
+            }
+        } else {
+            const offset = draggingState.value.grabOffsetMs ?? 0;
+            if (draggingState.value.edge === 'start') {
+                newS = roundToZoomRes(new Date(date.getTime() - offset))
+            } else if (draggingState.value.edge === 'end') {
+                newE = roundToZoomRes(new Date(date.getTime() - offset))
+            } else {
+                const duration = t.getTime() - s.getTime()
+                newS = roundToZoomRes(new Date(date.getTime() - offset))
+                newE = new Date(newS.getTime() + duration)
+            }
+            dragOverwrites.value.set(aId, { start: newS, end: newE });
+        }
+    };
+
+    const upListener = () => {
+        if (!draggingState.value) {
+            document.removeEventListener('mousemove', moveListener);
+            document.removeEventListener('mouseup', upListener);
+            return;
+        }
+        const rowId = draggingState.value.rowId;
+        const aId = draggingState.value.allocId;
+        let finalStart: Date | undefined = undefined;
+        let finalEnd: Date | undefined = undefined;
+        if (aId != null) {
+            const over = dragOverwrites.value.get(aId);
+            if (over) {
+                finalStart = over.start;
+                finalEnd = over.end;
+            }
+        } else if (rowId != null) {
+            const over = dragRowOverwrites.value.get(rowId);
+            if (over) {
+                finalStart = over;
+                finalEnd = over;
+            }
+        }
+        draggingState.value = null;
+        document.removeEventListener('mousemove', moveListener);
+        document.removeEventListener('mouseup', upListener);
+        if (rowId != null && finalStart != null && finalEnd != null) {
+            emit('alloc-drag-end', { rowId: rowId, allocId: aId, start: finalStart, end: finalEnd });
+        }
+    };
+
+    const newDraggingState = { rowId, allocId, edge, origStart, origEnd, grabOffsetMs: 0, moveListener, upListener };
+    if ((edge === 'move' || edge === 'start') && origStart) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
+    }
+    else if (edge === 'end' && origEnd) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
+    }
+
+    if (allocId != null && origStart && origEnd) {
+        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
+    }
+    else if (rowId != null && origStart) {
+        dragRowOverwrites.value.set(rowId, origStart);
+
+    }
+
+    draggingState.value = newDraggingState
+    document.addEventListener('mousemove', moveListener);
+    document.addEventListener('mouseup', upListener);
+}
+
+function onDeleteBooking(rowId: number | null, allocId: number | null) {
+    emit('delete-booking', { rowId, allocId })
+}
+
+function onSplitBooking(rowId: number | null, allocId: number | null) {
+    emit('split-booking', { rowId, allocId, zoom: zoomX.value })
+}
+
+function onJoinBookings(rowId: number | null, leftAllocId: number, rightAllocId: number) {
+    emit('join-bookings', { rowId, leftAllocId, rightAllocId })
 }
 
 function toggleGroup(id: number) {
@@ -836,9 +1160,13 @@ function toggleGroup(id: number) {
     cursor: grab;
 }
 
-.gantt-descriptions-list:active,
-.gantt-header:active,
-.gantt-chart-scroll:active {
+.dragging>.gantt-descriptions-list,
+.dragging>.gantt-header,
+.dragging>.gantt-chart-scroll {
+    cursor: grabbing;
+}
+
+.gantt-grid.dragging {
     cursor: grabbing;
 }
 
@@ -978,6 +1306,15 @@ function toggleGroup(id: number) {
     background-color: #0074d330;
 }
 
+.gantt-row-description-selected {
+    background-color: #ede7f6;
+    /* light violet */
+}
+
+.gantt-row-description-not-selectable {
+    color: #9e9e9e;
+}
+
 .selected-alloc {
     stroke-width: 2.5 !important;
     filter: drop-shadow(2px 2px 2px #555a)
@@ -989,5 +1326,22 @@ function toggleGroup(id: number) {
     justify-content: center;
     align-content: center;
     height: 100%;
+}
+
+.overlay-handles .drag-handle rect,
+.overlay-handles .action-btn rect {
+    transition: filter 120ms ease, opacity 120ms ease;
+}
+
+.overlay-handles .drag-handle:hover rect {
+    filter: brightness(1.22);
+}
+
+.overlay-handles .action-btn:hover rect {
+    filter: brightness(1.12);
+}
+
+.overlay-handles {
+    pointer-events: auto;
 }
 </style>

@@ -18,6 +18,8 @@ export interface Allocation {
   final?: boolean;
 }
 
+type BookingOp = Allocation | number // allocation: upsert, number: delete
+
 const PLAN_QUERY = graphql(`
   query plan {
     currentPlan {
@@ -131,28 +133,75 @@ export const usePlanStore = defineStore('planStore', () => {
     }
   }
 
-  async function saveBooking(b: Allocation) {
-    try {
-      const taskId = b.task?.dbId;
-      if (!taskId) {
-        console.warn('Cannot save booking without a task id', b);
-        return;
+  async function performBookingOps(ops: BookingOp[]) {
+    for (const op of ops) {
+      if (typeof op === 'number') {
+        // deleteion
+        try {
+          await mutBookingDelete.mutate({ dbId: op });
+        } catch (err) {
+          console.warn('Failed to delete booking', err);
+        }
       }
-      const vars: Exact<MutationBookingSaveArgs> = { dbId: b.dbId > 0 ? b.dbId : null, taskId, start: (b.start instanceof Date) ? b.start.toISOString() : String(b.start), end: (b.end instanceof Date) ? b.end.toISOString() : String(b.end), resources: (b.resources || []).map(r => r.dbId), final: !!b.final };
-      await mutBookingSave.mutate(vars);
-      await queryGetAll.refetch?.();
-    } catch (err) {
-      console.warn('Failed to save booking', err);
+      else {
+        // upsert
+        try {
+          const taskId = op.task?.dbId;
+          if (!taskId) {
+            console.warn('Cannot save booking without a task id', op);
+            return;
+          }
+          const vars: Exact<MutationBookingSaveArgs> = { dbId: op.dbId > 0 ? op.dbId : null, taskId, start: (op.start instanceof Date) ? op.start.toISOString() : String(op.start), end: (op.end instanceof Date) ? op.end.toISOString() : String(op.end), resources: (op.resources || []).map(r => r.dbId), final: !!op.final };
+          await mutBookingSave.mutate(vars);
+        } catch (err) {
+          console.warn('Failed to save booking', err);
+        }
+      }
     }
+    await queryGetAll.refetch?.();
+  }
+
+  async function saveBooking(b: Allocation) {
+    await performBookingOps([b])
   }
 
   async function deleteBooking(dbId?: number | null) {
     if (!dbId) return;
+    await performBookingOps([dbId])
+  }
+
+  async function splitBooking(dbId?: number | null, gapMs?: number) {
+    if (!dbId) return;
+    const alloc = allocations_map.value.get(dbId);
+    if (!alloc) return;
+    const start = alloc.start instanceof Date ? alloc.start : new Date(alloc.start);
+    const end = alloc.end instanceof Date ? alloc.end : new Date(alloc.end);
+    const total = end.getTime() - start.getTime();
+    const gap = typeof gapMs === 'number' ? gapMs : Math.min(60 * 60 * 1000, Math.max(15 * 60 * 1000, Math.round(total * 0.05)));
+    const half = Math.floor((total - gap) / 2);
+    const firstEnd = new Date(start.getTime() + half);
+    const secondStart = new Date(firstEnd.getTime() + gap);
     try {
-      await mutBookingDelete.mutate({ dbId });
-      await queryGetAll.refetch?.();
+      // update first (reuse existing dbId)
+      const newAlloc: Allocation = { dbId: 0, start: secondStart, end, task: alloc.task, resources: alloc.resources, allocationType: alloc.allocationType, final: !!alloc.final };
+      // update + create
+      await performBookingOps([{ ...alloc, end: firstEnd } as Allocation, newAlloc]);
     } catch (err) {
-      console.warn('Failed to delete booking', err);
+      console.warn('Failed to split booking', err);
+    }
+  }
+
+  async function joinBookings(leftAllocId: number, rightAllocId: number) {
+    const left = allocations_map.value.get(leftAllocId);
+    const right = allocations_map.value.get(rightAllocId);
+    if (!left || !right) return;
+    const newStart = left.start instanceof Date ? left.start : new Date(left.start);
+    const newEnd = right.end instanceof Date ? right.end : new Date(right.end);
+    try {
+      // update + delete
+      await performBookingOps([{ ...left, start: newStart, end: newEnd } as Allocation, right.dbId])
+    } catch (err) {
+      console.warn('Failed to join bookings', err);
     }
   }
 
@@ -308,6 +357,8 @@ export const usePlanStore = defineStore('planStore', () => {
     createBookingFromPlan: (taskId?: number | null) => createBookingFromPlan(taskId),
     saveBooking: (b: Allocation) => saveBooking(b),
     deleteBooking: (dbId?: number | null) => deleteBooking(dbId),
+    splitBooking: (dbId?: number | null, gapMs?: number) => splitBooking(dbId, gapMs),
+    joinBookings: (leftAllocId: number, rightAllocId: number) => joinBookings(leftAllocId, rightAllocId),
     recalculate: () => {
       return mutRecalculate.mutate()
     }

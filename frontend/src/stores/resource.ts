@@ -208,7 +208,6 @@ function resourceToObj(resource: Ref<ResourceInput>): ResourceSaveInput {
     })),
     removedVacations: resource.value.removedVacations || [],
   };
-  console.log("Storing resource:", result);
   return result;
 }
 
@@ -222,7 +221,6 @@ export const useResourceStore = defineStore('resourceStore', () => {
   const allCombinedQueries: UseQueryReturn<CombinedAvailabilityQuery, { start: string, end: string }>[] = [];
   async function refetch(resourceId: number | null) { // eslint-disable-line @typescript-eslint/no-unused-vars
     // TODO: optimize to only refetch the changed resource?
-    console.log("refetch")
     await queryGetAll.refetch();
     for (const q of allCombinedQueries) {
       await q.refetch();
@@ -261,18 +259,10 @@ export const useResourceStore = defineStore('resourceStore', () => {
       }
       const dbId = resp?.data?.resourceSave?.dbId;
       if (dbId != null) {
-        if (resource.value.dbId == null) {
-          // a little hacky
-          // TODO: necessary?
-          resource.value.dbId = dbId;
-          await refetch(dbId);
-          // TODO: generic error handling?
-          sidebarStore.replaceSidebar(new ResourceSidebarData(dbId));
-        } else {
-          resource.value.dbId = dbId;
-          await refetch(dbId);
-          // TODO: generic error handling?
-        }
+        resource.value.dbId = dbId;
+        await refetch(dbId);
+        // TODO: generic error handling?
+        sidebarStore.save(new ResourceSidebarData(dbId));
       }
       return null;
     } catch (err: unknown) {
@@ -286,12 +276,13 @@ export const useResourceStore = defineStore('resourceStore', () => {
     const result = resp?.data?.resourceDelete;
     if (result) {
       // TODO: a 'filter' that removes all corresponding sidebars would be better
+      if (pop) { sidebarStore.discard(); }
       if (
         pop &&
         sidebarStore.activeSidebar instanceof ResourceSidebarData &&
         sidebarStore.activeSidebar.resourceId == resourceId
       ) {
-        sidebarStore.popSidebar();
+        sidebarStore.deleteSidebar(new ResourceSidebarData(resourceId));
       }
       await refetch(resourceId);
     }

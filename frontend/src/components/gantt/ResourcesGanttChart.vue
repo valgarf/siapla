@@ -2,7 +2,10 @@
 
   <GanttChart :start="planStore.start" :end="planStore.end" :rows="resourceRows" hasAvailability :dependencies="[]"
     :selectedRowIds="selectedRowIds" :selectedAllocIds="selectedAllocIds" dataKey="resources"
-    @alloc-click="onAllocClick" @row-click="onResourceClick" key="gantt-resources">
+    :selectionMode="selection.mode === 'RESOURCE'" @toggle-selection="(id) => selection.toggle(id)"
+    @alloc-click="onAllocClick" @row-click="onResourceClick" @alloc-drag-end="onAllocDragEnd"
+    @delete-booking="onDeleteBooking" @split-booking="onSplitBooking" @join-bookings="onJoinBookings"
+    key="gantt-resources">
     <template #corner>
       <SortMenu :modelValue="resourceSortOptions" @update:modelValue="updateSortOptions">
         <template #activator="{ toggle }">
@@ -65,6 +68,9 @@ function updateSortOptions(newOpts: SortOption[]) {
   resourceSortOptions.splice(0, resourceSortOptions.length, ...newOpts);
 }
 
+import { useSelectionStore } from 'src/stores/selection'
+const selection = useSelectionStore()
+
 const resourceRows = computed(() => {
   const arr = Array.from(resourceStore.resources).map(r => ({
     id: r.dbId,
@@ -72,7 +78,10 @@ const resourceRows = computed(() => {
     designation: TaskDesignation.Task,
     depth: 0,
     allocations: planStore.by_resource(r.dbId).map(a => ({ dbId: a.dbId, start: a.start, end: a.end, task: a.task, allocationType: a.allocationType })),
-    availability: availability.value[r.dbId] ?? []
+    availability: availability.value[r.dbId] ?? [],
+    // selection info
+    selectable: selection.mode === 'RESOURCE' ? selection.isSelectable(r.dbId) : true,
+    selected: selection.mode === 'RESOURCE' ? selection.isSelected(r.dbId) : false,
   }));
 
   function cmp(a: Row, b: Row) {
@@ -118,7 +127,7 @@ const resourceRows = computed(() => {
 // compute selections from sidebar
 const selectedRowIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
   // if active sidebar is a resource, highlight that row
   if (active instanceof ResourceSidebarData) {
     return [active.resourceId];
@@ -128,7 +137,7 @@ const selectedRowIds = computed(() => {
 
 const selectedAllocIds = computed(() => {
   const active = sidebarStore.activeSidebar;
-  if (!active || !sidebarStore.isSelected) return [] as number[];
+  if (!active || !sidebarStore.isOpen) return [] as number[];
   // if active sidebar is a task, highlight allocations for that task
   if (active instanceof TaskSidebarData) {
     const taskId = active.taskId;
@@ -139,21 +148,44 @@ const selectedAllocIds = computed(() => {
 
 
 function onResourceClick(rid: number) {
-  sidebarStore.toggleSidebar(new ResourceSidebarData(rid));
+  sidebarStore.toggle(new ResourceSidebarData(rid));
 }
 
-function onAllocClick(data: { taskId: number | null }) {
-  if (data.taskId != null) {
-    sidebarStore.toggleSidebar(new TaskSidebarData(data.taskId));
+function onAllocClick(evt: { taskId: number | null }) {
+  if (evt.taskId != null) {
+    sidebarStore.toggle(new TaskSidebarData(evt.taskId));
   }
 }
 
+// handlers for GanttChart emitted events
+async function onAllocDragEnd(evt: { rowId: number, allocId: number | null, start: Date, end: Date }) {
+  if (!evt.allocId) {
+    return
+  }
+  const alloc = planStore.allocation(evt.allocId);
+  if (alloc) { await planStore.saveBooking({ ...alloc, start: evt.start, end: evt.end }) }
+}
+
+async function onDeleteBooking(payload: { rowId: number | null; allocId: number | null }) {
+  if (!payload?.allocId) return;
+  await planStore.deleteBooking(payload.allocId);
+}
+
+async function onSplitBooking(payload: { rowId: number | null; allocId: number | null; zoom?: number }) {
+  if (!payload?.allocId) return;
+  await planStore.splitBooking(payload.allocId);
+}
+
+async function onJoinBookings(payload: { rowId: number | null; leftAllocId: number; rightAllocId: number }) {
+  await planStore.joinBookings(payload.leftAllocId, payload.rightAllocId);
+}
+
 function onNewTask() {
-  sidebarStore.pushSidebar(new NewTaskSidebarData());
+  sidebarStore.createNew(new NewTaskSidebarData());
 }
 
 function onNewResource() {
-  sidebarStore.pushSidebar(new NewResourceSidebarData());
+  sidebarStore.createNew(new NewResourceSidebarData());
 }
 
 </script>
