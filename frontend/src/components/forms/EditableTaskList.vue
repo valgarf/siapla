@@ -1,6 +1,6 @@
 <template>
-    <q-select v-if="edit" filled v-model="selectModel" multiple :options="selectPossible" use-chips stack-label
-        :label="label" @focus="beginSelection" @blur="endSelection" />
+    <q-select v-if="edit" filled v-model="selectModel" multiple :options="selectPossible" use-chips use-input
+        stack-label :label="label" @focus="beginSelection" @blur="endSelection" @filter="filterFn" />
     <div v-else-if="model?.length || createButton" class="col">
         <div class="text-subtitle2">{{ label }}</div>
         <TaskChip v-for="task in model" :key="task.dbId" :task="task" />
@@ -11,7 +11,7 @@
 
 <script setup lang="ts">
 import { useTaskStore, type Task } from 'src/stores/task';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import TaskChip from '../common/TaskChip.vue';
 
 interface Props {
@@ -52,7 +52,17 @@ const selectModel = computed({
         model.value = value.map(fromSelectOpt).filter((v: Task | undefined) => v != undefined)
     }
 })
-const selectPossible = computed(() => { return props.possible.map(toSelectOpt) })
+const filterValue = ref<string>('')
+function filterFn(val: string | null, update: (fn: () => void) => void) {
+    update(() => { filterValue.value = val?.toLowerCase() ?? '' })
+}
+const selectPossible = computed(() => {
+    const result = props.possible.map(toSelectOpt)
+    if (!filterValue.value.length) {
+        return result
+    }
+    return result.filter((opt) => opt.label.toLowerCase().indexOf(filterValue.value) > -1)
+})
 
 // selection store sync
 import { onUnmounted, watch } from 'vue'

@@ -1,6 +1,6 @@
 <template>
-    <q-select v-if="edit" filled v-model="select_model" multiple :options="select_possible" use-chips stack-label
-        :label="name" @focus="beginSelection" @blur="endSelection" />
+    <q-select v-if="edit" filled v-model="select_model" multiple :options="selectPossible" use-chips use-input
+        stack-label :label="name" @focus="beginSelection" @blur="endSelection" @filter="filterFn" />
     <div v-else-if="model.length" class="col">
         <div class="text-subtitle2">{{ name }}</div>
         <ResourceChip v-for="resource in model" :key="resource.dbId" :resource="resource" />
@@ -9,7 +9,7 @@
 
 <script setup lang="ts">
 import { useResourceStore, type Resource } from 'src/stores/resource';
-import { computed, type Ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 import ResourceChip from '../common/ResourceChip.vue';
 
 interface Props {
@@ -45,7 +45,17 @@ const select_model = computed({
         model.value = value.map(fromSelectOpt).filter((v: Resource | undefined) => v != undefined)
     }
 })
-const select_possible = computed(() => { return props.possible.map(toSelectOpt) })
+const filterValue = ref<string>('')
+function filterFn(val: string | null, update: (fn: () => void) => void) {
+    update(() => { filterValue.value = val?.toLowerCase() ?? '' })
+}
+const selectPossible = computed(() => {
+    const result = props.possible.map(toSelectOpt)
+    if (!filterValue.value.length) {
+        return result
+    }
+    return result.filter((opt) => opt.label.toLowerCase().indexOf(filterValue.value) > -1)
+})
 
 // selection store sync
 import { onUnmounted, watch } from 'vue'
