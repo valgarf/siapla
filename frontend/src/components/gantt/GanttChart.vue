@@ -1,5 +1,5 @@
 <template>
-    <div class="gantt-grid">
+    <div class="gantt-grid" :class="{ 'dragging': draggingState != null || isPanning }">
         <div class="gantt-corner corner-buttons" style="display:flex;align-items:center;">
             <q-btn aria-label="Reset Zoom" flat @click.stop="resetZoom" icon="refresh">
                 <q-tooltip>Reset Zoom</q-tooltip></q-btn>
@@ -387,13 +387,13 @@ const dayRowHeight = computed(() => 22);
 const headerHeight = computed(() => monthRowHeight.value + dayRowHeight.value);
 const now = ref<Date>(new Date(Date.now()));
 
-let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
+// let _activeDrag: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null = null;
 
 // internal drag state and overwrites
 const dragOverwrites = ref(new Map<number, { start: Date; end: Date }>());
 // row-level single-date overwrites (for requirements / milestones)
 const dragRowOverwrites = ref(new Map<number, Date>());
-let draggingState: { rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined } | null = null;
+const draggingState = ref<{ rowId: number | null; allocId: number | null; edge: 'start' | 'end' | 'move'; origStart?: Date | undefined; origEnd?: Date | undefined; grabOffsetMs?: number | undefined, moveListener: (e: MouseEvent) => void; upListener: (e: MouseEvent) => void } | null>(null);
 
 function clientXToDate(clientX: number): Date {
     const rect = scrollCell.value?.getBoundingClientRect();
@@ -644,16 +644,16 @@ const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.v
 watch(() => props.rows, () => {
     const allocMap: Map<number, { start: Date, end: Date }> = new Map();
     const rowMap: Map<number, Date> = new Map();
-    if (draggingState?.allocId != null) {
-        const allocOver = dragOverwrites.value.get(draggingState.allocId);
+    if (draggingState.value?.allocId != null) {
+        const allocOver = dragOverwrites.value.get(draggingState.value.allocId);
         if (allocOver) {
-            allocMap.set(draggingState.allocId, allocOver);
+            allocMap.set(draggingState.value.allocId, allocOver);
         }
     }
-    else if (draggingState?.rowId != null) {
-        const rowOver = dragRowOverwrites.value.get(draggingState.rowId);
+    else if (draggingState.value?.rowId != null) {
+        const rowOver = dragRowOverwrites.value.get(draggingState.value.rowId);
         if (rowOver) {
-            rowMap.set(draggingState.rowId, rowOver);
+            rowMap.set(draggingState.value.rowId, rowOver);
         }
     }
     dragRowOverwrites.value = rowMap;
@@ -1010,11 +1010,10 @@ function prevAlloc(rw: RowWrapper, ai: number): Allocation | null {
 function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 'start' | 'end' | 'move', e: MouseEvent) {
     if (!rowId) return;
     // clear previous listeners/state
-    if (_activeDrag) {
-        document.removeEventListener('mousemove', _activeDrag.moveListener);
-        document.removeEventListener('mouseup', _activeDrag.upListener);
-        _activeDrag = null;
-        draggingState = null;
+    if (draggingState.value != null) {
+        document.removeEventListener('mousemove', draggingState.value.moveListener);
+        document.removeEventListener('mouseup', draggingState.value.upListener);
+        draggingState.value = null;
     }
 
     // locate original allocation bounds when available
@@ -1043,43 +1042,26 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
     }
 
     const initDate = clientXToDate(e.clientX);
-    draggingState = { rowId, allocId, edge, origStart, origEnd };
-    if ((edge === 'move' || edge === 'start') && origStart) {
-        const ds = draggingState;
-        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
-    }
-    else if (edge === 'end' && origEnd) {
-        const ds = draggingState;
-        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
-    }
-
-    if (allocId != null && origStart && origEnd) {
-        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
-    }
-    else if (rowId != null && origStart) {
-        dragRowOverwrites.value.set(rowId, origStart);
-
-    }
 
     const moveListener = (ev: MouseEvent) => {
-        if (!draggingState) return;
+        if (!draggingState.value) return;
         const date = clientXToDate(ev.clientX);
-        const aId = draggingState.allocId;
-        const s = draggingState.origStart ?? new Date();
-        const t = draggingState.origEnd ?? new Date();
+        const aId = draggingState.value.allocId;
+        const s = draggingState.value.origStart ?? new Date();
+        const t = draggingState.value.origEnd ?? new Date();
         let newS = s;
         let newE = t;
         if (aId == null) {
             // row-level single date (requirement/milestone)
-            const rowId = draggingState.rowId;
+            const rowId = draggingState.value.rowId;
             if (rowId != null) {
                 dragRowOverwrites.value.set(rowId, roundToZoomRes(date));
             }
         } else {
-            const offset = draggingState.grabOffsetMs ?? 0;
-            if (draggingState.edge === 'start') {
+            const offset = draggingState.value.grabOffsetMs ?? 0;
+            if (draggingState.value.edge === 'start') {
                 newS = roundToZoomRes(new Date(date.getTime() - offset))
-            } else if (draggingState.edge === 'end') {
+            } else if (draggingState.value.edge === 'end') {
                 newE = roundToZoomRes(new Date(date.getTime() - offset))
             } else {
                 const duration = t.getTime() - s.getTime()
@@ -1091,14 +1073,13 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
     };
 
     const upListener = () => {
-        if (!draggingState) {
+        if (!draggingState.value) {
             document.removeEventListener('mousemove', moveListener);
             document.removeEventListener('mouseup', upListener);
-            _activeDrag = null;
             return;
         }
-        const rowId = draggingState.rowId;
-        const aId = draggingState.allocId;
+        const rowId = draggingState.value.rowId;
+        const aId = draggingState.value.allocId;
         let finalStart: Date | undefined = undefined;
         let finalEnd: Date | undefined = undefined;
         if (aId != null) {
@@ -1114,8 +1095,7 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
                 finalEnd = over;
             }
         }
-        _activeDrag = null;
-        draggingState = null;
+        draggingState.value = null;
         document.removeEventListener('mousemove', moveListener);
         document.removeEventListener('mouseup', upListener);
         if (rowId != null && finalStart != null && finalEnd != null) {
@@ -1123,9 +1103,27 @@ function onAllocDragStart(rowId: number | null, allocId: number | null, edge: 's
         }
     };
 
+    const newDraggingState = { rowId, allocId, edge, origStart, origEnd, grabOffsetMs: 0, moveListener, upListener };
+    if ((edge === 'move' || edge === 'start') && origStart) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origStart.getTime();
+    }
+    else if (edge === 'end' && origEnd) {
+        const ds = newDraggingState;
+        ds.grabOffsetMs = initDate.getTime() - origEnd.getTime();
+    }
+
+    if (allocId != null && origStart && origEnd) {
+        dragOverwrites.value.set(allocId, { start: origStart, end: origEnd });
+    }
+    else if (rowId != null && origStart) {
+        dragRowOverwrites.value.set(rowId, origStart);
+
+    }
+
+    draggingState.value = newDraggingState
     document.addEventListener('mousemove', moveListener);
     document.addEventListener('mouseup', upListener);
-    _activeDrag = { rowId, allocId, edge, moveListener, upListener };
 }
 
 function onDeleteBooking(rowId: number | null, allocId: number | null) {
@@ -1162,9 +1160,13 @@ function toggleGroup(id: number) {
     cursor: grab;
 }
 
-.gantt-descriptions-list:active,
-.gantt-header:active,
-.gantt-chart-scroll:active {
+.dragging>.gantt-descriptions-list,
+.dragging>.gantt-header,
+.dragging>.gantt-chart-scroll {
+    cursor: grabbing;
+}
+
+.gantt-grid.dragging {
     cursor: grabbing;
 }
 
