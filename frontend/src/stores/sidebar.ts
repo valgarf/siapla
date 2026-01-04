@@ -115,7 +115,7 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   // open it (push if necessary). If same as active and open -> close.
   function toggle(sidebar: SidebarData) {
     const last = stack.value[stack.value.length - 1] ?? null;
-    if (currentEditing.value != null && !isSameSidebar(last, sidebar)) {
+    if (currentEditing.value != null && !isSameSidebar(currentEditing.value, sidebar)) {
       // we are in edit mode, cannot change sidebar
       triggerShake();
       return;
