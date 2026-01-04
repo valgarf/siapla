@@ -77,7 +77,7 @@
                     <div v-for="(option, idx) in resourceConstraints" :key="idx" class="row items-center q-gutter-sm">
                         <div class="col">
                             <EditableResourceList v-model="option.resources"
-                                :name="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
+                                :label="`Resource Constraint ${idx + 1}${(localTask.resourceConstraints || []).length == 0 ? ' (inherited)' : ''}`"
                                 :possible="allResources" :edit="edit" class="full-width"
                                 :selectKey="'resource-constraint-' + idx" />
                             <div class="row q-gutter-sm items-center responsive-row">
@@ -113,7 +113,8 @@
                 <EditableTaskList v-model="localTask.successors" label="Successors" :possible="possibleSuccessors"
                     v-show="localTask.designation != TaskDesignation.Milestone" :edit="edit" @create="onCreateSuccessor"
                     :selectKey="'successors'" />
-                <TaskSelect v-show="edit" v-model="localTask.parent" :possible="possibleParents" label="parent" />
+                <EditableTaskList v-show="edit" :edit="edit" v-model="localTask.parent" :possible="possibleParents"
+                    :single="true" label="parent" :selectKey="'parent'" />
                 <EditableTaskList v-model="localTask.children" label="Children" :possible="possibleChildren"
                     v-show="localTask.designation == TaskDesignation.Group" :edit="edit" @create="onCreateChild"
                     :selectKey="'children'" />
@@ -136,8 +137,8 @@
                             <q-checkbox dense v-model="b.final" label="Final"
                                 @update:modelValue="() => saveBookingLocal(b)" />
                             <div class="booking-resources">
-                                <EditableResourceList :name="`Resources`" v-model="b.resources" :possible="allResources"
-                                    :edit="true" @update:modelValue="() => saveBookingLocal(b)"
+                                <EditableResourceList :label="`Resources`" v-model="b.resources"
+                                    :possible="allResources" :edit="true" @update:modelValue="() => saveBookingLocal(b)"
                                     :selectKey="'booking-' + idx + '-resources'" />
                             </div>
                             <DateTimeInput :modelValue="b.start" label="Start" :maxWidth="218" class="responsive-field"
@@ -172,7 +173,6 @@ import EditableResourceList from '../forms/EditableResourceList.vue';
 import EditableTaskList from '../forms/EditableTaskList.vue';
 import MarkdownEditor from '../forms/MarkdownEditor.vue';
 import TaskChip from '../common/TaskChip.vue';
-import TaskSelect from '../forms/TaskSelect.vue';
 import { usePlanStore, type Allocation } from 'src/stores/plan';
 
 const taskStore = useTaskStore();
