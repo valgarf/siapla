@@ -1,12 +1,12 @@
 <template>
-    <div class="gantt-grid" :class="{ 'dragging': draggingState != null || isPanning }">
+    <div class="gantt-grid" :class="{ 'dragging': draggingState != null || isPanning }" @mousedown.stop.prevent>
         <div class="gantt-corner corner-buttons" style="display:flex;align-items:center;">
             <q-btn aria-label="Reset Zoom" flat @click.stop="resetZoom" icon="refresh">
                 <q-tooltip>Reset Zoom</q-tooltip></q-btn>
             <slot name="corner" />
         </div>
 
-        <div class="gantt-header" @mousedown="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
+        <div class="gantt-header" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveX" @mouseup="onPanEnd"
             @mouseleave="onPanEnd" @wheel.prevent="onWheel">
             <div class="gantt-header-scroll"
                 :style="{ width: timelineWidth + 'px', left: '0px', transform: `translate(${-scrollX}px, 0)` }">
@@ -48,7 +48,7 @@
         <div class="gantt-descriptions-list" :style="{
             height: chartHeight + 'px', width: descriptionColWidth + 'px', position: 'relative',
             overflow: 'hidden'
-        }" @mousedown="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
+        }" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMoveY" @mouseup="onPanEnd" @mouseleave="onPanEnd">
             <div :style="{ position: 'absolute', top: -scrollY + 'px', left: 0, width: '100%' }">
                 <div v-for="rw in visibleRows" :key="rw.row.id" :class="{
                     'gantt-row-description': true,
@@ -73,7 +73,7 @@
             </div>
         </div>
 
-        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown="onPanStart" @mousemove="onPanMove"
+        <div class="gantt-chart-scroll" ref="scrollCell" @mousedown.stop.prevent="onPanStart" @mousemove="onPanMove"
             @mouseup="onPanEnd" @mouseleave="onPanEnd" @wheel.prevent="onWheel" style="grid-column: 2; grid-row: 2;">
             <svg :width="timelineWidth" :height="chartHeight"
                 :style="{ transform: `translate(${-scrollX}px, ${-scrollY}px)` }">
