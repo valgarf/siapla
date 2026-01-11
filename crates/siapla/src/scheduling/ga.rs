@@ -807,7 +807,9 @@ pub fn plan_task(
     if task_selectable.is_empty() && primary_iterators.is_empty() {
         return Err(Some(PlanningIssue {
             code: crate::gql::issue::IssueCode::NoSlotFound,
-            description: format!("Task has no resource constraint"),
+            description: format!(
+                "Could not find any resource slot - resource constraints likely missing"
+            ),
             task_id: Some(task.db_id),
         }));
     }
