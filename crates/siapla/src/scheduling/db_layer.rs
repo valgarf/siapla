@@ -85,24 +85,6 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
         }
     }
 
-    // Build a helper map from constraint id -> list of resource ids (entries)
-    let mut constraint_entries_map: HashMap<i32, Vec<i32>> = HashMap::new();
-    for ce in db_constraint_entries_vec.iter() {
-        constraint_entries_map.entry(ce.resource_constraint_id).or_default().push(ce.resource_id);
-    }
-
-    // Build task -> constraints info map: task_id -> Vec<(constraint_id, speed, entries_vec, optional)>
-    let mut task_constraints_map: HashMap<i32, Vec<(i32, f64, Vec<i32>, bool)>> = HashMap::new();
-    for c in db_constraints_vec.iter() {
-        let entries = constraint_entries_map.get(&c.id).cloned().unwrap_or_default();
-        task_constraints_map.entry(c.task_id).or_default().push((
-            c.id,
-            c.speed as f64,
-            entries,
-            c.optional,
-        ));
-    }
-
     // Build all Task, Requirement, and Milestone objects
     let mut project_objects = ProjectObjects::default();
 
@@ -133,65 +115,20 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
             Node::Milestone(new_ref.into())
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Task) {
             let base_effort = t.effort.unwrap_or(0.0) as f64;
-            let mut booked_until: Option<NaiveDateTime> = None;
-            let mut booked_resources_vec: Vec<i32> = Vec::new();
-            let mut booked_amount_days: f64 = 0.0;
-            let mut booked_final = false;
-            if let Some(bks) = task_bookings.get(&t.id) {
-                // store full booking history on the task and compute booked amount based on constraint speeds
-                for (s, e, ress, final_flag) in bks.iter() {
-                    let dur_secs = e.signed_duration_since(*s).num_seconds() as f64;
-                    let work_days = dur_secs / (8.0 * 3600.0);
-                    // sum speeds of matching constraints for the resources in this booking
-                    let mut total_speed = 0.0f64;
-                    // get constraints for this task (if any)
-                    if let Some(constraints) = task_constraints_map.get(&t.id) {
-                        for r in ress.iter() {
-                            // find last matching constraint that references this resource
-                            let mut speed_for_r = 1.0f64;
-                            for (_cid, speed, entries, _opt) in constraints.iter() {
-                                if entries.contains(r) {
-                                    speed_for_r = *speed;
-                                    // prefer the first match
-                                    break;
-                                }
-                            }
-                            total_speed += speed_for_r;
-                            if !booked_resources_vec.contains(r) {
-                                booked_resources_vec.push(*r);
-                            }
-                        }
-                    } else {
-                        // no constraints defined: assume speed 1 per resource
-                        total_speed = ress.len() as f64;
-                        for r in ress.iter() {
-                            if !booked_resources_vec.contains(r) {
-                                booked_resources_vec.push(*r);
-                            }
-                        }
-                    }
-                    booked_amount_days += work_days * total_speed;
-                    if *final_flag {
-                        booked_final = true;
-                    }
-                    if booked_until.map_or(true, |bt| bt < *e) {
-                        booked_until = Some(*e);
-                    }
-                }
-            }
-            let remaining_effort = (base_effort - booked_amount_days).max(1.0).min(base_effort);
             let new_ref = Rc::new(RefCell::new(Task {
                 db_id: t.id,
                 parent: None,
                 title: t.title.clone(),
-                effort: remaining_effort,
                 constraints: Vec::new(), // filled later
-                booked_until,
-                booked_resources: booked_resources_vec,
-                // attach booking history if present
+                // For now attach base effort and booking history; compute booking
+                // adjustments later once constraints have been attached to the task.
                 bookings: task_bookings.get(&t.id).cloned().unwrap_or_default(),
-                booked_remaining_effort: remaining_effort,
-                booked_final,
+                effort: base_effort,          // adjusted later
+                booked_until: None,           // adjusted later
+                booked_resources: Vec::new(), // adjusted later
+                // attach booking history if present
+                booked_remaining_effort: base_effort, // adjusted later
+                booked_final: false,                  // adjusted later
             }));
             project_objects.tasks.push(Rc::clone(&new_ref));
             Node::Task(new_ref.into())
@@ -229,7 +166,16 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
         .iter()
         .map(|t| (t.borrow().db_id, Rc::clone(t)))
         .collect::<HashMap<i32, _>>();
-
+    let requirement_map = project_objects
+        .requirements
+        .iter()
+        .map(|t| (t.borrow().db_id, Rc::clone(t)))
+        .collect::<HashMap<i32, _>>();
+    let milestone_map = project_objects
+        .milestones
+        .iter()
+        .map(|t| (t.borrow().db_id, Rc::clone(t)))
+        .collect::<HashMap<i32, _>>();
     // add parent links
     for t in db_task_map.values() {
         let designation =
@@ -331,8 +277,11 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
             group.borrow_mut().constraints.push(c);
         } else if let Some(task) = task_map.get(&task_id) {
             task.borrow_mut().constraints.push(c);
+        } else if requirement_map.contains_key(&task_id) || milestone_map.contains_key(&task_id) {
+            // ignore: DB allows to keep old constraints, but they have no meaning if they are
+            // attached to requirements or milestones
         } else {
-            panic!("No task or group with id found.");
+            panic!("No task or group with id {} found.", task_id);
         }
     }
 
@@ -350,6 +299,67 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
                 parent = group.parent.clone();
             }
         }
+    }
+
+    // Apply booking-derived adjustments now that constraints have been attached
+    // to tasks (we can look-up constraint speeds and resource entries here).
+    for task_rc in project_objects.tasks.iter() {
+        let mut task = task_rc.borrow_mut();
+        let base_effort = task.effort;
+        let mut booked_until: Option<NaiveDateTime> = task.booked_until;
+        let mut booked_resources_vec: Vec<i32> = Vec::new();
+        let mut booked_amount_days: f64 = 0.0;
+        let mut booked_final = task.booked_final;
+
+        if !task.bookings.is_empty() {
+            for (s, e, ress, final_flag) in task.bookings.iter() {
+                let dur_secs = e.signed_duration_since(*s).num_seconds() as f64;
+                let work_days = dur_secs / (8.0 * 3600.0);
+                let mut total_speed = 0.0f64;
+
+                if task.constraints.is_empty() {
+                    total_speed = ress.len() as f64;
+                    for r in ress.iter() {
+                        if !booked_resources_vec.contains(r) {
+                            booked_resources_vec.push(*r);
+                        }
+                    }
+                } else {
+                    for r in ress.iter() {
+                        let mut speed_for_r = 1.0f64;
+                        'find_constraint: for c in task.constraints.iter() {
+                            for entry in c.constraints.iter() {
+                                if let Some(r_rc) = entry.resource.upgrade() {
+                                    if r_rc.borrow().db_id == *r {
+                                        speed_for_r = c.speed;
+                                        break 'find_constraint;
+                                    }
+                                }
+                            }
+                        }
+                        total_speed += speed_for_r;
+                        if !booked_resources_vec.contains(r) {
+                            booked_resources_vec.push(*r);
+                        }
+                    }
+                }
+
+                booked_amount_days += work_days * total_speed;
+                if *final_flag {
+                    booked_final = true;
+                }
+                if booked_until.map_or(true, |bt| bt < *e) {
+                    booked_until = Some(*e);
+                }
+            }
+        }
+
+        let remaining_effort = (base_effort - booked_amount_days).max(1.0).min(base_effort);
+        task.effort = remaining_effort;
+        task.booked_remaining_effort = remaining_effort;
+        task.booked_until = booked_until;
+        task.booked_resources = booked_resources_vec;
+        task.booked_final = booked_final;
     }
 
     // estimate calculation range
@@ -456,14 +466,14 @@ pub fn detect_project_issues(
         if !has_requirement_ancestor.contains(&tid) {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::RequirementMissing,
-                description: format!("Task {} has no requirement ancestor", tid),
+                description: format!("Task has no requirement ancestor"),
                 task_id: Some(tid),
             });
         }
         if !is_required_by_milestone.contains(&tid) {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::MilestoneMissing,
-                description: format!("Task {} is not a predecessor of any milestone", tid),
+                description: format!("Task is not a predecessor of any milestone"),
                 task_id: Some(tid),
             });
         }
@@ -472,7 +482,7 @@ pub fn detect_project_issues(
         if t.borrow().constraints.is_empty() {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::ResourceMissing,
-                description: format!("Task {} has no resource constraints", tid),
+                description: format!("Task has no resource constraints"),
                 task_id: Some(tid),
             });
         }
