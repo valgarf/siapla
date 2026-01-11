@@ -12,7 +12,7 @@ SIAPLA serves a webpage. The installation methods below result in a webpage bein
 
 ```
 mkdir ~/siapla-data
-docker run --name siapla -v ~/siapla-data:/data -p 8990:80 -d siapla:latest
+docker run --name siapla -v ~/siapla-data:/data -p 8990:80 -d valgarf/siapla:latest
 ```
 
 ### Cargo
