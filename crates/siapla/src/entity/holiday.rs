@@ -45,7 +45,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     HolidayEntry,
-    Resource,
+    ResourceIteration,
 }
 
 impl ColumnTrait for Column {
@@ -65,7 +65,7 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::HolidayEntry => Entity::has_many(super::holiday_entry::Entity).into(),
-            Self::Resource => Entity::has_many(super::resource::Entity).into(),
+            Self::ResourceIteration => Entity::has_many(super::resource_iteration::Entity).into(),
         }
     }
 }
@@ -76,9 +76,9 @@ impl Related<super::holiday_entry::Entity> for Entity {
     }
 }
 
-impl Related<super::resource::Entity> for Entity {
+impl Related<super::resource_iteration::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Resource.def()
+        Relation::ResourceIteration.def()
     }
 }
 

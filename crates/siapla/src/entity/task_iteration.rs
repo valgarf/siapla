@@ -8,7 +8,7 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "task"
+        "task_iteration"
     }
 }
 
@@ -23,6 +23,9 @@ pub struct Model {
     pub schedule_target: Option<DateTimeUtc>,
     pub effort: Option<f32>,
     pub priority: f32,
+    pub header_id: Option<i32>,
+    pub rev_created: u64,
+    pub rev_deleted: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -36,6 +39,9 @@ pub enum Column {
     ScheduleTarget,
     Effort,
     Priority,
+    HeaderId,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -71,6 +77,9 @@ impl ColumnTrait for Column {
             Self::ScheduleTarget => ColumnType::Timestamp.def().null(),
             Self::Effort => ColumnType::Float.def().null(),
             Self::Priority => ColumnType::Float.def(),
+            Self::HeaderId => ColumnType::Integer.def().null(),
+            Self::RevCreated => ColumnType::BigUnsigned.def(),
+            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
         }
     }
 }

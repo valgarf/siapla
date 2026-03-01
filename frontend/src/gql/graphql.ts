@@ -223,13 +223,33 @@ export type QueryCountryArgs = {
 };
 
 
+export type QueryCurrentPlanArgs = {
+  revision?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryGetFromOpenHolidaysArgs = {
   isocode: Scalars['String']['input'];
 };
 
 
+export type QueryIssuesArgs = {
+  revision?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
 export type QueryRegionArgs = {
   isocode: Scalars['String']['input'];
+};
+
+
+export type QueryResourcesArgs = {
+  revision?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type QueryTasksArgs = {
+  revision?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type Region = {

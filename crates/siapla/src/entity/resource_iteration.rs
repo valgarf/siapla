@@ -8,7 +8,7 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "resource"
+        "resource_iteration"
     }
 }
 
@@ -20,6 +20,9 @@ pub struct Model {
     pub added: DateTimeUtc,
     pub removed: Option<DateTimeUtc>,
     pub holiday_id: Option<i32>,
+    pub header_id: Option<i32>,
+    pub rev_created: u64,
+    pub rev_deleted: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -30,6 +33,9 @@ pub enum Column {
     Added,
     Removed,
     HolidayId,
+    HeaderId,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -63,6 +69,9 @@ impl ColumnTrait for Column {
             Self::Added => ColumnType::Timestamp.def(),
             Self::Removed => ColumnType::Timestamp.def().null(),
             Self::HolidayId => ColumnType::Integer.def().null(),
+            Self::HeaderId => ColumnType::Integer.def().null(),
+            Self::RevCreated => ColumnType::BigUnsigned.def(),
+            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
         }
     }
 }

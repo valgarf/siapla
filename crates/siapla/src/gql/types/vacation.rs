@@ -30,6 +30,8 @@ impl From<VacationInput> for crate::entity::vacation::ActiveModel {
             resource_id: ActiveValue::NotSet,
             from: ActiveValue::Set(value.from),
             until: ActiveValue::Set(value.until),
+            rev_created: ActiveValue::NotSet,
+            rev_deleted: ActiveValue::NotSet,
         }
     }
 }

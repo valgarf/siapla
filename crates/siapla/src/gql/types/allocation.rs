@@ -1,7 +1,6 @@
-use crate::entity::task;
 use crate::gql::common::resolve_many_to_many;
 use crate::{
-    entity::{allocated_resource, allocation, resource},
+    entity::{allocated_resource, allocation, resource_iteration as resource, task_iteration as task},
     gql::context::Context,
 };
 use chrono::{DateTime, Utc};

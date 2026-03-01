@@ -6,11 +6,12 @@ use sea_orm::prelude::*;
 use tracing::error;
 
 use crate::{
-    entity::{availability, holiday, resource, vacation},
+    entity::{availability, holiday, resource_iteration as resource, vacation},
     gql::{
         common::{nullable_to_av, opt_to_av},
         context::Context,
     },
+    revisioning::{create_revision, PlanState},
 };
 
 use super::{
@@ -59,13 +60,19 @@ impl resource::Model {
         Ok(holiday.map(GQLHoliday::from_model))
     }
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<availability::Model>> {
-        const CIDX: usize = availability::Column::ResourceId as usize;
-        let availability = ctx.load_by_col::<availability::Entity, CIDX>(self.id).await?;
+        let availability = availability::Entity::find()
+            .filter(availability::Column::ResourceId.eq(self.id))
+            .filter(availability::Column::RevDeleted.is_null())
+            .all(ctx.txn().await?)
+            .await?;
         Ok(availability)
     }
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<vacation::Model>> {
-        const CIDX: usize = vacation::Column::ResourceId as usize;
-        let vacation = ctx.load_by_col::<vacation::Entity, CIDX>(self.id).await?;
+        let vacation = vacation::Entity::find()
+            .filter(vacation::Column::ResourceId.eq(self.id))
+            .filter(vacation::Column::RevDeleted.is_null())
+            .all(ctx.txn().await?)
+            .await?;
         Ok(vacation)
     }
     pub async fn combined_availability(
@@ -77,7 +84,7 @@ impl resource::Model {
         // Context::load_combined_availability expects NaiveDateTime start/end in UTC
         let s = start.naive_utc();
         let e = end.naive_utc();
-        let ivs = ctx.load_combined_availability(self.id, s, e).await.inspect_err(|e| {
+        let ivs = ctx.load_combined_availability(self.id, s, e, None).await.inspect_err(|e| {
             error!("Faild to load combined availability from dataloader:: {:?}", e)
         })?;
         Ok(ivs
@@ -105,15 +112,18 @@ pub struct ResourceSaveInput {
     pub removed_vacations: Option<Vec<i32>>,
 }
 
-impl From<ResourceSaveInput> for crate::entity::resource::ActiveModel {
+impl From<ResourceSaveInput> for crate::entity::resource_iteration::ActiveModel {
     fn from(value: ResourceSaveInput) -> Self {
-        crate::entity::resource::ActiveModel {
+        crate::entity::resource_iteration::ActiveModel {
             id: opt_to_av!(value.db_id),
             name: ActiveValue::Set(value.name),
             timezone: ActiveValue::Set(value.timezone),
             added: ActiveValue::Set(value.added),
             removed: nullable_to_av!(value.removed),
             holiday_id: nullable_to_av!(value.holiday_id),
+            header_id: ActiveValue::NotSet,
+            rev_created: ActiveValue::NotSet,
+            rev_deleted: ActiveValue::NotSet,
         }
     }
 }
@@ -125,27 +135,63 @@ pub async fn resource_save(
     let availability = resource.availability.take();
     let added_vacations = resource.added_vacations.take().unwrap_or_default();
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
-    let am = resource::ActiveModel::from(resource);
     let txn = ctx.txn().await?;
-    let model = if am.id.is_set() { am.update(txn).await? } else { am.insert(txn).await? };
+    let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+    let mut am = resource::ActiveModel::from(resource);
+
+    let model = if am.id.is_set() {
+        am.rev_deleted = ActiveValue::Set(Some(revision_id));
+        let old = am.update(txn).await?;
+        resource::ActiveModel {
+            id: ActiveValue::NotSet,
+            name: ActiveValue::Set(old.name),
+            timezone: ActiveValue::Set(old.timezone),
+            added: ActiveValue::Set(old.added),
+            removed: ActiveValue::Set(old.removed),
+            holiday_id: ActiveValue::Set(old.holiday_id),
+            header_id: ActiveValue::Set(old.header_id),
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
+        }
+        .insert(txn)
+        .await?
+    } else {
+        let header = crate::entity::resource_header::ActiveModel {
+            id: ActiveValue::NotSet,
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
+        }
+        .insert(txn)
+        .await?;
+        am.header_id = ActiveValue::Set(Some(header.id));
+        am.rev_created = ActiveValue::Set(revision_id);
+        am.rev_deleted = ActiveValue::Set(None);
+        am.insert(txn).await?
+    };
 
     // Handle adding new vacations
     for vacation_input in added_vacations {
         let mut vacation_am = crate::entity::vacation::ActiveModel::from(vacation_input);
         vacation_am.resource_id = ActiveValue::Set(model.id);
+        vacation_am.rev_created = ActiveValue::Set(revision_id);
+        vacation_am.rev_deleted = ActiveValue::Set(None);
         vacation_am.insert(txn).await?;
     }
 
     // Handle removing vacations
     if !removed_vacations.is_empty() {
-        vacation::Entity::delete_many()
+        vacation::Entity::update_many()
+            .col_expr(
+                vacation::Column::RevDeleted,
+                Expr::value(Value::BigUnsigned(Some(revision_id))),
+            )
             .filter(vacation::Column::Id.is_in(removed_vacations))
             .exec(txn)
             .await?;
     }
 
     if let Some(availability) = availability {
-        update_availability(ctx, &model, availability).await?;
+        update_availability(ctx, &model, availability, revision_id).await?;
     }
 
     // if let Some(successors) = successors {

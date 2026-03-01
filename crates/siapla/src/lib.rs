@@ -5,6 +5,7 @@ use thiserror::Error;
 pub mod app_state;
 pub mod entity;
 pub mod gql;
+pub mod revisioning;
 pub mod scheduling;
 
 #[derive(Error, Debug)]

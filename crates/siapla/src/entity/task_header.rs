@@ -8,15 +8,13 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "dependency"
+        "task_header"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub predecessor_id: i32,
-    pub successor_id: i32,
     pub rev_created: u64,
     pub rev_deleted: Option<u64>,
 }
@@ -24,8 +22,6 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     Id,
-    PredecessorId,
-    SuccessorId,
     RevCreated,
     RevDeleted,
 }
@@ -44,8 +40,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    TaskIteration2,
-    TaskIteration1,
+    Revision2,
+    Revision1,
 }
 
 impl ColumnTrait for Column {
@@ -53,8 +49,6 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::PredecessorId => ColumnType::Integer.def(),
-            Self::SuccessorId => ColumnType::Integer.def(),
             Self::RevCreated => ColumnType::BigUnsigned.def(),
             Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
         }
@@ -64,13 +58,13 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::TaskIteration2 => Entity::belongs_to(super::task_iteration::Entity)
-                .from(Column::SuccessorId)
-                .to(super::task_iteration::Column::Id)
+            Self::Revision2 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevDeleted)
+                .to(super::revision::Column::Id)
                 .into(),
-            Self::TaskIteration1 => Entity::belongs_to(super::task_iteration::Entity)
-                .from(Column::PredecessorId)
-                .to(super::task_iteration::Column::Id)
+            Self::Revision1 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevCreated)
+                .to(super::revision::Column::Id)
                 .into(),
         }
     }

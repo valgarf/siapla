@@ -18,6 +18,8 @@ pub struct Model {
     pub resource_id: i32,
     pub from: DateTimeUtc,
     pub until: DateTimeUtc,
+    pub rev_created: u64,
+    pub rev_deleted: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -26,6 +28,8 @@ pub enum Column {
     ResourceId,
     From,
     Until,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -42,7 +46,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Resource,
+    ResourceIteration,
 }
 
 impl ColumnTrait for Column {
@@ -53,6 +57,8 @@ impl ColumnTrait for Column {
             Self::ResourceId => ColumnType::Integer.def(),
             Self::From => ColumnType::Timestamp.def(),
             Self::Until => ColumnType::Timestamp.def(),
+            Self::RevCreated => ColumnType::BigUnsigned.def(),
+            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
         }
     }
 }
@@ -60,17 +66,17 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Resource => Entity::belongs_to(super::resource::Entity)
+            Self::ResourceIteration => Entity::belongs_to(super::resource_iteration::Entity)
                 .from(Column::ResourceId)
-                .to(super::resource::Column::Id)
+                .to(super::resource_iteration::Column::Id)
                 .into(),
         }
     }
 }
 
-impl Related<super::resource::Entity> for Entity {
+impl Related<super::resource_iteration::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Resource.def()
+        Relation::ResourceIteration.def()
     }
 }
 

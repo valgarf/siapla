@@ -10,6 +10,7 @@ use petgraph::Graph;
 // Project base information
 
 pub struct Project {
+    pub revision: u64,
     pub start: NaiveDateTime,
     pub calculation_end: NaiveDateTime,
     pub objs: ProjectObjects,

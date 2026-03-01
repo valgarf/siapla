@@ -12,8 +12,9 @@ use sea_orm::{
 
 use super::context::Context;
 use crate::SiaplaError;
+use crate::revisioning::active_for_revision;
 
-use crate::entity::{availability, resource, vacation};
+use crate::entity::{availability, resource_iteration as resource, vacation};
 use crate::scheduling::{Interval, Intervals};
 use chrono::{DateTime, Datelike, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
 use chrono_tz::Tz;
@@ -124,15 +125,26 @@ pub async fn query_combined_availability(
     resource_ids: &Vec<i32>,
     start: NaiveDateTime,
     end: NaiveDateTime,
+    revision: u64,
 ) -> anyhow::Result<Vec<Intervals<NaiveDateTime>>> {
     let id_set = resource_ids.iter().cloned().collect::<HashSet<_>>();
     let db = ctx.txn().await?;
     let db_availabilities = availability::Entity::find()
         .filter(availability::Column::ResourceId.is_in(id_set.clone()))
+        .filter(active_for_revision(
+            availability::Column::RevCreated,
+            availability::Column::RevDeleted,
+            Some(revision),
+        )?)
         .all(db)
         .await?;
     let db_vacations = vacation::Entity::find()
         .filter(vacation::Column::ResourceId.is_in(id_set.clone()))
+        .filter(active_for_revision(
+            vacation::Column::RevCreated,
+            vacation::Column::RevDeleted,
+            Some(revision),
+        )?)
         .filter(vacation::Column::From.lt(end))
         .filter(vacation::Column::Until.gt(start))
         .order_by(vacation::Column::From, Order::Asc)
@@ -140,6 +152,11 @@ pub async fn query_combined_availability(
         .await?;
     let db_resources = resource::Entity::find()
         .filter(resource::Column::Id.is_in(resource_ids.clone()))
+        .filter(active_for_revision(
+            resource::Column::RevCreated,
+            resource::Column::RevDeleted,
+            Some(revision),
+        )?)
         .all(db)
         .await?;
     let res_map = db_resources.into_iter().map(|r| (r.id, r)).collect::<HashMap<i32, _>>();
@@ -203,6 +220,7 @@ pub struct AvailabilityBatcher {
     pub ctx: Weak<Context>,
     pub start: NaiveDateTime,
     pub end: NaiveDateTime,
+    pub revision: u64,
 }
 
 impl dataloader::BatchFn<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>>
@@ -219,7 +237,7 @@ impl dataloader::BatchFn<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error
             return values.iter().map(|&k| (k, Err(a.clone()))).collect();
         }
         let ctx = ctx.unwrap();
-        match query_combined_availability(&ctx, &ids, self.start, self.end).await {
+        match query_combined_availability(&ctx, &ids, self.start, self.end, self.revision).await {
             Ok(vec) => {
                 let mut map = HashMap::new();
                 for (id, iv) in ids.into_iter().zip(vec.into_iter()) {

@@ -19,6 +19,8 @@ pub struct Model {
     pub r#type: String,
     pub optional: bool,
     pub speed: f32,
+    pub rev_created: u64,
+    pub rev_deleted: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -28,6 +30,8 @@ pub enum Column {
     Type,
     Optional,
     Speed,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -45,7 +49,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     ResourceConstraintEntry,
-    Task,
+    TaskIteration,
 }
 
 impl ColumnTrait for Column {
@@ -57,6 +61,8 @@ impl ColumnTrait for Column {
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::Optional => ColumnType::Boolean.def(),
             Self::Speed => ColumnType::Float.def(),
+            Self::RevCreated => ColumnType::BigUnsigned.def(),
+            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
         }
     }
 }
@@ -67,9 +73,9 @@ impl RelationTrait for Relation {
             Self::ResourceConstraintEntry => {
                 Entity::has_many(super::resource_constraint_entry::Entity).into()
             }
-            Self::Task => Entity::belongs_to(super::task::Entity)
+            Self::TaskIteration => Entity::belongs_to(super::task_iteration::Entity)
                 .from(Column::TaskId)
-                .to(super::task::Column::Id)
+                .to(super::task_iteration::Column::Id)
                 .into(),
         }
     }
@@ -81,9 +87,9 @@ impl Related<super::resource_constraint_entry::Entity> for Entity {
     }
 }
 
-impl Related<super::task::Entity> for Entity {
+impl Related<super::task_iteration::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Task.def()
+        Relation::TaskIteration.def()
     }
 }
 

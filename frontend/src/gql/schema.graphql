@@ -205,14 +205,14 @@ type Plan {
 
 type Query {
   helloWorld: String!
-  tasks: [Task!]!
-  resources: [Resource!]!
+  tasks(revision: Int): [Task!]!
+  resources(revision: Int): [Resource!]!
   countries: [Country!]!
   country(isocode: String!): Country
   region(isocode: String!): Region
   getFromOpenHolidays(isocode: String!): Holiday
-  currentPlan: Plan!
-  issues: [Issue!]!
+  currentPlan(revision: Int): Plan!
+  issues(revision: Int): [Issue!]!
 }
 
 type Region {

@@ -6,10 +6,12 @@ use std::{
 
 use super::dataloader::{AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader};
 use crate::scheduling::Intervals;
+use crate::revisioning::resolve_revision;
+use crate::SiaplaError;
 use chrono::NaiveDateTime;
 
 type AvailabilityLoaderMap =
-    std::collections::HashMap<(NaiveDateTime, NaiveDateTime), AvailabilityLoader>;
+    std::collections::HashMap<(NaiveDateTime, NaiveDateTime, u64), AvailabilityLoader>;
 use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::{TryFutureExt, lock::Mutex};
@@ -201,13 +203,21 @@ impl Context {
         resource_id: i32,
         start: NaiveDateTime,
         end: NaiveDateTime,
+        revision: Option<u64>,
     ) -> impl std::future::Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
         let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
         let fut = async move {
+            let ctx = me
+                .upgrade()
+                .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
+            let txn = ctx.txn().await?;
+            let revision = resolve_revision(txn, revision)
+                .await?
+                .ok_or(anyhow::anyhow!("No revision found in database"))?;
             loop {
                 let read_map = loaders.read().await;
-                let opt_loader = read_map.get(&(start, end)).cloned();
+                let opt_loader = read_map.get(&(start, end, revision)).cloned();
                 if let Some(loader) = opt_loader {
                     let res = loader.try_load(resource_id).await;
                     match res {
@@ -217,14 +227,15 @@ impl Context {
                 }
                 drop(read_map);
                 let mut write_map = loaders.write().await;
-                if !write_map.contains_key(&(start, end)) {
+                if !write_map.contains_key(&(start, end, revision)) {
                     let loader = AvailabilityLoader::new(AvailabilityBatcher {
                         ctx: me.clone(),
                         start,
                         end,
+                        revision,
                     })
                     .with_yield_count(100);
-                    write_map.insert((start, end), loader);
+                    write_map.insert((start, end, revision), loader);
                 }
                 drop(write_map);
                 continue;

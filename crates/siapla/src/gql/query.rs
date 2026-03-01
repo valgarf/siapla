@@ -1,6 +1,7 @@
 use crate::{
-    entity::{holiday, issue, resource, task},
+    entity::{holiday, issue, resource_iteration as resource, task_iteration as task},
     gql::plan::Plan,
+    revisioning::{active_for_revision, resolve_revision_arg_i32},
 };
 
 use super::{
@@ -25,16 +26,28 @@ impl Query {
         Ok("Hello World from Juniper!".to_owned())
     }
 
-    async fn tasks(ctx: &Context) -> anyhow::Result<Vec<task::Model>> {
-        let res =
-            task::Entity::find().order_by_asc(task::Column::Title).all(ctx.txn().await?).await?;
+    async fn tasks(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<task::Model>> {
+        let txn = ctx.txn().await?;
+        let revision = resolve_revision_arg_i32(txn, revision).await?;
+        let res = task::Entity::find()
+            .filter(active_for_revision(task::Column::RevCreated, task::Column::RevDeleted, revision)?)
+            .order_by_asc(task::Column::Title)
+            .all(txn)
+            .await?;
         Ok(res)
     }
 
-    async fn resources(ctx: &Context) -> anyhow::Result<Vec<resource::Model>> {
+    async fn resources(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<resource::Model>> {
+        let txn = ctx.txn().await?;
+        let revision = resolve_revision_arg_i32(txn, revision).await?;
         let res = resource::Entity::find()
+            .filter(active_for_revision(
+                resource::Column::RevCreated,
+                resource::Column::RevDeleted,
+                revision,
+            )?)
             .order_by_asc(resource::Column::Name)
-            .all(ctx.txn().await?)
+            .all(txn)
             .await?;
         Ok(res)
     }
@@ -73,13 +86,25 @@ impl Query {
         Ok(Some(GQLHoliday::from_model(result)))
     }
 
-    async fn current_plan(_ctx: &Context) -> Plan {
-        Plan {}
+    async fn current_plan(_ctx: &Context, revision: Option<i32>) -> anyhow::Result<Plan> {
+        let revision = revision
+            .map(crate::revisioning::db_to_revision_id)
+            .transpose()?;
+        Ok(Plan { revision })
     }
 
-    async fn issues(ctx: &Context) -> anyhow::Result<Vec<issue::Model>> {
+    async fn issues(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<issue::Model>> {
         let tx = ctx.txn().await?;
-        let res = issue::Entity::find().order_by_asc(issue::Column::Id).all(tx).await?;
+        let revision = resolve_revision_arg_i32(tx, revision).await?;
+        let Some(revision) = revision else {
+            return Ok(Vec::new());
+        };
+        let revision = crate::revisioning::revision_to_db_id(revision);
+        let res = issue::Entity::find()
+            .filter(issue::Column::Revision.eq(revision))
+            .order_by_asc(issue::Column::Id)
+            .all(tx)
+            .await?;
         Ok(res)
     }
 }

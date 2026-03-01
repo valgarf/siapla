@@ -31,13 +31,15 @@ impl GQLCalculationUpdate {
         match &self.inner {
             CalculationState::Modified => GQLCalculationState::Modified,
             CalculationState::Calculating => GQLCalculationState::Calculating,
-            CalculationState::Finished => GQLCalculationState::Finished,
+            CalculationState::Finished { .. } => GQLCalculationState::Finished,
         }
     }
 
     pub async fn plan(&self, _ctx: &Context) -> Option<crate::gql::types::plan::Plan> {
         match &self.inner {
-            CalculationState::Finished => Some(crate::gql::types::plan::Plan {}),
+            CalculationState::Finished { revision } => {
+                Some(crate::gql::types::plan::Plan { revision: Some(*revision) })
+            }
             _ => None,
         }
     }

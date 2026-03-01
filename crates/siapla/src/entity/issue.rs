@@ -19,6 +19,7 @@ pub struct Model {
     pub description: String,
     pub r#type: String,
     pub task_id: Option<i32>,
+    pub revision: u64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -28,6 +29,7 @@ pub enum Column {
     Description,
     Type,
     TaskId,
+    Revision,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -44,7 +46,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Task,
+    TaskIteration,
 }
 
 impl ColumnTrait for Column {
@@ -56,6 +58,7 @@ impl ColumnTrait for Column {
             Self::Description => ColumnType::String(StringLen::None).def(),
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::TaskId => ColumnType::Integer.def().null(),
+            Self::Revision => ColumnType::BigUnsigned.def(),
         }
     }
 }
@@ -63,17 +66,17 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Task => Entity::belongs_to(super::task::Entity)
+            Self::TaskIteration => Entity::belongs_to(super::task_iteration::Entity)
                 .from(Column::TaskId)
-                .to(super::task::Column::Id)
+                .to(super::task_iteration::Column::Id)
                 .into(),
         }
     }
 }
 
-impl Related<super::task::Entity> for Entity {
+impl Related<super::task_iteration::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Task.def()
+        Relation::TaskIteration.def()
     }
 }
 

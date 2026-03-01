@@ -1,4 +1,4 @@
-use crate::entity::task;
+use crate::entity::task_iteration as task;
 use crate::{entity::issue, gql::context::Context};
 use juniper::GraphQLEnum;
 use juniper::graphql_object;

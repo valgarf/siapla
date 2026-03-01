@@ -10,12 +10,14 @@ use tracing::trace;
 
 use crate::{
     entity::{
-        allocation, dependency, resource, resource_constraint, resource_constraint_entry, task,
+        allocation, dependency, resource_constraint, resource_constraint_entry,
+        resource_iteration as resource, task_iteration as task,
     },
     gql::{
         common::{nullable_to_av, opt_to_av, resolve_many_to_many},
         context::Context,
     },
+    revisioning::{create_revision, PlanState},
 };
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq)]
@@ -184,9 +186,9 @@ pub struct TaskSaveInput {
     pub resource_constraints: Option<Vec<ResourceConstraintInput>>,
 }
 
-impl From<TaskSaveInput> for crate::entity::task::ActiveModel {
+impl From<TaskSaveInput> for crate::entity::task_iteration::ActiveModel {
     fn from(value: TaskSaveInput) -> Self {
-        crate::entity::task::ActiveModel {
+        crate::entity::task_iteration::ActiveModel {
             id: opt_to_av!(value.db_id),
             title: ActiveValue::Set(value.title),
             description: ActiveValue::Set(value.description),
@@ -196,6 +198,9 @@ impl From<TaskSaveInput> for crate::entity::task::ActiveModel {
             schedule_target: nullable_to_av!(value.schedule_target),
             effort: nullable_to_av!(value.effort.map(|v| v as f32)),
             priority: ActiveValue::Set(value.priority as f32),
+            header_id: ActiveValue::NotSet,
+            rev_created: ActiveValue::NotSet,
+            rev_deleted: ActiveValue::NotSet,
         }
     }
 }
@@ -303,50 +308,17 @@ async fn update_children(
     Ok(())
 }
 
-async fn update_resource_constraint_entries(
-    ctx: &Context,
-    model: &resource_constraint::Model,
-    new_entries: &[ResourceConstraintEntryInput],
-) -> anyhow::Result<()> {
-    let txn = ctx.txn().await?;
-    let existing: HashSet<i32> =
-        model.entries(ctx).await?.iter().map(|el| el.resource_id).collect();
-    let target: HashSet<i32> = new_entries.iter().map(|el| el.resource_id).collect();
-    let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-    let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-    // Delete entries not in new_ids
-    if !remove.is_empty() {
-        resource_constraint_entry::Entity::delete_many()
-            .filter(resource_constraint_entry::Column::ResourceId.is_in(remove))
-            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(model.id))
-            .exec(txn)
-            .await?;
-    }
-    if !add.is_empty() {
-        resource_constraint_entry::Entity::insert_many(
-            add.into_iter()
-                .map(|rid| resource_constraint_entry::ActiveModel {
-                    id: ActiveValue::NotSet,
-                    resource_constraint_id: ActiveValue::Set(model.id),
-                    resource_id: ActiveValue::Set(rid),
-                })
-                .collect::<Vec<_>>(),
-        )
-        .exec(txn)
-        .await?;
-    }
-    Ok(())
-}
-
 async fn update_resource_constraints(
     ctx: &Context,
     model: &task::Model,
     constraints: &[ResourceConstraintInput],
+    revision_id: u64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    // Fetch old constraints (assume order is preserved)
+    // Fetch active old constraints (assume order is preserved)
     let old = resource_constraint::Entity::find()
         .filter(resource_constraint::Column::TaskId.eq(model.id))
+        .filter(resource_constraint::Column::RevDeleted.is_null())
         .order_by(resource_constraint::Column::Id, sea_orm::Order::Asc)
         .all(txn)
         .await?;
@@ -363,26 +335,59 @@ async fn update_resource_constraints(
         return Err(anyhow::anyhow!("Each resource can only be used once!"));
     }
 
-    // the constraintsare sane, Update existing constraints
+    // Compare pairwise and version changed constraints.
     for (i, c) in constraints.iter().take(min_len).enumerate() {
         let old_c = &old[i];
-        // update columns, only update if changed
+        let old_entries: HashSet<i32> = resource_constraint_entry::Entity::find()
+            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(old_c.id))
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|entry| entry.resource_id)
+            .collect();
+        let new_entries: HashSet<i32> = c.entries.iter().map(|entry| entry.resource_id).collect();
+
         let needs_update = old_c.optional != c.optional
             || old_c.speed != (c.speed as f32)
-            || old_c.r#type != old_c.r#type; // type is not changed by input, but keep for completeness
+            || old_entries != new_entries;
+
         if needs_update {
-            let am = resource_constraint::ActiveModel {
-                id: ActiveValue::Set(old_c.id),
+            resource_constraint::Entity::update_many()
+                .col_expr(
+                    resource_constraint::Column::RevDeleted,
+                    Expr::value(Value::BigUnsigned(Some(revision_id))),
+                )
+                .filter(resource_constraint::Column::Id.eq(old_c.id))
+                .filter(resource_constraint::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+
+            let new_constraint = resource_constraint::ActiveModel {
+                id: ActiveValue::NotSet,
                 task_id: ActiveValue::Set(model.id),
                 r#type: ActiveValue::Set(old_c.r#type.clone()),
                 optional: ActiveValue::Set(c.optional),
                 speed: ActiveValue::Set(c.speed as f32),
-            };
-            am.update(txn).await?;
+                rev_created: ActiveValue::Set(revision_id),
+                rev_deleted: ActiveValue::Set(None),
+            }
+            .insert(txn)
+            .await?;
+
+            if !c.entries.is_empty() {
+                resource_constraint_entry::Entity::insert_many(c.entries.iter().map(|entry| {
+                    resource_constraint_entry::ActiveModel {
+                        id: ActiveValue::NotSet,
+                        resource_constraint_id: ActiveValue::Set(new_constraint.id),
+                        resource_id: ActiveValue::Set(entry.resource_id),
+                    }
+                }))
+                .exec(txn)
+                .await?;
+            }
         }
-        // update relationships
-        update_resource_constraint_entries(ctx, old_c, &c.entries).await?;
     }
+
     // Add new constraints if new_len > old_len
     if new_len > old_len {
         for c in constraints.iter().skip(old_len) {
@@ -392,6 +397,8 @@ async fn update_resource_constraints(
                 r#type: ActiveValue::Set("any".to_string()),
                 optional: ActiveValue::Set(c.optional),
                 speed: ActiveValue::Set(c.speed as f32),
+                rev_created: ActiveValue::Set(revision_id),
+                rev_deleted: ActiveValue::Set(None),
             };
             let rc = rc.insert(txn).await?;
             let entries: Vec<resource_constraint_entry::ActiveModel> = c
@@ -410,17 +417,15 @@ async fn update_resource_constraints(
     }
     // Remove old constraints if old_len > new_len
     if old_len > new_len {
-        let ids_to_remove: Vec<i32> = old.iter().skip(new_len).map(|c| c.id).collect();
+        let ids_to_remove: Vec<i32> = old.iter().skip(new_len).map(|constraint| constraint.id).collect();
         if !ids_to_remove.is_empty() {
-            resource_constraint_entry::Entity::delete_many()
-                .filter(
-                    resource_constraint_entry::Column::ResourceConstraintId
-                        .is_in(ids_to_remove.iter().cloned()),
+            resource_constraint::Entity::update_many()
+                .col_expr(
+                    resource_constraint::Column::RevDeleted,
+                    Expr::value(Value::BigUnsigned(Some(revision_id))),
                 )
-                .exec(txn)
-                .await?;
-            resource_constraint::Entity::delete_many()
                 .filter(resource_constraint::Column::Id.is_in(ids_to_remove))
+                .filter(resource_constraint::Column::RevDeleted.is_null())
                 .exec(txn)
                 .await?;
         }
@@ -434,9 +439,41 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
     // keep a copy for issue detection after mutations (not used for now)
-    let am = task::ActiveModel::from(task);
     let txn = ctx.txn().await?;
-    let model = if am.id.is_set() { am.update(txn).await? } else { am.insert(txn).await? };
+    let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+    let mut am = task::ActiveModel::from(task);
+    let model = if am.id.is_set() {
+        am.rev_deleted = ActiveValue::Set(Some(revision_id));
+        let old = am.update(txn).await?;
+        task::ActiveModel {
+            id: ActiveValue::NotSet,
+            parent_id: ActiveValue::Set(old.parent_id),
+            title: ActiveValue::Set(old.title),
+            description: ActiveValue::Set(old.description),
+            designation: ActiveValue::Set(old.designation),
+            earliest_start: ActiveValue::Set(old.earliest_start),
+            schedule_target: ActiveValue::Set(old.schedule_target),
+            effort: ActiveValue::Set(old.effort),
+            priority: ActiveValue::Set(old.priority),
+            header_id: ActiveValue::Set(old.header_id),
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
+        }
+        .insert(txn)
+        .await?
+    } else {
+        let header = crate::entity::task_header::ActiveModel {
+            id: ActiveValue::NotSet,
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
+        }
+        .insert(txn)
+        .await?;
+        am.header_id = ActiveValue::Set(Some(header.id));
+        am.rev_created = ActiveValue::Set(revision_id);
+        am.rev_deleted = ActiveValue::Set(None);
+        am.insert(txn).await?
+    };
 
     if let Some(predecessors) = predecessors {
         update_predecessors(ctx, &model, predecessors).await?;
@@ -456,7 +493,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         if num_entries != all_used_resources.len() {
             return Err(anyhow::anyhow!("Each resource can only be used once!"));
         }
-        update_resource_constraints(&ctx, &model, &constraints).await?;
+        update_resource_constraints(&ctx, &model, &constraints, revision_id).await?;
     }
     // Check for dependency cycles (abort save on loop)
     // Fetch dependencies and run a simple DFS cycle detection

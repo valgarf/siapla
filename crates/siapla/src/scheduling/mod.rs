@@ -81,12 +81,13 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
     app_state.set_state(crate::app_state::CalculationState::Calculating);
     let ctx = Context::new(Arc::clone(app_state));
     let settings = GASettings::default();
-    match query_problem(&ctx).await {
+    match query_problem(&ctx, None).await {
         Err(err) => {
             println!("Error querying problem: {}", err);
             return Err(err);
         }
         Ok(mut problem) => {
+            let calculated_revision = problem.revision;
             let individual = run_ga(&mut problem, &settings);
             let task_order =
                 individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
@@ -131,6 +132,8 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                 }
             }
             drop(problem);
+            app_state
+                .set_state(crate::app_state::CalculationState::Finished { revision: calculated_revision });
         }
     }
 
@@ -142,6 +145,5 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
         Err(err) => println!("Error committing: {}", err),
         Ok(_) => {}
     }
-    app_state.set_state(crate::app_state::CalculationState::Finished);
     Ok(())
 }

@@ -1,14 +1,14 @@
 use std::{collections::HashSet, iter::zip};
 
 use crate::{
-    entity::{availability, resource},
+    entity::{availability, resource_iteration as resource},
     gql::context::Context,
 };
 use anyhow::anyhow;
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
 use strum::{EnumString, IntoStaticStr};
-use tracing::{trace};
+use tracing::trace;
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Weekday {
@@ -36,9 +36,7 @@ impl availability::Model {
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<resource::Model> {
         const CIDX: usize = resource::Column::Id as usize;
-        let resource = ctx
-            .load_one_by_col::<resource::Entity, CIDX>(self.resource_id)
-            .await?;
+        let resource = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
         resource.ok_or(anyhow!("Failed to find resource for Availability"))
     }
     fn duration(&self) -> anyhow::Result<i32> {
@@ -64,6 +62,8 @@ impl From<&AvailabilityInput> for crate::entity::availability::ActiveModel {
             resource_id: ActiveValue::NotSet,
             weekday: ActiveValue::Set(value.weekday.into()),
             duration: ActiveValue::Set(Decimal::from(value.duration) / Decimal::from(3600)),
+            rev_created: ActiveValue::NotSet,
+            rev_deleted: ActiveValue::NotSet,
         }
     }
 }
@@ -72,13 +72,12 @@ pub async fn update_availability(
     ctx: &Context,
     model: &resource::Model,
     availability: Vec<AvailabilityInput>,
+    revision_id: u64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let existing_availability: Vec<_> = model.availability(ctx).await?.into_iter().collect();
-    let existing: HashSet<Weekday> = existing_availability
-        .iter()
-        .map(|el| el.weekday())
-        .collect::<anyhow::Result<_>>()?;
+    let existing: HashSet<Weekday> =
+        existing_availability.iter().map(|el| el.weekday()).collect::<anyhow::Result<_>>()?;
     let target: HashSet<Weekday> = availability.iter().map(|a| a.weekday).collect();
     let remove: HashSet<Weekday> = existing.difference(&target).cloned().collect();
     let add: HashSet<Weekday> = target.difference(&existing).cloned().collect();
@@ -88,18 +87,22 @@ pub async fn update_availability(
         existing, target, remove, add, update
     );
     if !remove.is_empty() {
-        availability::Entity::delete_many()
+        availability::Entity::update_many()
+            .col_expr(
+                availability::Column::RevDeleted,
+                Expr::value(Value::BigUnsigned(Some(revision_id))),
+            )
+            .filter(availability::Column::ResourceId.eq(model.id))
+            .filter(availability::Column::RevDeleted.is_null())
             .filter(
-                availability::Column::ResourceId.eq(model.id).and(
-                    availability::Column::Weekday.is_in(
-                        remove
-                            .iter()
-                            .map(|w| {
-                                let wstr: &'static str = w.into();
-                                wstr.to_owned()
-                            })
-                            .collect::<Vec<String>>(),
-                    ),
+                availability::Column::Weekday.is_in(
+                    remove
+                        .iter()
+                        .map(|w| {
+                            let wstr: &'static str = w.into();
+                            wstr.to_owned()
+                        })
+                        .collect::<Vec<String>>(),
                 ),
             )
             .exec(txn)
@@ -112,43 +115,47 @@ pub async fn update_availability(
             .map(|a| {
                 let mut am: availability::ActiveModel = a.into();
                 am.resource_id = ActiveValue::Set(model.id);
+                am.rev_created = ActiveValue::Set(revision_id);
+                am.rev_deleted = ActiveValue::Set(None);
                 am
             })
             .collect();
-        availability::Entity::insert_many(add_models)
-            .exec(txn)
-            .await?;
+        availability::Entity::insert_many(add_models).exec(txn).await?;
     }
     if !update.is_empty() {
         let existing_models: Vec<&availability::Model> = existing_availability
             .iter()
             .filter(|a| {
                 let wd = a.weekday();
-                if let Ok(wd) = wd {
-                    update.contains(&wd)
-                } else {
-                    false
-                }
+                if let Ok(wd) = wd { update.contains(&wd) } else { false }
             })
             .collect();
-        let update_models: Vec<&AvailabilityInput> = availability
-            .iter()
-            .filter(|a| update.contains(&a.weekday))
-            .collect();
+        let update_models: Vec<&AvailabilityInput> =
+            availability.iter().filter(|a| update.contains(&a.weekday)).collect();
         if existing_models.len() != update_models.len() {
             return Err(anyhow!("Internal error trying to update the availability."));
         }
-        let update_models: Vec<availability::ActiveModel> = zip(existing_models, update_models)
-            .filter(|(e, u)| e.duration != Decimal::from(u.duration) / Decimal::from(3600))
-            .map(|(e, u)| {
-                let mut am: availability::ActiveModel = u.into();
-                am.resource_id = ActiveValue::Set(model.id);
-                am.id = ActiveValue::Set(e.id);
-                am
-            })
-            .collect();
-        for am in update_models {
-            am.update(txn).await?;
+        let update_models: Vec<(&availability::Model, &AvailabilityInput)> =
+            zip(existing_models, update_models)
+                .filter(|(e, u)| e.duration != Decimal::from(u.duration) / Decimal::from(3600))
+                .map(|(e, u)| (e, u))
+                .collect();
+        for (existing, input) in update_models {
+            availability::Entity::update_many()
+                .col_expr(
+                    availability::Column::RevDeleted,
+                    Expr::value(Value::BigUnsigned(Some(revision_id))),
+                )
+                .filter(availability::Column::Id.eq(existing.id))
+                .filter(availability::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+
+            let mut am: availability::ActiveModel = input.into();
+            am.resource_id = ActiveValue::Set(model.id);
+            am.rev_created = ActiveValue::Set(revision_id);
+            am.rev_deleted = ActiveValue::Set(None);
+            am.insert(txn).await?;
         }
     }
     Ok(())

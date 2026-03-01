@@ -3,7 +3,8 @@ use sea_orm::ActiveModelTrait;
 use sea_orm::{ActiveValue, prelude::*};
 
 use crate::entity::{allocated_resource, allocation};
-use crate::entity::{resource, task};
+use crate::entity::{resource_iteration as resource, task_iteration as task};
+use crate::revisioning::{PlanState, create_revision, ensure_revision_id};
 
 use super::{
     context::Context,
@@ -36,8 +37,13 @@ impl Mutation {
 
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
-        let am = task::ActiveModel { id: sea_orm::ActiveValue::Set(task_id), ..Default::default() };
-        let res = am.delete(txn).await?;
+        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+        let res = task::Entity::update_many()
+            .col_expr(task::Column::RevDeleted, Expr::value(Value::BigUnsigned(Some(revision_id))))
+            .filter(task::Column::Id.eq(task_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .exec(txn)
+            .await?;
         let ok = res.rows_affected > 0;
         if ok {
             ctx.app_state().notify_modified("graphql".to_string());
@@ -62,11 +68,16 @@ impl Mutation {
 
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
-        let am = resource::ActiveModel {
-            id: sea_orm::ActiveValue::Set(resource_id),
-            ..Default::default()
-        };
-        let res = am.delete(txn).await?;
+        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+        let res = resource::Entity::update_many()
+            .col_expr(
+                resource::Column::RevDeleted,
+                Expr::value(Value::BigUnsigned(Some(revision_id))),
+            )
+            .filter(resource::Column::Id.eq(resource_id))
+            .filter(resource::Column::RevDeleted.is_null())
+            .exec(txn)
+            .await?;
         let ok = res.rows_affected > 0;
         if ok {
             ctx.app_state().notify_modified("graphql".to_string());
@@ -84,6 +95,7 @@ impl Mutation {
         r#final: bool,
     ) -> anyhow::Result<allocation::Model> {
         let txn = ctx.txn().await?;
+        let revision_id = ensure_revision_id(txn).await?;
         // upsert allocation
         let db_alloc = if let Some(id) = db_id {
             let am = allocation::ActiveModel {
@@ -95,6 +107,7 @@ impl Mutation {
                     <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
                 ),
                 r#final: ActiveValue::Set(r#final),
+                revision: ActiveValue::Set(revision_id),
             };
             am.update(txn).await?
         } else {
@@ -107,6 +120,7 @@ impl Mutation {
                     <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
                 ),
                 r#final: ActiveValue::Set(r#final),
+                revision: ActiveValue::Set(revision_id),
             };
             am.insert(txn).await?
         };
@@ -121,6 +135,7 @@ impl Mutation {
                 id: ActiveValue::NotSet,
                 allocation_id: ActiveValue::Set(db_alloc.id),
                 resource_id: ActiveValue::Set(rid),
+                revision: ActiveValue::Set(revision_id),
             };
             arm.insert(txn).await?;
         }

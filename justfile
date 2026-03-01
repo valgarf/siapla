@@ -38,6 +38,7 @@ generate-entity: (migrate "up")
         --enum-extra-attributes 'WTF' \
         --expanded-format \
         -o ./crates/siapla/src/entity
+    python ./scripts/patch_generated_entities.py
 
 [working-directory(".")]
 serve-backend :

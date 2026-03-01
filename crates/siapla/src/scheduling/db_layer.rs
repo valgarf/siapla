@@ -7,7 +7,9 @@ use std::str::FromStr;
 
 use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
+use crate::revisioning::{active_for_revision, resolve_revision, PlanState};
 // availability now loaded via Context::load_combined_availability
+use crate::entity::{resource_iteration as resource, task_iteration as task};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
 use chrono::NaiveDateTime;
@@ -20,21 +22,48 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use petgraph::visit::{EdgeRef as _, IntoNodeReferences};
-use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr,
+};
 use tokio::task::JoinSet;
 
-pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
+pub async fn query_problem(ctx: &Context, revision: Option<u64>) -> anyhow::Result<Project> {
     // Query everything: needs to be done first, we cannot haev an await in the rest of the function
     // TODO: only query tasks not marked as 'done'? (earliest start for following tasks?)
     // alternatively: on marking milestones as done, check which tasks (and requirements) can be
     // marked as not relevant anymore?
     let db = ctx.txn().await?;
-    let db_task_vec = task::Entity::find().all(db).await?;
-    let db_resource_vec = resource::Entity::find().all(db).await?;
-    let db_dependencies_vec = dependency::Entity::find().all(db).await?;
+    let revision = resolve_revision(db, revision).await?
+        .ok_or(anyhow::anyhow!("No revision found in database"))?;
+
+    let db_task_vec = task::Entity::find()
+        .filter(active_for_revision(task::Column::RevCreated, task::Column::RevDeleted, Some(revision))?)
+        .all(db)
+        .await?;
+    let db_resource_vec = resource::Entity::find()
+        .filter(active_for_revision(
+            resource::Column::RevCreated,
+            resource::Column::RevDeleted,
+            Some(revision),
+        )?)
+        .all(db)
+        .await?;
+    let db_dependencies_vec = dependency::Entity::find()
+        .filter(active_for_revision(
+            dependency::Column::RevCreated,
+            dependency::Column::RevDeleted,
+            Some(revision),
+        )?)
+        .all(db)
+        .await?;
     let task_ids = db_task_vec.iter().map(|t| t.id).collect::<Vec<_>>();
     let db_constraints_vec = resource_constraint::Entity::find()
         .filter(resource_constraint::Column::TaskId.is_in(task_ids))
+        .filter(active_for_revision(
+            resource_constraint::Column::RevCreated,
+            resource_constraint::Column::RevDeleted,
+            Some(revision),
+        )?)
         .all(db)
         .await?;
     let constraint_ids = db_constraints_vec.iter().map(|t| t.id).collect::<Vec<_>>();
@@ -49,6 +78,7 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
     use crate::gql::allocation::AllocationType as _GqlAllocType; // re-exported
     let booking_allocs = allocation::Entity::find()
         .filter(allocation::Column::AllocationType.eq(<&'static str>::from(_GqlAllocType::BOOKING)))
+        .filter(allocation::Column::Revision.eq(revision))
         .all(db)
         .await?;
     let alloc_ids: Vec<i32> = booking_allocs.iter().map(|a| a.id).collect();
@@ -377,12 +407,13 @@ pub async fn query_problem(ctx: &Context) -> anyhow::Result<Project> {
         .ok_or(anyhow::anyhow!("No milestone to estimate an end date."))?;
     let estimated_end = start + (schedule_target - start) * 2;
     // Query slots
-    query_slots(ctx, &project_objects.resources, start, estimated_end).await?;
+    query_slots(ctx, &project_objects.resources, start, estimated_end, revision).await?;
     // let slot_models = slot::Entity::find().all(db).await?;
 
     let print_g = g.map(|_, n| PrintNodeName(n), |_, _| PrintEdgeEmpty {});
     println!("{}", Dot::with_config(&print_g, &[Config::EdgeNoLabel]));
     let mut project = Project {
+        revision,
         start,
         calculation_end: estimated_end,
         objs: project_objects,
@@ -543,6 +574,7 @@ pub async fn query_slots(
     resources: &Vec<Rc<RefCell<Resource>>>,
     start: NaiveDateTime,
     end: NaiveDateTime,
+    revision: u64,
 ) -> anyhow::Result<()> {
     // Load availability per-resource in parallel using a JoinSet, then apply in original order.
     let mut set: JoinSet<(usize, anyhow::Result<Intervals<NaiveDateTime>>)> = JoinSet::new();
@@ -550,7 +582,7 @@ pub async fn query_slots(
         let rid = r.borrow().db_id;
         // start availability query at resource.last_booking_end if present so earlier slots are excluded
         let resource_start = cmp::max(start, r.borrow().last_booking_end.unwrap_or(start));
-        let fut = ctx.load_combined_availability(rid, resource_start, end);
+        let fut = ctx.load_combined_availability(rid, resource_start, end, Some(revision));
         set.spawn(async move { (idx, fut.await) });
     }
 
@@ -605,35 +637,8 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
 
 pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    // only remove previous planning allocations and their allocated_resource entries
     use crate::gql::allocation::AllocationType;
-    let plan_allocs: Vec<i32> = allocation::Entity::find()
-        .filter(allocation::Column::AllocationType.eq(<&'static str>::from(AllocationType::PLAN)))
-        .all(txn)
-        .await?
-        .into_iter()
-        .map(|a| a.id)
-        .collect();
-    if !plan_allocs.is_empty() {
-        allocated_resource::Entity::delete_many()
-            .filter(allocated_resource::Column::AllocationId.is_in(plan_allocs.clone()))
-            .exec(txn)
-            .await?;
-        allocation::Entity::delete_many()
-            .filter(allocation::Column::Id.is_in(plan_allocs))
-            .exec(txn)
-            .await?;
-    }
-    // remove previous planning issues
-    crate::entity::issue::Entity::delete_many()
-        .filter(
-            crate::entity::issue::Column::Type
-                .eq(<&'static str>::from(IssueType::PlanningTask))
-                .or(crate::entity::issue::Column::Type
-                    .eq(<&'static str>::from(IssueType::PlanningGeneral))),
-        )
-        .exec(txn)
-        .await?;
+    let revision_id = project.revision;
     for (task_id, assignment) in &plan.assignments {
         let range = assignment
             .values()
@@ -650,6 +655,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             end: ActiveValue::Set(range.end().value().expect("No unbound intervals").and_utc()),
             allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
             r#final: ActiveValue::Set(false),
+            revision: ActiveValue::Set(revision_id),
         };
         let db_alloc = am.insert(txn).await?;
         for (res_id, _) in assignment {
@@ -657,6 +663,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
                 id: ActiveValue::NotSet,
                 allocation_id: ActiveValue::Set(db_alloc.id),
                 resource_id: ActiveValue::Set(*res_id),
+                revision: ActiveValue::Set(revision_id),
             };
             am.insert(txn).await?;
         }
@@ -670,6 +677,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             end: ActiveValue::Set(fm.date.and_utc()),
             allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
             r#final: ActiveValue::Set(false),
+            revision: ActiveValue::Set(revision_id),
         };
         am.insert(txn).await?;
     }
@@ -686,6 +694,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             description: sea_orm::ActiveValue::Set(pi.description.clone()),
             r#type: sea_orm::ActiveValue::Set(issue_type_str),
             task_id: sea_orm::ActiveValue::Set(pi.task_id),
+            revision: sea_orm::ActiveValue::Set(revision_id),
         };
         issue_am.insert(txn).await?;
     }
@@ -703,8 +712,19 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             description: sea_orm::ActiveValue::Set(pi.description.clone()),
             r#type: sea_orm::ActiveValue::Set(issue_type_str),
             task_id: sea_orm::ActiveValue::Set(pi.task_id),
+            revision: sea_orm::ActiveValue::Set(revision_id),
         };
         issue_am.insert(txn).await?;
     }
+
+    revision::Entity::update_many()
+        .col_expr(
+            revision::Column::PlanState,
+            Expr::value(PlanState::Available.as_str().to_string()),
+        )
+        .filter(revision::Column::Id.eq(revision_id))
+        .exec(txn)
+        .await?;
+
     Ok(())
 }
