@@ -290,6 +290,15 @@ export const useResourceStore = defineStore('resourceStore', () => {
     // TODO: generic error handling?
   }
   const resources = computed(() => Array.from(resource_map.value?.values() || []));
+  const combinedAvailabilityQueryErrors = computed(() => allCombinedQueries.flatMap((q, idx) => {
+    const err = q.error.value;
+    return err == null ? [] : [{
+      source: `resource.combinedAvailability.${idx}`,
+      error: err,
+      queryDocument: q.document.value,
+      variables: q.variables.value,
+    }];
+  }));
 
   return {
     gql: {
@@ -305,6 +314,7 @@ export const useResourceStore = defineStore('resourceStore', () => {
     resource: (dbId: number): Resource | undefined => {
       return resource_map.value?.get(dbId);
     },
+    combinedAvailabilityQueryErrors,
     fetchCombinedAvailability,
     saveResource,
     deleteResource,

@@ -26,7 +26,7 @@ export type Issue = {
     taskId: number | null;
 }
 
-export const useIssueStore = defineStore('issueStore', () => {
+export const usePlanIssueStore = defineStore('planIssueStore', () => {
     const q = useQuery(ISSUES_QUERY);
     const issues: ComputedRef<Issue[]> = computed(() => q.result.value?.issues.map((iss) => {
         return {
@@ -41,8 +41,8 @@ export const useIssueStore = defineStore('issueStore', () => {
         const result: Map<number, Issue[]> = new Map();
         for (const iss of issues.value) {
             if (iss.taskId != null) {
-                const arr: Issue[] = result.get(iss.taskId) ?? []
-                arr.push(iss)
+                const arr: Issue[] = result.get(iss.taskId) ?? [];
+                arr.push(iss);
                 result.set(iss.taskId, arr);
             }
         }
@@ -59,5 +59,5 @@ export const useIssueStore = defineStore('issueStore', () => {
 });
 
 if (import.meta.hot) {
-    import.meta.hot.accept(acceptHMRUpdate(useIssueStore, import.meta.hot));
+    import.meta.hot.accept(acceptHMRUpdate(usePlanIssueStore, import.meta.hot));
 }

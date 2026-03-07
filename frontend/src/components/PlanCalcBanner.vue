@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { usePlanStore } from 'src/stores/plan';
-import { type Issue, useIssueStore } from 'src/stores/issue';
+import { type Issue, usePlanIssueStore } from 'src/stores/planIssue';
 import { CalculationState } from 'src/gql/graphql';
 import { useTaskStore } from 'src/stores/task';
 import { useResourceStore } from 'src/stores/resource';
@@ -40,7 +40,7 @@ const resourceStore = useResourceStore();
 const state = computed(() => planStore.calculationState);
 const isLoading = computed(() => planStore.loading || taskStore.loading || resourceStore.loading);
 const showSpinner = computed(() => isLoading.value || state.value === CalculationState.Calculating);
-const issueStore = useIssueStore();
+const issueStore = usePlanIssueStore();
 const generalIssues = computed(() => issueStore.issues.filter((i: Issue) => i.taskId == null));
 
 async function recalc() {

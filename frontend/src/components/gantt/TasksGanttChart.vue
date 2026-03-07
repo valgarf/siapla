@@ -28,7 +28,7 @@ import { useSelectionStore } from 'src/stores/selection';
 import SortMenu from './SortMenu.vue';
 
 
-import { useIssueStore } from 'src/stores/issue';
+import { usePlanIssueStore } from 'src/stores/planIssue';
 import GanttChart from './GanttChart.vue';
 import { usePlanStore } from 'src/stores/plan';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
@@ -96,7 +96,7 @@ function onNewResource() {
 }
 
 
-const issueStore = useIssueStore();
+const issueStore = usePlanIssueStore();
 const rowSymbols = computed(() => {
     const map: { [rowid: number]: { symbolUTF8: string; title?: string } } = {};
     for (const i of issueStore.issues) {

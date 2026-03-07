@@ -8,6 +8,11 @@
           SIAPLA
         </q-toolbar-title>
 
+        <q-btn v-if="toolbarIssueSeverity != null" dense round
+          :icon="toolbarIssueSeverity === 'error' ? 'error' : 'warning'"
+          :color="toolbarIssueSeverity === 'error' ? 'negative' : 'warning'" aria-label="Warnings and errors"
+          @click="issuesModalOpen = true" />
+
         <!-- :icon="sidebarStore.isOpen ? 'expand_circle_up' : 'expand_circle_down'"  (expand_circle_up does not work)-->
         <q-btn flat dense round :icon="sidebarStore.isOpen ? 'expand_less' : 'expand_more'" aria-label="Toggle sidebar"
           @click="toggleSidebar" />
@@ -30,14 +35,17 @@
         <SidebarComponentSelector />
       </div>
     </q-drawer>
+    <IssueOverviewModal v-model="issuesModalOpen" />
   </q-layout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import PageLink, { type PageLinkProps } from 'components/PageLink.vue';
 import SidebarComponentSelector from 'components/sidebar/SidebarComponentSelector.vue';
 import { useSidebarStore } from 'src/stores/sidebar';
+import { useGeneralIssueStore } from 'src/stores/generalIssue';
+import IssueOverviewModal from 'components/common/IssueOverviewModal.vue';
 
 const pages: PageLinkProps[] = [
   {
@@ -53,10 +61,11 @@ const pages: PageLinkProps[] = [
 ]
 
 const leftDrawerOpen = ref(true);
+const issuesModalOpen = ref(false);
 
 const sidebarStore = useSidebarStore();
-
-import { onMounted, onUnmounted } from 'vue';
+const generalIssueStore = useGeneralIssueStore();
+const toolbarIssueSeverity = computed(() => generalIssueStore.toolbarSeverity);
 
 const DEFAULT_SIDEBAR_WIDTH = 560;
 

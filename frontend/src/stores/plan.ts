@@ -6,7 +6,7 @@ import type { Resource } from './resource';
 import { useResourceStore } from './resource';
 import { type Task, useTaskStore } from './task';
 import { TaskDesignation, type PlanQuery, CalculationState, type Exact, type MutationBookingSaveArgs, AllocationType } from 'src/gql/graphql';
-import { useIssueStore } from './issue';
+import { usePlanIssueStore } from './planIssue';
 
 export interface Allocation {
   dbId: number;
@@ -81,7 +81,7 @@ function convertQueryResult(query: PlanQuery): Allocation[] {
 
 // actual store
 export const usePlanStore = defineStore('planStore', () => {
-  const issueStore = useIssueStore();
+  const issueStore = usePlanIssueStore();
   const queryGetAll = useQuery(PLAN_QUERY);
   const calcSub = useSubscription(CALC_SUB);
   const mutRecalculate = useMutation(RECALC_MUT);

@@ -33,7 +33,7 @@
                     v-model="localTask.title" />
                 <div v-else class="text-h5 q-mb-sm">{{ localTask.title }}
                     <q-chip color="secondary" text-color="white" class="q-pa-md q-ml-sm">{{ localTask.designation
-                        }}</q-chip>
+                    }}</q-chip>
                 </div>
                 <MarkdownEditor v-if="edit" placeholder="description" v-model="localTask.description" />
                 <q-markdown v-else-if="localTask.description" :src="localTask.description" />
@@ -83,7 +83,7 @@
                             <div class="row q-gutter-sm items-center responsive-row">
                                 <q-checkbox v-if="edit" v-model="option.optional" label="Optional" />
                                 <div v-else class="q-ml-md text-subtitle2">{{ option.optional ? "Optional" : "Required"
-                                    }}
+                                }}
                                 </div>
                                 <q-input v-if="edit" v-model.number="option.speed" type="number" min="0" step="0.1"
                                     label="Speed" dense class="responsive-field" style="max-width: 160px;" />
@@ -166,7 +166,7 @@ import { TaskSidebarData, NewTaskSidebarData, useSidebarStore } from 'src/stores
 import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
-import { type Issue, useIssueStore } from 'src/stores/issue';
+import { type Issue, usePlanIssueStore } from 'src/stores/planIssue';
 import DateTimeInput from '../forms/DateTimeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
 import EditableResourceList from '../forms/EditableResourceList.vue';
@@ -445,7 +445,7 @@ async function deleteTask() {
 
 const allResources = computed(() => resourceStore.resources);
 
-const issueStore = useIssueStore();
+const issueStore = usePlanIssueStore();
 const taskIssues = computed(() => {
     const tid = localTask.value.dbId;
     if (tid == null) return [] as Issue[];
