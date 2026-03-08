@@ -4,6 +4,7 @@ mod ga;
 mod interval;
 mod weak_hash_set;
 
+use sea_orm::{EntityTrait as _, QueryOrder as _};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::{broadcast::error::RecvError, mpsc::UnboundedReceiver};
 
@@ -13,7 +14,9 @@ pub use interval::{Bound, EndBound, Interval, Intervals, StartBound};
 pub use weak_hash_set::WeakHashSet;
 
 use crate::{
+    entity::revision,
     gql::context::Context,
+    revisioning::PlanState,
     scheduling::{
         db_layer::store_plan,
         ga::{GASettings, milestone_cost, plan_individual, run_ga},
@@ -80,14 +83,33 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
     // build a Context for this calculation
     app_state.set_state(crate::app_state::CalculationState::Calculating);
     let ctx = Context::new(Arc::clone(app_state));
+
+    let calculated_revision = {
+        let txn = ctx.txn().await?;
+        let latest_revision =
+            revision::Entity::find().order_by_desc(revision::Column::Id).one(txn).await?;
+
+        let Some(latest_revision) = latest_revision else {
+            return Err(anyhow::anyhow!("No revision found in database"));
+        };
+
+        if latest_revision.plan_state != PlanState::NotCalculated.as_str() {
+            app_state.set_state(crate::app_state::CalculationState::Finished {
+                revision: latest_revision.id,
+            });
+            return Ok(());
+        }
+
+        latest_revision.id
+    };
+
     let settings = GASettings::default();
-    match query_problem(&ctx, None).await {
+    match query_problem(&ctx, Some(calculated_revision)).await {
         Err(err) => {
             println!("Error querying problem: {}", err);
             return Err(err);
         }
         Ok(mut problem) => {
-            let calculated_revision = problem.revision;
             let individual = run_ga(&mut problem, &settings);
             let task_order =
                 individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
@@ -132,8 +154,9 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                 }
             }
             drop(problem);
-            app_state
-                .set_state(crate::app_state::CalculationState::Finished { revision: calculated_revision });
+            app_state.set_state(crate::app_state::CalculationState::Finished {
+                revision: calculated_revision,
+            });
         }
     }
 

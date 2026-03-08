@@ -4,7 +4,7 @@ use sea_orm::{ActiveValue, prelude::*};
 
 use crate::entity::{allocated_resource, allocation};
 use crate::entity::{resource_iteration as resource, task_iteration as task};
-use crate::revisioning::{PlanState, create_revision, ensure_revision_id};
+use crate::revisioning::{PlanState, create_revision};
 
 use super::{
     context::Context,
@@ -92,7 +92,7 @@ impl Mutation {
         r#final: bool,
     ) -> anyhow::Result<allocation::Model> {
         let txn = ctx.txn().await?;
-        let revision_id = ensure_revision_id(txn).await?;
+        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
         // upsert allocation
         let db_alloc = if let Some(id) = db_id {
             let am = allocation::ActiveModel {
