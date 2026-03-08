@@ -39,7 +39,7 @@ impl Mutation {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
         let res = task::Entity::update_many()
-            .col_expr(task::Column::RevDeleted, Expr::value(Value::BigUnsigned(Some(revision_id))))
+            .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(task::Column::Id.eq(task_id))
             .filter(task::Column::RevDeleted.is_null())
             .exec(txn)
@@ -70,10 +70,7 @@ impl Mutation {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
         let res = resource::Entity::update_many()
-            .col_expr(
-                resource::Column::RevDeleted,
-                Expr::value(Value::BigUnsigned(Some(revision_id))),
-            )
+            .col_expr(resource::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(resource::Column::Id.eq(resource_id))
             .filter(resource::Column::RevDeleted.is_null())
             .exec(txn)

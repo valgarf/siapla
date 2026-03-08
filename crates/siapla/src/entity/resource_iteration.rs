@@ -21,8 +21,8 @@ pub struct Model {
     pub removed: Option<DateTimeUtc>,
     pub holiday_id: Option<i32>,
     pub header_id: Option<i32>,
-    pub rev_created: u64,
-    pub rev_deleted: Option<u64>,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -70,8 +70,8 @@ impl ColumnTrait for Column {
             Self::Removed => ColumnType::Timestamp.def().null(),
             Self::HolidayId => ColumnType::Integer.def().null(),
             Self::HeaderId => ColumnType::Integer.def().null(),
-            Self::RevCreated => ColumnType::BigUnsigned.def(),
-            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

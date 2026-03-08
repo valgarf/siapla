@@ -115,6 +115,8 @@ input VacationInput {
 """
 scalar DateTime
 
+scalar Int64
+
 """
   Date in the proleptic Gregorian calendar (without time zone).
 
@@ -205,14 +207,14 @@ type Plan {
 
 type Query {
   helloWorld: String!
-  tasks(revision: Int): [Task!]!
-  resources(revision: Int): [Resource!]!
+  tasks(revision: Int64): [Task!]!
+  resources(revision: Int64): [Resource!]!
   countries: [Country!]!
   country(isocode: String!): Country
   region(isocode: String!): Region
   getFromOpenHolidays(isocode: String!): Holiday
-  currentPlan(revision: Int): Plan!
-  issues(revision: Int): [Issue!]!
+  currentPlan(revision: Int64): Plan!
+  issues(revision: Int64): [Issue!]!
 }
 
 type Region {

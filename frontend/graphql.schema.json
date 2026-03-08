@@ -685,6 +685,17 @@
         "possibleTypes": null
       },
       {
+        "kind": "SCALAR",
+        "name": "Int64",
+        "description": null,
+        "isOneOf": null,
+        "fields": null,
+        "inputFields": null,
+        "interfaces": null,
+        "enumValues": null,
+        "possibleTypes": null
+      },
+      {
         "kind": "OBJECT",
         "name": "Interval",
         "description": null,
@@ -1359,7 +1370,7 @@
                 "description": null,
                 "type": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "Int64",
                   "ofType": null
                 },
                 "defaultValue": null,
@@ -1433,7 +1444,7 @@
                 "description": null,
                 "type": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "Int64",
                   "ofType": null
                 },
                 "defaultValue": null,
@@ -1499,7 +1510,7 @@
                 "description": null,
                 "type": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "Int64",
                   "ofType": null
                 },
                 "defaultValue": null,
@@ -1536,7 +1547,7 @@
                 "description": null,
                 "type": {
                   "kind": "SCALAR",
-                  "name": "Int",
+                  "name": "Int64",
                   "ofType": null
                 },
                 "defaultValue": null,

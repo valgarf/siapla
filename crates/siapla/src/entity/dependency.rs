@@ -17,8 +17,8 @@ pub struct Model {
     pub id: i32,
     pub predecessor_id: i32,
     pub successor_id: i32,
-    pub rev_created: u64,
-    pub rev_deleted: Option<u64>,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -55,8 +55,8 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::PredecessorId => ColumnType::Integer.def(),
             Self::SuccessorId => ColumnType::Integer.def(),
-            Self::RevCreated => ColumnType::BigUnsigned.def(),
-            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

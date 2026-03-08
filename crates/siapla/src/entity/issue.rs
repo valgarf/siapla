@@ -19,7 +19,7 @@ pub struct Model {
     pub description: String,
     pub r#type: String,
     pub task_id: Option<i32>,
-    pub revision: u64,
+    pub revision: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -58,7 +58,7 @@ impl ColumnTrait for Column {
             Self::Description => ColumnType::String(StringLen::None).def(),
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::TaskId => ColumnType::Integer.def().null(),
-            Self::Revision => ColumnType::BigUnsigned.def(),
+            Self::Revision => ColumnType::BigInteger.def(),
         }
     }
 }

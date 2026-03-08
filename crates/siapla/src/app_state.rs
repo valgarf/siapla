@@ -6,7 +6,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 pub enum CalculationState {
     Modified,
     Calculating,
-    Finished { revision: u64 },
+    Finished { revision: i64 },
 }
 
 #[derive(Debug, Clone)]

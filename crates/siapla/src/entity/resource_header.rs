@@ -15,8 +15,8 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub rev_created: u64,
-    pub rev_deleted: Option<u64>,
+    pub rev_created: Option<i64>,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -49,8 +49,8 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::RevCreated => ColumnType::BigUnsigned.def(),
-            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def().null(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

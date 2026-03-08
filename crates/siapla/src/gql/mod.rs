@@ -3,6 +3,7 @@ pub mod context;
 pub mod dataloader;
 pub mod mutation;
 pub mod query;
+pub mod scalars;
 pub mod subscription;
 mod types;
 
@@ -10,8 +11,13 @@ pub use types::{allocation, availability, holiday, issue, plan, resource, task, 
 
 use juniper::*;
 
-pub type Schema = RootNode<query::Query, mutation::Mutation, subscription::Subscription>;
+pub type Schema =
+    RootNode<query::Query, mutation::Mutation, subscription::Subscription, scalars::MyScalarValue>;
 
 pub fn schema() -> Schema {
-    Schema::new(query::Query::new(), mutation::Mutation::new(), subscription::Subscription::new())
+    Schema::new_with_scalar_value(
+        query::Query::new(),
+        mutation::Mutation::new(),
+        subscription::Subscription::new(),
+    )
 }

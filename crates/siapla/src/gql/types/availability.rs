@@ -72,7 +72,7 @@ pub async fn update_availability(
     ctx: &Context,
     model: &resource::Model,
     availability: Vec<AvailabilityInput>,
-    revision_id: u64,
+    revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let existing_availability: Vec<_> = model.availability(ctx).await?.into_iter().collect();
@@ -90,7 +90,7 @@ pub async fn update_availability(
         availability::Entity::update_many()
             .col_expr(
                 availability::Column::RevDeleted,
-                Expr::value(Value::BigUnsigned(Some(revision_id))),
+                Expr::value(Value::BigInt(Some(revision_id))),
             )
             .filter(availability::Column::ResourceId.eq(model.id))
             .filter(availability::Column::RevDeleted.is_null())
@@ -144,7 +144,7 @@ pub async fn update_availability(
             availability::Entity::update_many()
                 .col_expr(
                     availability::Column::RevDeleted,
-                    Expr::value(Value::BigUnsigned(Some(revision_id))),
+                    Expr::value(Value::BigInt(Some(revision_id))),
                 )
                 .filter(availability::Column::Id.eq(existing.id))
                 .filter(availability::Column::RevDeleted.is_null())

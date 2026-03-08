@@ -125,7 +125,7 @@ pub async fn query_combined_availability(
     resource_ids: &Vec<i32>,
     start: NaiveDateTime,
     end: NaiveDateTime,
-    revision: u64,
+    revision: i64,
 ) -> anyhow::Result<Vec<Intervals<NaiveDateTime>>> {
     let id_set = resource_ids.iter().cloned().collect::<HashSet<_>>();
     let db = ctx.txn().await?;
@@ -220,7 +220,7 @@ pub struct AvailabilityBatcher {
     pub ctx: Weak<Context>,
     pub start: NaiveDateTime,
     pub end: NaiveDateTime,
-    pub revision: u64,
+    pub revision: i64,
 }
 
 impl dataloader::BatchFn<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>>

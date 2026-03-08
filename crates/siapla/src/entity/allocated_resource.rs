@@ -17,7 +17,7 @@ pub struct Model {
     pub id: i32,
     pub allocation_id: i32,
     pub resource_id: i32,
-    pub revision: u64,
+    pub revision: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -53,7 +53,7 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::AllocationId => ColumnType::Integer.def(),
             Self::ResourceId => ColumnType::Integer.def(),
-            Self::Revision => ColumnType::BigUnsigned.def(),
+            Self::Revision => ColumnType::BigInteger.def(),
         }
     }
 }

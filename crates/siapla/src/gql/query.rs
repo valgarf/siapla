@@ -1,7 +1,8 @@
 use crate::{
     entity::{holiday, issue, resource_iteration as resource, task_iteration as task},
     gql::plan::Plan,
-    revisioning::{active_for_revision, resolve_revision_arg_i32},
+    gql::scalars::Int64,
+    revisioning::{active_for_revision, resolve_revision},
 };
 
 use super::{
@@ -15,7 +16,7 @@ use sea_orm::*;
 pub struct Query;
 
 #[graphql_object]
-#[graphql(context = Context)]
+#[graphql(context = Context, scalar = crate::gql::scalars::MyScalarValue)]
 impl Query {
     async fn hello_world() -> anyhow::Result<String> {
         // let tasks: Vec<task::Model> = task::Entity::find()
@@ -26,20 +27,27 @@ impl Query {
         Ok("Hello World from Juniper!".to_owned())
     }
 
-    async fn tasks(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<task::Model>> {
+    async fn tasks(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<task::Model>> {
         let txn = ctx.txn().await?;
-        let revision = resolve_revision_arg_i32(txn, revision).await?;
+        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = task::Entity::find()
-            .filter(active_for_revision(task::Column::RevCreated, task::Column::RevDeleted, revision)?)
+            .filter(active_for_revision(
+                task::Column::RevCreated,
+                task::Column::RevDeleted,
+                revision,
+            )?)
             .order_by_asc(task::Column::Title)
             .all(txn)
             .await?;
         Ok(res)
     }
 
-    async fn resources(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<resource::Model>> {
+    async fn resources(
+        ctx: &Context,
+        revision: Option<Int64>,
+    ) -> anyhow::Result<Vec<resource::Model>> {
         let txn = ctx.txn().await?;
-        let revision = resolve_revision_arg_i32(txn, revision).await?;
+        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = resource::Entity::find()
             .filter(active_for_revision(
                 resource::Column::RevCreated,
@@ -86,20 +94,16 @@ impl Query {
         Ok(Some(GQLHoliday::from_model(result)))
     }
 
-    async fn current_plan(_ctx: &Context, revision: Option<i32>) -> anyhow::Result<Plan> {
-        let revision = revision
-            .map(crate::revisioning::db_to_revision_id)
-            .transpose()?;
-        Ok(Plan { revision })
+    async fn current_plan(_ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Plan> {
+        Ok(Plan { revision: revision.map(i64::from) })
     }
 
-    async fn issues(ctx: &Context, revision: Option<i32>) -> anyhow::Result<Vec<issue::Model>> {
+    async fn issues(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<issue::Model>> {
         let tx = ctx.txn().await?;
-        let revision = resolve_revision_arg_i32(tx, revision).await?;
+        let revision = resolve_revision(tx, revision.map(i64::from)).await?;
         let Some(revision) = revision else {
             return Ok(Vec::new());
         };
-        let revision = crate::revisioning::revision_to_db_id(revision);
         let res = issue::Entity::find()
             .filter(issue::Column::Revision.eq(revision))
             .order_by_asc(issue::Column::Id)

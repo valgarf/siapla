@@ -17,7 +17,7 @@ use crate::{
         common::{nullable_to_av, opt_to_av, resolve_many_to_many},
         context::Context,
     },
-    revisioning::{create_revision, PlanState},
+    revisioning::{PlanState, create_revision},
 };
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq)]
@@ -312,7 +312,7 @@ async fn update_resource_constraints(
     ctx: &Context,
     model: &task::Model,
     constraints: &[ResourceConstraintInput],
-    revision_id: u64,
+    revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     // Fetch active old constraints (assume order is preserved)
@@ -355,7 +355,7 @@ async fn update_resource_constraints(
             resource_constraint::Entity::update_many()
                 .col_expr(
                     resource_constraint::Column::RevDeleted,
-                    Expr::value(Value::BigUnsigned(Some(revision_id))),
+                    Expr::value(Value::BigInt(Some(revision_id))),
                 )
                 .filter(resource_constraint::Column::Id.eq(old_c.id))
                 .filter(resource_constraint::Column::RevDeleted.is_null())
@@ -417,12 +417,13 @@ async fn update_resource_constraints(
     }
     // Remove old constraints if old_len > new_len
     if old_len > new_len {
-        let ids_to_remove: Vec<i32> = old.iter().skip(new_len).map(|constraint| constraint.id).collect();
+        let ids_to_remove: Vec<i32> =
+            old.iter().skip(new_len).map(|constraint| constraint.id).collect();
         if !ids_to_remove.is_empty() {
             resource_constraint::Entity::update_many()
                 .col_expr(
                     resource_constraint::Column::RevDeleted,
-                    Expr::value(Value::BigUnsigned(Some(revision_id))),
+                    Expr::value(Value::BigInt(Some(revision_id))),
                 )
                 .filter(resource_constraint::Column::Id.is_in(ids_to_remove))
                 .filter(resource_constraint::Column::RevDeleted.is_null())
@@ -464,7 +465,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     } else {
         let header = crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
-            rev_created: ActiveValue::Set(revision_id),
+            rev_created: ActiveValue::Set(Some(revision_id)),
             rev_deleted: ActiveValue::Set(None),
         }
         .insert(txn)

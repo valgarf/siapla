@@ -11,7 +11,7 @@ use crate::{
         common::{nullable_to_av, opt_to_av},
         context::Context,
     },
-    revisioning::{create_revision, PlanState},
+    revisioning::{PlanState, create_revision},
 };
 
 use super::{
@@ -158,7 +158,7 @@ pub async fn resource_save(
     } else {
         let header = crate::entity::resource_header::ActiveModel {
             id: ActiveValue::NotSet,
-            rev_created: ActiveValue::Set(revision_id),
+            rev_created: ActiveValue::Set(Some(revision_id)),
             rev_deleted: ActiveValue::Set(None),
         }
         .insert(txn)
@@ -181,10 +181,7 @@ pub async fn resource_save(
     // Handle removing vacations
     if !removed_vacations.is_empty() {
         vacation::Entity::update_many()
-            .col_expr(
-                vacation::Column::RevDeleted,
-                Expr::value(Value::BigUnsigned(Some(revision_id))),
-            )
+            .col_expr(vacation::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(vacation::Column::Id.is_in(removed_vacations))
             .exec(txn)
             .await?;

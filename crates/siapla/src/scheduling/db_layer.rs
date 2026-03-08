@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
-use crate::revisioning::{active_for_revision, resolve_revision, PlanState};
+use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
 // availability now loaded via Context::load_combined_availability
 use crate::entity::{resource_iteration as resource, task_iteration as task};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
@@ -27,17 +27,22 @@ use sea_orm::{
 };
 use tokio::task::JoinSet;
 
-pub async fn query_problem(ctx: &Context, revision: Option<u64>) -> anyhow::Result<Project> {
+pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Result<Project> {
     // Query everything: needs to be done first, we cannot haev an await in the rest of the function
     // TODO: only query tasks not marked as 'done'? (earliest start for following tasks?)
     // alternatively: on marking milestones as done, check which tasks (and requirements) can be
     // marked as not relevant anymore?
     let db = ctx.txn().await?;
-    let revision = resolve_revision(db, revision).await?
+    let revision = resolve_revision(db, revision)
+        .await?
         .ok_or(anyhow::anyhow!("No revision found in database"))?;
 
     let db_task_vec = task::Entity::find()
-        .filter(active_for_revision(task::Column::RevCreated, task::Column::RevDeleted, Some(revision))?)
+        .filter(active_for_revision(
+            task::Column::RevCreated,
+            task::Column::RevDeleted,
+            Some(revision),
+        )?)
         .all(db)
         .await?;
     let db_resource_vec = resource::Entity::find()
@@ -574,7 +579,7 @@ pub async fn query_slots(
     resources: &Vec<Rc<RefCell<Resource>>>,
     start: NaiveDateTime,
     end: NaiveDateTime,
-    revision: u64,
+    revision: i64,
 ) -> anyhow::Result<()> {
     // Load availability per-resource in parallel using a JoinSet, then apply in original order.
     let mut set: JoinSet<(usize, anyhow::Result<Intervals<NaiveDateTime>>)> = JoinSet::new();

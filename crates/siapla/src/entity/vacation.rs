@@ -18,8 +18,8 @@ pub struct Model {
     pub resource_id: i32,
     pub from: DateTimeUtc,
     pub until: DateTimeUtc,
-    pub rev_created: u64,
-    pub rev_deleted: Option<u64>,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -57,8 +57,8 @@ impl ColumnTrait for Column {
             Self::ResourceId => ColumnType::Integer.def(),
             Self::From => ColumnType::Timestamp.def(),
             Self::Until => ColumnType::Timestamp.def(),
-            Self::RevCreated => ColumnType::BigUnsigned.def(),
-            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

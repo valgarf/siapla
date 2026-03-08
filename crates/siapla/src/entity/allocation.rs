@@ -20,7 +20,7 @@ pub struct Model {
     pub end: DateTimeUtc,
     pub allocation_type: String,
     pub r#final: bool,
-    pub revision: u64,
+    pub revision: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -62,7 +62,7 @@ impl ColumnTrait for Column {
             Self::End => ColumnType::Timestamp.def(),
             Self::AllocationType => ColumnType::String(StringLen::None).def(),
             Self::Final => ColumnType::Boolean.def(),
-            Self::Revision => ColumnType::BigUnsigned.def(),
+            Self::Revision => ColumnType::BigInteger.def(),
         }
     }
 }

@@ -10,7 +10,6 @@ use axum::{
 };
 use clap::Parser;
 use include_dir::{Dir, include_dir};
-use juniper::DefaultScalarValue;
 use juniper_axum::{
     extract::JuniperRequest, graphiql, playground, response::JuniperResponse, subscriptions,
 };
@@ -21,6 +20,7 @@ use siapla::{
     gql::{
         Schema,
         context::{Context, add_context},
+        scalars::MyScalarValue,
     },
     scheduling::recalculate_loop,
 };
@@ -39,8 +39,8 @@ use tracing_subscriber::EnvFilter;
 pub async fn graphql(
     Extension(schema): Extension<Arc<Schema>>,
     Extension(context): Extension<Arc<Context>>,
-    JuniperRequest(req): JuniperRequest<DefaultScalarValue>,
-) -> JuniperResponse<DefaultScalarValue> {
+    JuniperRequest(req): JuniperRequest<MyScalarValue>,
+) -> JuniperResponse<MyScalarValue> {
     let gql_res = req.execute(&schema, &context).await;
     if !gql_res.is_ok() {
         context.failed().await;

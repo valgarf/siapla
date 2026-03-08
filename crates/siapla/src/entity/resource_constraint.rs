@@ -19,8 +19,8 @@ pub struct Model {
     pub r#type: String,
     pub optional: bool,
     pub speed: f32,
-    pub rev_created: u64,
-    pub rev_deleted: Option<u64>,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -61,8 +61,8 @@ impl ColumnTrait for Column {
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::Optional => ColumnType::Boolean.def(),
             Self::Speed => ColumnType::Float.def(),
-            Self::RevCreated => ColumnType::BigUnsigned.def(),
-            Self::RevDeleted => ColumnType::BigUnsigned.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

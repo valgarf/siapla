@@ -5,13 +5,13 @@ use std::{
 };
 
 use super::dataloader::{AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader};
-use crate::scheduling::Intervals;
-use crate::revisioning::resolve_revision;
 use crate::SiaplaError;
+use crate::revisioning::resolve_revision;
+use crate::scheduling::Intervals;
 use chrono::NaiveDateTime;
 
 type AvailabilityLoaderMap =
-    std::collections::HashMap<(NaiveDateTime, NaiveDateTime, u64), AvailabilityLoader>;
+    std::collections::HashMap<(NaiveDateTime, NaiveDateTime, i64), AvailabilityLoader>;
 use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::{TryFutureExt, lock::Mutex};
@@ -203,14 +203,13 @@ impl Context {
         resource_id: i32,
         start: NaiveDateTime,
         end: NaiveDateTime,
-        revision: Option<u64>,
+        revision: Option<i64>,
     ) -> impl std::future::Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
         let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
         let fut = async move {
-            let ctx = me
-                .upgrade()
-                .ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
+            let ctx =
+                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let txn = ctx.txn().await?;
             let revision = resolve_revision(txn, revision)
                 .await?
