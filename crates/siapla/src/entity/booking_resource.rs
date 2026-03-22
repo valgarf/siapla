@@ -8,26 +8,22 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "allocation"
+        "booking_resource"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub task_id: i32,
-    pub start: DateTimeUtc,
-    pub end: DateTimeUtc,
-    pub revision: i64,
+    pub booking_id: i32,
+    pub resource_id: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     Id,
-    TaskId,
-    Start,
-    End,
-    Revision,
+    BookingId,
+    ResourceId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -44,8 +40,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    AllocatedResource,
-    TaskIteration,
+    Booking,
+    ResourceIteration,
 }
 
 impl ColumnTrait for Column {
@@ -53,10 +49,8 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::TaskId => ColumnType::Integer.def(),
-            Self::Start => ColumnType::Timestamp.def(),
-            Self::End => ColumnType::Timestamp.def(),
-            Self::Revision => ColumnType::BigInteger.def(),
+            Self::BookingId => ColumnType::Integer.def(),
+            Self::ResourceId => ColumnType::Integer.def(),
         }
     }
 }
@@ -64,24 +58,27 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
-            Self::TaskIteration => Entity::belongs_to(super::task_iteration::Entity)
-                .from(Column::TaskId)
-                .to(super::task_iteration::Column::Id)
+            Self::Booking => Entity::belongs_to(super::booking::Entity)
+                .from(Column::BookingId)
+                .to(super::booking::Column::Id)
+                .into(),
+            Self::ResourceIteration => Entity::belongs_to(super::resource_iteration::Entity)
+                .from(Column::ResourceId)
+                .to(super::resource_iteration::Column::Id)
                 .into(),
         }
     }
 }
 
-impl Related<super::allocated_resource::Entity> for Entity {
+impl Related<super::booking::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::AllocatedResource.def()
+        Relation::Booking.def()
     }
 }
 
-impl Related<super::task_iteration::Entity> for Entity {
+impl Related<super::resource_iteration::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TaskIteration.def()
+        Relation::ResourceIteration.def()
     }
 }
 

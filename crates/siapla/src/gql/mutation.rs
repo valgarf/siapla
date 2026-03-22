@@ -2,7 +2,7 @@ use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
 use sea_orm::{ActiveValue, prelude::*};
 
-use crate::entity::{allocated_resource, allocation};
+use crate::entity::{booking, booking_resource};
 use crate::entity::{resource_iteration as resource, task_iteration as task};
 use crate::revisioning::{PlanState, create_revision};
 
@@ -90,66 +90,65 @@ impl Mutation {
         end: chrono::DateTime<chrono::Utc>,
         resources: Vec<i32>,
         r#final: bool,
-    ) -> anyhow::Result<allocation::Model> {
+    ) -> anyhow::Result<booking::Model> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-        // upsert allocation
-        let db_alloc = if let Some(id) = db_id {
-            let am = allocation::ActiveModel {
-                id: ActiveValue::Set(id),
-                task_id: ActiveValue::Set(task_id),
-                start: ActiveValue::Set(start),
-                end: ActiveValue::Set(end),
-                allocation_type: ActiveValue::Set(
-                    <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
-                ),
-                r#final: ActiveValue::Set(r#final),
-                revision: ActiveValue::Set(revision_id),
+
+        if let Some(existing_id) = db_id {
+            let existing = booking::Entity::find_by_id(existing_id).one(txn).await?;
+            let Some(existing) = existing else {
+                return Err(anyhow::anyhow!("Booking {existing_id} does not exist"));
             };
-            am.update(txn).await?
-        } else {
-            let am = allocation::ActiveModel {
-                id: ActiveValue::NotSet,
-                task_id: ActiveValue::Set(task_id),
-                start: ActiveValue::Set(start),
-                end: ActiveValue::Set(end),
-                allocation_type: ActiveValue::Set(
-                    <&'static str>::from(crate::gql::allocation::AllocationType::BOOKING).into(),
-                ),
-                r#final: ActiveValue::Set(r#final),
-                revision: ActiveValue::Set(revision_id),
-            };
-            am.insert(txn).await?
-        };
-        // replace allocated resources
-        // TODO: only replace the changed ones
-        allocated_resource::Entity::delete_many()
-            .filter(allocated_resource::Column::AllocationId.eq(db_alloc.id))
-            .exec(txn)
-            .await?;
+            if existing.rev_deleted.is_some() {
+                return Err(anyhow::anyhow!("Booking {existing_id} has already been deleted"));
+            }
+            let soft_delete = booking::Entity::update_many()
+                .col_expr(booking::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+                .filter(booking::Column::Id.eq(existing_id))
+                .filter(booking::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+            if soft_delete.rows_affected == 0 {
+                return Err(anyhow::anyhow!(
+                    "Booking {existing_id} was modified concurrently and is no longer active"
+                ));
+            }
+        }
+
+        let db_booking = booking::ActiveModel {
+            id: ActiveValue::NotSet,
+            task_id: ActiveValue::Set(task_id),
+            start: ActiveValue::Set(start),
+            end: ActiveValue::Set(end),
+            r#final: ActiveValue::Set(r#final),
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
+        }
+        .insert(txn)
+        .await?;
+
         for rid in resources {
-            let arm = allocated_resource::ActiveModel {
+            let arm = booking_resource::ActiveModel {
                 id: ActiveValue::NotSet,
-                allocation_id: ActiveValue::Set(db_alloc.id),
+                booking_id: ActiveValue::Set(db_booking.id),
                 resource_id: ActiveValue::Set(rid),
-                revision: ActiveValue::Set(revision_id),
             };
             arm.insert(txn).await?;
         }
 
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(db_alloc)
+        Ok(db_booking)
     }
 
     async fn booking_delete(ctx: &Context, db_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
-        allocated_resource::Entity::delete_many()
-            .filter(allocated_resource::Column::AllocationId.eq(db_id))
+        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+        let res = booking::Entity::update_many()
+            .col_expr(booking::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+            .filter(booking::Column::Id.eq(db_id))
+            .filter(booking::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
-        let am =
-            allocation::ActiveModel { id: sea_orm::ActiveValue::Set(db_id), ..Default::default() };
-        let res = am.delete(txn).await?;
         let ok = res.rows_affected > 0;
         if ok {
             ctx.app_state().notify_modified("graphql".to_string());

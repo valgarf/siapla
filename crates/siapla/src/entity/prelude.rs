@@ -3,6 +3,8 @@
 pub use super::allocated_resource::Entity as AllocatedResource;
 pub use super::allocation::Entity as Allocation;
 pub use super::availability::Entity as Availability;
+pub use super::booking::Entity as Booking;
+pub use super::booking_resource::Entity as BookingResource;
 pub use super::dependency::Entity as Dependency;
 pub use super::holiday::Entity as Holiday;
 pub use super::holiday_entry::Entity as HolidayEntry;

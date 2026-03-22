@@ -33,6 +33,14 @@ const PLAN_QUERY = graphql(`
         resources { dbId }
       }
     }
+    bookings {
+      dbId
+      start
+      end
+      final
+      task { dbId }
+      resources { dbId }
+    }
   }
 `);
 
@@ -60,10 +68,15 @@ const BOOKING_DELETE = graphql(`
 function convertQueryResult(query: PlanQuery): Allocation[] {
   const resourceStore = useResourceStore();
   const taskStore = useTaskStore();
-  const allocations: Allocation[] = query.currentPlan.allocations.map(a => {
+  const planAllocations: Allocation[] = query.currentPlan.allocations.map(a => {
     const resources = a.resources.map(r => resourceStore.resource(r.dbId)).filter(r => r != null);
     return { dbId: a.dbId, start: new Date(a.start), end: new Date(a.end), allocationType: a.allocationType, final: a.final, task: taskStore.task(a.task.dbId) ?? null, resources: resources }
   });
+  const bookings: Allocation[] = query.bookings.map(b => {
+    const resources = b.resources.map(r => resourceStore.resource(r.dbId)).filter(r => r != null);
+    return { dbId: b.dbId, start: new Date(b.start), end: new Date(b.end), allocationType: AllocationType.Booking, final: b.final, task: taskStore.task(b.task.dbId) ?? null, resources }
+  });
+  const allocations = [...planAllocations, ...bookings];
   // Not sure if this is necessary. Mucks up the arrows
   // allocations.sort((lhs, rhs) => {
   //   if (lhs.allocationType != rhs.allocationType) {

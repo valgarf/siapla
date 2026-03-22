@@ -5,6 +5,8 @@ pub mod prelude;
 pub mod allocated_resource;
 pub mod allocation;
 pub mod availability;
+pub mod booking;
+pub mod booking_resource;
 pub mod dependency;
 pub mod holiday;
 pub mod holiday_entry;

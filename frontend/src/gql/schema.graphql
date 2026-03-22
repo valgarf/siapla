@@ -149,6 +149,15 @@ type Availability {
   weekday: Weekday!
 }
 
+type Booking {
+  dbId: Int!
+  start: DateTime!
+  end: DateTime!
+  final: Boolean!
+  resources: [Resource!]!
+  task: Task!
+}
+
 type CalculationUpdate {
   state: CalculationState!
   plan: Plan
@@ -195,7 +204,7 @@ type Mutation {
   taskDelete(taskId: Int!): Boolean!
   resourceSave(resource: ResourceSaveInput!): Resource!
   resourceDelete(resourceId: Int!): Boolean!
-  bookingSave(dbId: Int, taskId: Int!, start: DateTime!, end: DateTime!, resources: [Int!]!, final: Boolean!): Allocation!
+  bookingSave(dbId: Int, taskId: Int!, start: DateTime!, end: DateTime!, resources: [Int!]!, final: Boolean!): Booking!
   bookingDelete(dbId: Int!): Boolean!
   "Trigger a manual recalculation now"
   recalculateNow: Boolean!
@@ -214,6 +223,7 @@ type Query {
   region(isocode: String!): Region
   getFromOpenHolidays(isocode: String!): Holiday
   currentPlan(revision: Int64): Plan!
+  bookings(revision: Int64): [Booking!]!
   issues(revision: Int64): [Issue!]!
 }
 

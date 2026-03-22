@@ -75,6 +75,16 @@ export type AvailabilityInput = {
   weekday: Weekday;
 };
 
+export type Booking = {
+  __typename?: 'Booking';
+  dbId: Scalars['Int']['output'];
+  end: Scalars['DateTime']['output'];
+  final: Scalars['Boolean']['output'];
+  resources: Array<Resource>;
+  start: Scalars['DateTime']['output'];
+  task: Task;
+};
+
 export enum CalculationState {
   Calculating = 'CALCULATING',
   Finished = 'FINISHED',
@@ -155,7 +165,7 @@ export enum IssueType {
 export type Mutation = {
   __typename?: 'Mutation';
   bookingDelete: Scalars['Boolean']['output'];
-  bookingSave: Allocation;
+  bookingSave: Booking;
   new: Mutation;
   /** Trigger a manual recalculation now */
   recalculateNow: Scalars['Boolean']['output'];
@@ -207,6 +217,7 @@ export type Plan = {
 
 export type Query = {
   __typename?: 'Query';
+  bookings: Array<Booking>;
   countries: Array<Country>;
   country?: Maybe<Country>;
   currentPlan: Plan;
@@ -216,6 +227,11 @@ export type Query = {
   region?: Maybe<Region>;
   resources: Array<Resource>;
   tasks: Array<Task>;
+};
+
+
+export type QueryBookingsArgs = {
+  revision?: InputMaybe<Scalars['Int64']['input']>;
 };
 
 
@@ -410,7 +426,7 @@ export type GetHolidayQuery = { __typename?: 'Query', getFromOpenHolidays?: { __
 export type PlanQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type PlanQuery = { __typename?: 'Query', currentPlan: { __typename?: 'Plan', allocations: Array<{ __typename?: 'Allocation', dbId: number, start: any, end: any, allocationType: AllocationType, final: boolean, task: { __typename?: 'Task', dbId: number }, resources: Array<{ __typename?: 'Resource', dbId: number }> }> } };
+export type PlanQuery = { __typename?: 'Query', currentPlan: { __typename?: 'Plan', allocations: Array<{ __typename?: 'Allocation', dbId: number, start: any, end: any, allocationType: AllocationType, final: boolean, task: { __typename?: 'Task', dbId: number }, resources: Array<{ __typename?: 'Resource', dbId: number }> }> }, bookings: Array<{ __typename?: 'Booking', dbId: number, start: any, end: any, final: boolean, task: { __typename?: 'Task', dbId: number }, resources: Array<{ __typename?: 'Resource', dbId: number }> }> };
 
 export type CalcUpdateSubscriptionVariables = Exact<{ [key: string]: never; }>;
 
@@ -432,7 +448,7 @@ export type BookingSaveMutationVariables = Exact<{
 }>;
 
 
-export type BookingSaveMutation = { __typename?: 'Mutation', bookingSave: { __typename?: 'Allocation', dbId: number } };
+export type BookingSaveMutation = { __typename?: 'Mutation', bookingSave: { __typename?: 'Booking', dbId: number } };
 
 export type BookingDeleteMutationVariables = Exact<{
   dbId: Scalars['Int']['input'];
@@ -496,7 +512,7 @@ export type Task_DeleteMutation = { __typename?: 'Mutation', taskDelete: boolean
 export const GetCountriesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetCountries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"countries"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"isocode"}},{"kind":"Field","name":{"kind":"Name","value":"name"}}]}}]}}]} as unknown as DocumentNode<GetCountriesQuery, GetCountriesQueryVariables>;
 export const GetRegionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetRegions"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"country"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"regions"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetRegionsQuery, GetRegionsQueryVariables>;
 export const GetHolidayDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetHoliday"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getFromOpenHolidays"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"isocode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"isocode"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"country"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}},{"kind":"Field","name":{"kind":"Name","value":"region"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"isocode"}}]}}]}}]}}]} as unknown as DocumentNode<GetHolidayQuery, GetHolidayQueryVariables>;
-export const PlanDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"plan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"currentPlan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"allocations"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"start"}},{"kind":"Field","name":{"kind":"Name","value":"end"}},{"kind":"Field","name":{"kind":"Name","value":"allocationType"}},{"kind":"Field","name":{"kind":"Name","value":"final"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"resources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}}]}}]} as unknown as DocumentNode<PlanQuery, PlanQueryVariables>;
+export const PlanDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"plan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"currentPlan"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"allocations"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"start"}},{"kind":"Field","name":{"kind":"Name","value":"end"}},{"kind":"Field","name":{"kind":"Name","value":"allocationType"}},{"kind":"Field","name":{"kind":"Name","value":"final"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"resources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"bookings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}},{"kind":"Field","name":{"kind":"Name","value":"start"}},{"kind":"Field","name":{"kind":"Name","value":"end"}},{"kind":"Field","name":{"kind":"Name","value":"final"}},{"kind":"Field","name":{"kind":"Name","value":"task"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"resources"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]}}]} as unknown as DocumentNode<PlanQuery, PlanQueryVariables>;
 export const CalcUpdateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"subscription","name":{"kind":"Name","value":"calcUpdate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"calculationUpdate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"state"}}]}}]}}]} as unknown as DocumentNode<CalcUpdateSubscription, CalcUpdateSubscriptionVariables>;
 export const RecalculateDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"recalculate"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"recalculateNow"}}]}}]} as unknown as DocumentNode<RecalculateMutation, RecalculateMutationVariables>;
 export const BookingSaveDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"bookingSave"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"dbId"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"taskId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"start"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"end"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DateTime"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"resources"}},"type":{"kind":"NonNullType","type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"final"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Boolean"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingSave"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"dbId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"dbId"}}},{"kind":"Argument","name":{"kind":"Name","value":"taskId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"taskId"}}},{"kind":"Argument","name":{"kind":"Name","value":"start"},"value":{"kind":"Variable","name":{"kind":"Name","value":"start"}}},{"kind":"Argument","name":{"kind":"Name","value":"end"},"value":{"kind":"Variable","name":{"kind":"Name","value":"end"}}},{"kind":"Argument","name":{"kind":"Name","value":"resources"},"value":{"kind":"Variable","name":{"kind":"Name","value":"resources"}}},{"kind":"Argument","name":{"kind":"Name","value":"final"},"value":{"kind":"Variable","name":{"kind":"Name","value":"final"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"dbId"}}]}}]}}]} as unknown as DocumentNode<BookingSaveMutation, BookingSaveMutationVariables>;

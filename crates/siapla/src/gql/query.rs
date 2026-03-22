@@ -1,5 +1,5 @@
 use crate::{
-    entity::{holiday, issue, resource_iteration as resource, task_iteration as task},
+    entity::{booking, holiday, issue, resource_iteration as resource, task_iteration as task},
     gql::plan::Plan,
     gql::scalars::Int64,
     revisioning::{active_for_revision, resolve_revision},
@@ -96,6 +96,22 @@ impl Query {
 
     async fn current_plan(_ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Plan> {
         Ok(Plan { revision: revision.map(i64::from) })
+    }
+
+    async fn bookings(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<booking::Model>> {
+        let txn = ctx.txn().await?;
+        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
+        let res = booking::Entity::find()
+            .filter(active_for_revision(
+                booking::Column::RevCreated,
+                booking::Column::RevDeleted,
+                revision,
+            )?)
+            .order_by_asc(booking::Column::TaskId)
+            .order_by_asc(booking::Column::Start)
+            .all(txn)
+            .await?;
+        Ok(res)
     }
 
     async fn issues(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<issue::Model>> {

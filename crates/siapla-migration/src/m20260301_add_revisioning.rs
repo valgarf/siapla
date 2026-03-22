@@ -1,5 +1,5 @@
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::{big_unsigned, pk_auto, string, timestamp};
+use sea_orm_migration::schema::{big_unsigned, boolean, integer, pk_auto, string, timestamp};
 use sea_query::{Expr, OnConflict, Query};
 
 #[derive(DeriveMigrationName)]
@@ -253,6 +253,74 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
+            .create_table(
+                Table::create()
+                    .table(Booking::Table)
+                    .if_not_exists()
+                    .col(pk_auto(Booking::Id))
+                    .col(integer(Booking::TaskId))
+                    .col(timestamp(Booking::Start))
+                    .col(timestamp(Booking::End))
+                    .col(boolean(Booking::Final).not_null().default(false))
+                    .col(ColumnDef::new(Booking::RevCreated).big_unsigned().not_null())
+                    .col(ColumnDef::new(Booking::RevDeleted).big_unsigned().null())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Booking_Task")
+                            .from(Booking::Table, Booking::TaskId)
+                            .to(TaskIteration::Table, TaskIteration::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Booking_RevCreated")
+                            .from(Booking::Table, Booking::RevCreated)
+                            .to(Revision::Table, Revision::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_Booking_RevDeleted")
+                            .from(Booking::Table, Booking::RevDeleted)
+                            .to(Revision::Table, Revision::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(BookingResource::Table)
+                    .if_not_exists()
+                    .col(pk_auto(BookingResource::Id))
+                    .col(integer(BookingResource::BookingId))
+                    .col(integer(BookingResource::ResourceId))
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_BookingResource_Booking")
+                            .from(BookingResource::Table, BookingResource::BookingId)
+                            .to(Booking::Table, Booking::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("FK_BookingResource_Resource")
+                            .from(BookingResource::Table, BookingResource::ResourceId)
+                            .to(ResourceIteration::Table, ResourceIteration::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
             .alter_table(
                 Table::alter()
                     .table(AllocatedResource::Table)
@@ -336,6 +404,89 @@ impl MigrationTrait for Migration {
             .to_owned();
 
         db.execute(backend.build(&fill_resource_header_ids)).await?;
+
+        let copy_bookings = Query::insert()
+            .into_table(Booking::Table)
+            .columns([
+                Booking::Id,
+                Booking::TaskId,
+                Booking::Start,
+                Booking::End,
+                Booking::Final,
+                Booking::RevCreated,
+                Booking::RevDeleted,
+            ])
+            .select_from(
+                Query::select()
+                    .column(Allocation::Id)
+                    .column(Allocation::TaskId)
+                    .column(Allocation::Start)
+                    .column(Allocation::End)
+                    .column(Allocation::Final)
+                    .expr(Expr::value(1))
+                    .expr(Expr::value(Value::BigUnsigned(None)))
+                    .from(Allocation::Table)
+                    .and_where(Expr::col(Allocation::AllocationType).eq("BOOKING"))
+                    .to_owned(),
+            )
+            .map_err(|e| DbErr::Custom(e.to_string()))?
+            .to_owned();
+        db.execute(backend.build(&copy_bookings)).await?;
+
+        let copy_booking_resources = Query::insert()
+            .into_table(BookingResource::Table)
+            .columns([BookingResource::BookingId, BookingResource::ResourceId])
+            .select_from(
+                Query::select()
+                    .column(AllocatedResource::AllocationId)
+                    .column(AllocatedResource::ResourceId)
+                    .from(AllocatedResource::Table)
+                    .inner_join(
+                        Allocation::Table,
+                        Expr::col((AllocatedResource::Table, AllocatedResource::AllocationId))
+                            .equals((Allocation::Table, Allocation::Id)),
+                    )
+                    .and_where(Expr::col((Allocation::Table, Allocation::AllocationType)).eq("BOOKING"))
+                    .to_owned(),
+            )
+            .map_err(|e| DbErr::Custom(e.to_string()))?
+            .to_owned();
+        db.execute(backend.build(&copy_booking_resources)).await?;
+
+        let delete_allocated_resources_for_bookings = Query::delete()
+            .from_table(AllocatedResource::Table)
+            .and_where(
+                Expr::col(AllocatedResource::AllocationId).in_subquery(
+                    Query::select()
+                        .column(Allocation::Id)
+                        .from(Allocation::Table)
+                        .and_where(Expr::col(Allocation::AllocationType).eq("BOOKING"))
+                        .to_owned(),
+                ),
+            )
+            .to_owned();
+        db.execute(backend.build(&delete_allocated_resources_for_bookings)).await?;
+
+        let delete_bookings_from_allocation = Query::delete()
+            .from_table(Allocation::Table)
+            .and_where(Expr::col(Allocation::AllocationType).eq("BOOKING"))
+            .to_owned();
+        db.execute(backend.build(&delete_bookings_from_allocation)).await?;
+
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Allocation::Table)
+                    .drop_column(Allocation::AllocationType)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .alter_table(
+                Table::alter().table(Allocation::Table).drop_column(Allocation::Final).to_owned(),
+            )
+            .await?;
 
         Ok(())
     }
@@ -478,12 +629,40 @@ enum ResourceConstraint {
 #[derive(DeriveIden)]
 enum Allocation {
     Table,
+    Id,
+    TaskId,
+    Start,
+    End,
+    AllocationType,
+    Final,
     Revision,
+}
+
+#[derive(DeriveIden)]
+enum Booking {
+    Table,
+    Id,
+    TaskId,
+    Start,
+    End,
+    Final,
+    RevCreated,
+    RevDeleted,
+}
+
+#[derive(DeriveIden)]
+enum BookingResource {
+    Table,
+    Id,
+    BookingId,
+    ResourceId,
 }
 
 #[derive(DeriveIden)]
 enum AllocatedResource {
     Table,
+    AllocationId,
+    ResourceId,
     Revision,
 }
 

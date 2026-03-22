@@ -1,4 +1,5 @@
 pub mod allocation;
+pub mod booking;
 pub mod availability;
 pub mod holiday;
 pub mod issue;

@@ -8,7 +8,7 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "allocation"
+        "booking"
     }
 }
 
@@ -18,7 +18,9 @@ pub struct Model {
     pub task_id: i32,
     pub start: DateTimeUtc,
     pub end: DateTimeUtc,
-    pub revision: i64,
+    pub r#final: bool,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -27,7 +29,9 @@ pub enum Column {
     TaskId,
     Start,
     End,
-    Revision,
+    Final,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -44,7 +48,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    AllocatedResource,
+    BookingResource,
     TaskIteration,
 }
 
@@ -56,7 +60,9 @@ impl ColumnTrait for Column {
             Self::TaskId => ColumnType::Integer.def(),
             Self::Start => ColumnType::Timestamp.def(),
             Self::End => ColumnType::Timestamp.def(),
-            Self::Revision => ColumnType::BigInteger.def(),
+            Self::Final => ColumnType::Boolean.def(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }
@@ -64,7 +70,7 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
+            Self::BookingResource => Entity::has_many(super::booking_resource::Entity).into(),
             Self::TaskIteration => Entity::belongs_to(super::task_iteration::Entity)
                 .from(Column::TaskId)
                 .to(super::task_iteration::Column::Id)
@@ -73,9 +79,9 @@ impl RelationTrait for Relation {
     }
 }
 
-impl Related<super::allocated_resource::Entity> for Entity {
+impl Related<super::booking_resource::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::AllocatedResource.def()
+        Relation::BookingResource.def()
     }
 }
 

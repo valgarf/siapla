@@ -9,7 +9,7 @@ use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
 use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
 // availability now loaded via Context::load_combined_availability
-use crate::entity::{resource_iteration as resource, task_iteration as task};
+use crate::entity::{booking, booking_resource, resource_iteration as resource, task_iteration as task};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
 use chrono::NaiveDateTime;
@@ -79,19 +79,21 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
 
     let db_task_map = db_task_vec.into_iter().map(|t| (t.id, t)).collect::<HashMap<i32, _>>();
 
-    // Load existing bookings (allocations with type BOOKING)
-    use crate::gql::allocation::AllocationType as _GqlAllocType; // re-exported
-    let booking_allocs = allocation::Entity::find()
-        .filter(allocation::Column::AllocationType.eq(<&'static str>::from(_GqlAllocType::BOOKING)))
-        .filter(allocation::Column::Revision.eq(revision))
+    // Load existing bookings
+    let booking_allocs = booking::Entity::find()
+        .filter(active_for_revision(
+            booking::Column::RevCreated,
+            booking::Column::RevDeleted,
+            Some(revision),
+        )?)
         .all(db)
         .await?;
     let alloc_ids: Vec<i32> = booking_allocs.iter().map(|a| a.id).collect();
-    let booking_allocated: Vec<allocated_resource::Model> = if alloc_ids.is_empty() {
+    let booking_allocated: Vec<booking_resource::Model> = if alloc_ids.is_empty() {
         vec![]
     } else {
-        allocated_resource::Entity::find()
-            .filter(allocated_resource::Column::AllocationId.is_in(alloc_ids.clone()))
+        booking_resource::Entity::find()
+            .filter(booking_resource::Column::BookingId.is_in(alloc_ids.clone()))
             .all(db)
             .await?
     };
@@ -106,7 +108,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let final_flag = a.r#final;
         let resources: Vec<i32> = booking_allocated
             .iter()
-            .filter(|ar| ar.allocation_id == a.id)
+            .filter(|ar| ar.booking_id == a.id)
             .map(|ar| ar.resource_id)
             .collect();
         if let Some(tid) = Some(a.task_id) {
@@ -642,7 +644,6 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
 
 pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    use crate::gql::allocation::AllocationType;
     let revision_id = project.revision;
     for (task_id, assignment) in &plan.assignments {
         let range = assignment
@@ -658,8 +659,6 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(*task_id),
             start: ActiveValue::Set(range.start().value().expect("No unbound intervals").and_utc()),
             end: ActiveValue::Set(range.end().value().expect("No unbound intervals").and_utc()),
-            allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
-            r#final: ActiveValue::Set(false),
             revision: ActiveValue::Set(revision_id),
         };
         let db_alloc = am.insert(txn).await?;
@@ -680,8 +679,6 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(fm.task_id),
             start: ActiveValue::Set(fm.date.and_utc()),
             end: ActiveValue::Set(fm.date.and_utc()),
-            allocation_type: ActiveValue::Set(<&'static str>::from(AllocationType::PLAN).into()),
-            r#final: ActiveValue::Set(false),
             revision: ActiveValue::Set(revision_id),
         };
         am.insert(txn).await?;
