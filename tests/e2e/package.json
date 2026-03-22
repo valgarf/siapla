@@ -1,0 +1,23 @@
+{
+    "name": "siapla-e2e-tests",
+    "version": "1.0.0",
+    "description": "Playwright E2E tests for SIAPLA planning tool",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "npx playwright test",
+        "test:headed": "npx playwright test --headed",
+        "test:ui": "npx playwright test --ui",
+        "test:debug": "npx playwright test --debug",
+        "test:smoke": "npx playwright test tests/smoke.spec.ts",
+        "test:resources": "npx playwright test tests/resources.spec.ts",
+        "test:tasks": "npx playwright test tests/tasks.spec.ts",
+        "test:planning": "npx playwright test tests/planning.spec.ts",
+        "install:browsers": "npx playwright install --with-deps chromium"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.52.0",
+        "@types/node": "^20.5.9",
+        "typescript": "~5.5.3"
+    }
+}
