@@ -1,6 +1,10 @@
+use super::resource::GQLResource;
+use super::task::GQLTask;
 use crate::gql::common::resolve_many_to_many;
 use crate::{
-    entity::{allocated_resource, allocation, resource_iteration as resource, task_iteration as task},
+    entity::{
+        allocated_resource, allocation, resource_iteration as resource, task_iteration as task,
+    },
     gql::context::Context,
 };
 use chrono::{DateTime, Utc};
@@ -39,8 +43,8 @@ impl allocation::Model {
     fn r#final(&self) -> bool {
         false
     }
-    pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<resource::Model>> {
-        resolve_many_to_many!(
+    pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
+        let models: Vec<resource::Model> = resolve_many_to_many!(
             ctx,
             allocated_resource::Entity,
             allocated_resource::Column::AllocationId,
@@ -48,12 +52,13 @@ impl allocation::Model {
             |l: allocated_resource::Model| l.resource_id,
             resource::Entity,
             resource::Column::Id
-        )
+        )?;
+        Ok(models.into_iter().map(GQLResource::from).collect())
     }
-    pub async fn task(&self, ctx: &Context) -> anyhow::Result<task::Model> {
+    pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
         const CIDX: usize = task::Column::Id as usize;
         ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
             .await
-            .map(|opt_t| opt_t.expect("Task must exist."))
+            .map(|opt_t| GQLTask::from(opt_t.expect("Task must exist.")))
     }
 }

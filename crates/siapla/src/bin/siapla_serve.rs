@@ -84,6 +84,9 @@ struct Args {
     /// Bind address e.g. 127.0.0.1:8880
     #[arg(long, default_value = "0.0.0.0:80")]
     bind: String,
+    /// Allow the resetDatabase mutation (dangerous – for test environments only)
+    #[arg(long, default_value_t = false)]
+    allow_reset: bool,
 }
 
 fn file_response_from_dir(mut path: String) -> Response {
@@ -144,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
     init_db(&args.database_url).await?;
     set_global_database_url(args.database_url);
 
-    let (app_state, manual_rx) = AppState::new();
+    let (app_state, manual_rx) = AppState::new(args.allow_reset);
 
     let local_set = tokio::task::LocalSet::new();
     // spawn scheduling loop with access to app_state

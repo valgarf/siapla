@@ -7,6 +7,9 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use juniper::graphql_object;
 
+use super::resource::GQLResource;
+use super::task::GQLTask;
+
 #[graphql_object]
 #[graphql(name = "Booking")]
 impl booking::Model {
@@ -26,8 +29,8 @@ impl booking::Model {
         self.r#final
     }
 
-    pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<resource::Model>> {
-        resolve_many_to_many!(
+    pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
+        let models: Vec<resource::Model> = resolve_many_to_many!(
             ctx,
             booking_resource::Entity,
             booking_resource::Column::BookingId,
@@ -35,13 +38,14 @@ impl booking::Model {
             |l: booking_resource::Model| l.resource_id,
             resource::Entity,
             resource::Column::Id
-        )
+        )?;
+        Ok(models.into_iter().map(GQLResource::from).collect())
     }
 
-    pub async fn task(&self, ctx: &Context) -> anyhow::Result<task::Model> {
+    pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
         const CIDX: usize = task::Column::Id as usize;
         ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
             .await
-            .map(|opt_t| opt_t.expect("Task must exist."))
+            .map(|opt_t| GQLTask::from(opt_t.expect("Task must exist.")))
     }
 }

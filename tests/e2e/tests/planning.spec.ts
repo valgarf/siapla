@@ -694,7 +694,10 @@ test.describe("Planning Workflow", () => {
             .toBeGreaterThanOrEqual(1);
 
         // Update the task effort to be larger
-        await graphqlRequest(
+        // Note: taskSave with dbId creates a NEW iteration (new dbId) and soft-deletes the old one
+        const updatedTask = await graphqlRequest<{
+            taskSave: { dbId: number };
+        }>(
             `mutation TaskSave($task: TaskSaveInput!) {
         taskSave(task: $task) { dbId }
       }`,
@@ -719,11 +722,13 @@ test.describe("Planning Workflow", () => {
                 },
             },
         );
+        const updatedTaskId = updatedTask.taskSave.dbId;
 
         // Recalculate again
         await graphqlRequest(`mutation RecalculateNow { recalculateNow }`);
 
         // Poll for the updated plan - total allocation span should be longer now
+        // Use the NEW task dbId since the old iteration was soft-deleted
         await expect
             .poll(
                 async () => {
@@ -732,18 +737,18 @@ test.describe("Planning Workflow", () => {
                             allocations: Array<{
                                 start: string;
                                 end: string;
-                                task: { dbId: number };
+                                task: { dbId: number; title: string };
                             }>;
                         };
                     }>(
                         `query CurrentPlan {
               currentPlan {
-                allocations { start end task { dbId } }
+                allocations { start end task { dbId title } }
               }
             }`,
                     );
                     const taskAllocs = plan.currentPlan.allocations.filter(
-                        (a) => a.task.dbId === task.taskSave.dbId,
+                        (a) => a.task.dbId === updatedTaskId,
                     );
                     if (taskAllocs.length === 0) return 0;
                     // Calculate total hours of allocation

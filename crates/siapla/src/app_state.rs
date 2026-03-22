@@ -17,15 +17,17 @@ pub struct AppState {
     pub manual_tx: mpsc::UnboundedSender<()>,
     /// watch channel for current calculation state
     pub state_tx: watch::Sender<CalculationState>,
+    /// whether the resetDatabase mutation is allowed
+    pub allow_reset: bool,
 }
 
 impl AppState {
     /// Create a new AppState and return it together with the manual receiver.
-    pub fn new() -> (Arc<Self>, mpsc::UnboundedReceiver<()>) {
+    pub fn new(allow_reset: bool) -> (Arc<Self>, mpsc::UnboundedReceiver<()>) {
         let (modify_tx, _modify_rx) = broadcast::channel(16);
         let (manual_tx, manual_rx) = mpsc::unbounded_channel();
         let (state_tx, _state_rx) = watch::channel(CalculationState::Modified);
-        (Arc::new(Self { modify_tx, manual_tx, state_tx }), manual_rx)
+        (Arc::new(Self { modify_tx, manual_tx, state_tx, allow_reset }), manual_rx)
     }
 
     pub fn notify_modified(&self, sender: impl Into<String>) {

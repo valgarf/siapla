@@ -8,6 +8,8 @@ use crate::{
 use super::{
     context::Context,
     holiday::{Country, GQLHoliday, Region},
+    resource::GQLResource,
+    task::GQLTask,
 };
 use juniper::graphql_object;
 use sea_orm::*;
@@ -27,7 +29,7 @@ impl Query {
         Ok("Hello World from Juniper!".to_owned())
     }
 
-    async fn tasks(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<task::Model>> {
+    async fn tasks(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLTask>> {
         let txn = ctx.txn().await?;
         let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = task::Entity::find()
@@ -39,13 +41,10 @@ impl Query {
             .order_by_asc(task::Column::Title)
             .all(txn)
             .await?;
-        Ok(res)
+        Ok(res.into_iter().map(|m| GQLTask::at_revision(m, revision)).collect())
     }
 
-    async fn resources(
-        ctx: &Context,
-        revision: Option<Int64>,
-    ) -> anyhow::Result<Vec<resource::Model>> {
+    async fn resources(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLResource>> {
         let txn = ctx.txn().await?;
         let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = resource::Entity::find()
@@ -57,7 +56,7 @@ impl Query {
             .order_by_asc(resource::Column::Name)
             .all(txn)
             .await?;
-        Ok(res)
+        Ok(res.into_iter().map(|m| GQLResource::at_revision(m, revision)).collect())
     }
 
     async fn countries() -> Vec<Country> {
@@ -98,7 +97,10 @@ impl Query {
         Ok(Plan { revision: revision.map(i64::from) })
     }
 
-    async fn bookings(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<booking::Model>> {
+    async fn bookings(
+        ctx: &Context,
+        revision: Option<Int64>,
+    ) -> anyhow::Result<Vec<booking::Model>> {
         let txn = ctx.txn().await?;
         let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = booking::Entity::find()
@@ -126,6 +128,12 @@ impl Query {
             .all(tx)
             .await?;
         Ok(res)
+    }
+
+    async fn latest_revision(ctx: &Context) -> anyhow::Result<Option<Int64>> {
+        let txn = ctx.txn().await?;
+        let rev = crate::revisioning::latest_revision_id(txn).await?;
+        Ok(rev.map(Int64::from))
     }
 }
 

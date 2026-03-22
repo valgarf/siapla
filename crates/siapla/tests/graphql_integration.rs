@@ -11,6 +11,7 @@ use tokio::sync::OnceCell;
 use juniper::{ScalarValue as _, Variables};
 use sea_orm::{Database, DatabaseConnection, TransactionTrait as _};
 use serial_test::serial;
+use siapla::gql::scalars::MyScalarValue;
 use siapla::{
     app_state::AppState,
     gql::{
@@ -73,8 +74,11 @@ async fn clean_database() {
         "resource_constraint",
         "availability",
         "vacation",
-        "task",
-        "resource",
+        "task_iteration",
+        "task_header",
+        "resource_iteration",
+        "resource_header",
+        "revision",
         "holiday_entry",
         "holiday",
     ] {
@@ -94,10 +98,10 @@ async fn clean_database() {
 /// Panics on transport/execution errors.
 async fn gql_exec(
     query: &str,
-    vars: &Variables,
-) -> (juniper::Value, Vec<juniper::ExecutionError<juniper::DefaultScalarValue>>) {
+    vars: &Variables<MyScalarValue>,
+) -> (juniper::Value<MyScalarValue>, Vec<juniper::ExecutionError<MyScalarValue>>) {
     let schema = schema();
-    let (app_state, _manual_rx) = AppState::new();
+    let (app_state, _manual_rx) = AppState::new(true);
     let ctx = Context::new(app_state);
     let (val, errors) = juniper::execute(query, None, &schema, vars, &*ctx)
         .await
@@ -112,19 +116,22 @@ async fn gql_exec(
 }
 
 /// Shorthand: execute, assert zero errors, return the data `Value`.
-async fn gql_ok(query: &str, vars: &Variables) -> juniper::Value {
+async fn gql_ok(query: &str, vars: &Variables<MyScalarValue>) -> juniper::Value<MyScalarValue> {
     let (val, errors) = gql_exec(query, vars).await;
     assert!(errors.is_empty(), "Expected no GraphQL errors but got: {errors:?}\nQuery: {query}");
     val
 }
 
 /// Shorthand: execute with empty variables.
-async fn gql_ok_simple(query: &str) -> juniper::Value {
-    gql_ok(query, &Variables::new()).await
+async fn gql_ok_simple(query: &str) -> juniper::Value<MyScalarValue> {
+    gql_ok(query, &Variables::<MyScalarValue>::new()).await
 }
 
 /// Get the juniper value at the given dot path
-fn value_at_path<'a>(val: &'a juniper::Value, path: &str) -> &'a juniper::Value {
+fn value_at_path<'a>(
+    val: &'a juniper::Value<MyScalarValue>,
+    path: &str,
+) -> &'a juniper::Value<MyScalarValue> {
     let mut cur = val;
     for key in path.split('.') {
         cur = cur
@@ -142,7 +149,7 @@ fn value_at_path<'a>(val: &'a juniper::Value, path: &str) -> &'a juniper::Value 
 
 /// Extract a scalar i64 from a juniper Value sitting at the given dot-path
 /// (e.g. "taskSave.dbId").
-fn extract_i64(val: &juniper::Value, path: &str) -> i64 {
+fn extract_i64(val: &juniper::Value<MyScalarValue>, path: &str) -> i64 {
     let cur = value_at_path(val, path);
     let s = cur.as_scalar().unwrap_or_else(|| panic!("value at '{path}' is not a scalar: {cur:?}"));
     s.try_to_int()
@@ -150,19 +157,22 @@ fn extract_i64(val: &juniper::Value, path: &str) -> i64 {
         .unwrap_or_else(|| panic!("value at '{path}' is not an int: {cur:?}"))
 }
 
-fn extract_str<'a>(val: &'a juniper::Value, path: &str) -> &'a str {
+fn extract_str<'a>(val: &'a juniper::Value<MyScalarValue>, path: &str) -> &'a str {
     let cur = value_at_path(val, path);
     cur.as_scalar()
         .and_then(|s| s.try_as_str())
         .unwrap_or_else(|| panic!("value at '{path}' is not a string: {cur:?}"))
 }
 
-fn extract_list<'a>(val: &'a juniper::Value, path: &str) -> &'a Vec<juniper::Value> {
+fn extract_list<'a>(
+    val: &'a juniper::Value<MyScalarValue>,
+    path: &str,
+) -> &'a Vec<juniper::Value<MyScalarValue>> {
     let cur = value_at_path(val, path);
     cur.as_list_value().unwrap_or_else(|| panic!("value at '{path}' is not a list: {cur:?}"))
 }
 
-fn extract_f64(val: &juniper::Value, path: &str) -> f64 {
+fn extract_f64(val: &juniper::Value<MyScalarValue>, path: &str) -> f64 {
     let cur = value_at_path(val, path);
     cur.as_scalar()
         .and_then(|s| s.try_to_float())
@@ -286,6 +296,11 @@ async fn query_task_predecessors(task_id: i64) -> Vec<i64> {
     let mut ids: Vec<i64> = preds.iter().map(|p| extract_i64(p, "dbId")).collect();
     ids.sort();
     ids
+}
+
+async fn latest_revision() -> i64 {
+    let val = gql_ok_simple(r#"{ latestRevision }"#).await;
+    extract_i64(&val, "latestRevision")
 }
 
 // ===========================================================================
@@ -649,6 +664,90 @@ async fn test_dependency_types() {
     update_task_preds(ms, "Dep-Milestone", "MILESTONE", &[group]).await;
     let preds = query_task_predecessors(ms).await;
     assert_eq!(preds, vec![group], "Group->Milestone predecessor mismatch");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_dependency_query_uses_distinct_dataloaders_per_revision() {
+    clean_database().await;
+
+    let predecessor_v1 =
+        create_task("Rev-Pred-V1", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let successor_v1 = create_task(
+        "Rev-Succ",
+        "TASK",
+        1.0,
+        Some(4.0),
+        None,
+        Some(&[predecessor_v1]),
+        None,
+        None,
+        None,
+    )
+    .await;
+    let revision_v1 = latest_revision().await;
+
+    let predecessor_v2 =
+        create_task("Rev-Pred-V2", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+
+    let update_successor = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {successor_v1},
+                title: "Rev-Succ",
+                description: "desc for Rev-Succ",
+                designation: TASK,
+                priority: 1.0,
+                effort: 4.0,
+                predecessors: [{predecessor_v2}]
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    let update_val = gql_ok_simple(&update_successor).await;
+    let successor_v2 = extract_i64(&update_val, "taskSave.dbId");
+    let revision_v2 = latest_revision().await;
+
+    let query = format!(
+        r#"{{
+            old: tasks(revision: {revision_v1}) {{
+                dbId
+                predecessors {{ dbId }}
+            }}
+            new: tasks(revision: {revision_v2}) {{
+                dbId
+                predecessors {{ dbId }}
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&query).await;
+
+    let old_tasks = extract_list(&val, "old");
+    let old_successor = old_tasks
+        .iter()
+        .find(|t| extract_i64(t, "dbId") == successor_v1)
+        .unwrap_or_else(|| panic!("task with dbId={successor_v1} not found in old revision"));
+    let old_preds = extract_list(old_successor, "predecessors");
+    assert_eq!(old_preds.len(), 1, "expected 1 predecessor in old revision");
+    assert_eq!(
+        extract_i64(&old_preds[0], "dbId"),
+        predecessor_v1,
+        "expected old revision predecessor to be {predecessor_v1}"
+    );
+
+    let new_tasks = extract_list(&val, "new");
+    let new_successor = new_tasks
+        .iter()
+        .find(|t| extract_i64(t, "dbId") == successor_v2)
+        .unwrap_or_else(|| panic!("task with dbId={successor_v2} not found in new revision"));
+    let new_preds = extract_list(new_successor, "predecessors");
+    assert_eq!(new_preds.len(), 1, "expected 1 predecessor in new revision");
+    assert_eq!(
+        extract_i64(&new_preds[0], "dbId"),
+        predecessor_v2,
+        "expected new revision predecessor to be {predecessor_v2}"
+    );
 }
 
 #[tokio::test]

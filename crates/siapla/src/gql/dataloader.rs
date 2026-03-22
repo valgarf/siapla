@@ -12,7 +12,7 @@ use sea_orm::{
 
 use super::context::Context;
 use crate::SiaplaError;
-use crate::revisioning::active_for_revision;
+use crate::revisioning::{active_for_revision, resolve_revision};
 
 use crate::entity::{availability, resource_iteration as resource, vacation};
 use crate::scheduling::{Interval, Intervals};
@@ -261,12 +261,18 @@ where
     ET::Column: IntoEnumIterator,
 {
     pub ctx: Weak<Context>,
+    pub revision: Option<i64>,
+    pub rev_created_idx: Option<usize>,
+    pub rev_deleted_idx: Option<usize>,
     pub pd: std::marker::PhantomData<ET>,
 }
 
 async fn fallible_load<ET: EntityTrait, const CIDX: usize>(
     ctx: &Weak<Context>,
     values: &[sea_orm::Value],
+    revision: Option<i64>,
+    rev_created_idx: Option<usize>,
+    rev_deleted_idx: Option<usize>,
 ) -> Result<HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>, anyhow::Error>
 where
     ET::Column: IntoEnumIterator,
@@ -274,8 +280,20 @@ where
     let col: ET::Column = ET::Column::iter().nth(CIDX).expect("Loader with invalid column index");
     let ctx = ctx.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
     let txn = ctx.txn().await?;
-    let tasks: Vec<ET::Model> =
-        ET::find().filter(col.is_in(values.to_vec())).order_by_asc(col).all(txn).await?;
+    let resolved_revision = resolve_revision(txn, revision).await?;
+    let mut query = ET::find().filter(col.is_in(values.to_vec()));
+    if let (Some(revision), Some(rev_created_idx), Some(rev_deleted_idx)) =
+        (resolved_revision, rev_created_idx, rev_deleted_idx)
+    {
+        let rev_created_col: ET::Column = ET::Column::iter()
+            .nth(rev_created_idx)
+            .expect("Loader with invalid rev_created column index");
+        let rev_deleted_col: ET::Column = ET::Column::iter()
+            .nth(rev_deleted_idx)
+            .expect("Loader with invalid rev_deleted column index");
+        query = query.filter(active_for_revision(rev_created_col, rev_deleted_col, Some(revision))?);
+    }
+    let tasks: Vec<ET::Model> = query.order_by_asc(col).all(txn).await?;
     Ok(tasks
         .into_iter()
         .chunk_by(|task| task.get(col))
@@ -294,7 +312,15 @@ where
         &mut self,
         values: &[sea_orm::Value],
     ) -> HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>> {
-        match fallible_load::<ET, CIDX>(&self.ctx, values).await {
+        match fallible_load::<ET, CIDX>(
+            &self.ctx,
+            values,
+            self.revision,
+            self.rev_created_idx,
+            self.rev_deleted_idx,
+        )
+        .await
+        {
             Ok(data) => data,
             Err(err) => {
                 let clonable_err = Arc::new(err);

@@ -61,6 +61,8 @@ pub async fn resolve_revision(
     if revision.is_some() { Ok(revision) } else { latest_revision_id(txn).await }
 }
 
+
+
 pub fn active_for_revision<C: ColumnTrait>(
     rev_created_column: C,
     rev_deleted_column: C,

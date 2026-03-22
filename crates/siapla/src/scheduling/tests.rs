@@ -129,7 +129,7 @@ fn make_project(
     objs: ProjectObjects,
     g: Graph<Node, ()>,
 ) -> Project {
-    Project { start, calculation_end: end, objs, g, issues: vec![] }
+    Project { revision: 0, start, calculation_end: end, objs, g, issues: vec![] }
 }
 
 /// Convenience: attach a required resource constraint to a task.

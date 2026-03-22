@@ -1,5 +1,6 @@
 use std::{collections::HashSet, iter::zip};
 
+use super::resource::GQLResource;
 use crate::{
     entity::{availability, resource_iteration as resource},
     gql::context::Context,
@@ -34,10 +35,11 @@ impl availability::Model {
     fn db_id(&self) -> &i32 {
         &self.id
     }
-    async fn resource(&self, ctx: &Context) -> anyhow::Result<resource::Model> {
+    async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
         const CIDX: usize = resource::Column::Id as usize;
-        let resource = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
-        resource.ok_or(anyhow!("Failed to find resource for Availability"))
+        let model = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
+        let model = model.ok_or(anyhow!("Failed to find resource for Availability"))?;
+        Ok(GQLResource::from(model))
     }
     fn duration(&self) -> anyhow::Result<i32> {
         let mut secs = self.duration * Decimal::new(3600, 0);
@@ -75,7 +77,7 @@ pub async fn update_availability(
     revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let existing_availability: Vec<_> = model.availability(ctx).await?.into_iter().collect();
+    let existing_availability: Vec<_> = model.availability_latest(ctx).await?.into_iter().collect();
     let existing: HashSet<Weekday> =
         existing_availability.iter().map(|el| el.weekday()).collect::<anyhow::Result<_>>()?;
     let target: HashSet<Weekday> = availability.iter().map(|a| a.weekday).collect();

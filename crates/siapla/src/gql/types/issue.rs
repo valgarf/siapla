@@ -1,3 +1,4 @@
+use super::task::GQLTask;
 use crate::entity::task_iteration as task;
 use crate::{entity::issue, gql::context::Context};
 use juniper::GraphQLEnum;
@@ -20,10 +21,10 @@ impl issue::Model {
     fn r#type(&self) -> anyhow::Result<IssueType> {
         Ok(IssueType::from_str(&self.r#type)?)
     }
-    pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<task::Model>> {
+    pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
         const CIDX: usize = task::Column::Id as usize;
         let t = ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id).await?;
-        Ok(t)
+        Ok(t.map(GQLTask::from))
     }
 }
 

@@ -43,15 +43,15 @@ generate-entity: (migrate "up")
 [working-directory(".")]
 serve-backend :
     # pass database url to the binary via command line flag --database-url
-    watchexec -d 1s -o restart -w crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
+    watchexec -d 1s -o restart -w crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory(".")]
 serve-backend-release:
-    watchexec -d 1s -o restart -w crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
+    watchexec -d 1s -o restart -w crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory(".")]
 serve-backend-once:
-    cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880"
+    cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory("./frontend")]
 serve-frontend:
@@ -169,6 +169,10 @@ test-e2e-tasks:
 [working-directory("./tests/e2e")]
 test-e2e-planning:
     npx playwright test tests/planning.spec.ts
+
+[working-directory("./tests/e2e")]
+test-e2e-revisions:
+    npx playwright test tests/revisions.spec.ts
 
 # Run all tests (unit + integration; E2E requires servers to be running separately)
 [working-directory(".")]

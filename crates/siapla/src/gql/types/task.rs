@@ -2,9 +2,9 @@ use std::{collections::HashSet, str::FromStr};
 
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use itertools::Itertools as _;
+
 use juniper::{GraphQLEnum, Nullable, graphql_object};
-use sea_orm::{ActiveValue, QueryOrder as _, prelude::*};
+use sea_orm::{ActiveValue, Condition, QueryOrder as _, prelude::*};
 use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
@@ -17,8 +17,14 @@ use crate::{
         common::{nullable_to_av, opt_to_av, resolve_many_to_many},
         context::Context,
     },
-    revisioning::{PlanState, create_revision},
+    revisioning::{PlanState, active_for_revision, create_revision},
 };
+
+use super::resource::GQLResource;
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq)]
 pub enum TaskDesignation {
@@ -35,127 +41,261 @@ impl From<TaskDesignation> for String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GQLTask – revision-aware GraphQL wrapper for task_iteration::Model
+// ---------------------------------------------------------------------------
+
+pub struct GQLTask {
+    pub model: task::Model,
+    pub revision: Option<i64>,
+}
+
+impl GQLTask {
+    pub fn at_revision(model: task::Model, revision: Option<i64>) -> Self {
+        Self { model, revision }
+    }
+}
+
+impl From<task::Model> for GQLTask {
+    fn from(model: task::Model) -> Self {
+        Self { model, revision: None }
+    }
+}
+
 #[graphql_object]
 #[graphql(name = "Task")]
-impl task::Model {
+impl GQLTask {
     fn db_id(&self) -> &i32 {
-        &self.id
+        &self.model.id
     }
     fn title(&self) -> &str {
-        &self.title
+        &self.model.title
     }
     fn description(&self) -> &str {
-        &self.description
+        &self.model.description
     }
     fn earliest_start(&self) -> &Option<DateTime<Utc>> {
-        &self.earliest_start
+        &self.model.earliest_start
     }
     fn schedule_target(&self) -> &Option<DateTime<Utc>> {
-        &self.schedule_target
+        &self.model.schedule_target
     }
     fn effort(&self) -> Option<f64> {
-        self.effort.map(Into::into)
+        self.model.effort.map(Into::into)
     }
     fn priority(&self) -> f64 {
-        self.priority as f64
+        self.model.priority as f64
     }
     fn designation(&self) -> anyhow::Result<TaskDesignation> {
-        Ok(TaskDesignation::from_str(&self.designation)?)
+        Ok(TaskDesignation::from_str(&self.model.designation)?)
     }
-    pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
-        resolve_many_to_many!(
+
+    // -- Predecessors (revision-aware via revision-aware dataloader) ---------
+    pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
+        let rev = self.revision;
+        let models: Vec<task::Model> = resolve_many_to_many!(
             ctx,
+            rev,
             dependency::Entity,
             dependency::Column::SuccessorId,
-            self.id,
-            |l: dependency::Model| l.predecessor_id,
+            self.model.id,
+            |d: dependency::Model| d.predecessor_id,
             task::Entity,
             task::Column::Id
-        )
+        )?;
+        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, rev)).collect())
     }
-    pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
-        resolve_many_to_many!(
+
+    // -- Successors (revision-aware via revision-aware dataloader) -----------
+    pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
+        let rev = self.revision;
+        let models: Vec<task::Model> = resolve_many_to_many!(
             ctx,
+            rev,
             dependency::Entity,
             dependency::Column::PredecessorId,
-            self.id,
-            |l: dependency::Model| l.successor_id,
+            self.model.id,
+            |d: dependency::Model| d.successor_id,
             task::Entity,
             task::Column::Id
-        )
+        )?;
+        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, rev)).collect())
     }
-    pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<Self>> {
-        const CIDX: usize = task::Column::ParentId as usize;
-        ctx.load_by_col::<task::Entity, CIDX>(self.id).await
+
+    // -- Children (header-based resolution so in-place parent_id mutations
+    //    don't break historical queries) ------------------------------------
+    pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
+        let txn = ctx.txn().await?;
+        let iteration_ids = all_iteration_ids_for_header(txn, &self.model).await?;
+        let children = task::Entity::find()
+            .filter(task::Column::ParentId.is_in(iteration_ids))
+            .filter(active_for_revision(
+                task::Column::RevCreated,
+                task::Column::RevDeleted,
+                self.revision,
+            )?)
+            .order_by_asc(task::Column::Title)
+            .all(txn)
+            .await?;
+        Ok(children.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<crate::entity::issue::Model>> {
         const CIDX: usize = crate::entity::issue::Column::TaskId as usize;
-        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(self.id).await
+        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(self.model.id).await
     }
 
-    async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<Self>> {
-        match self.parent_id {
-            None => Ok(None),
-            Some(parent_id) => {
-                const CIDX: usize = task::Column::Id as usize;
-                ctx.load_one_by_col::<task::Entity, CIDX>(parent_id).await
+    // -- Parent (header-based resolution) -----------------------------------
+    async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
+        let parent_id = match self.model.parent_id {
+            Some(pid) => pid,
+            None => return Ok(None),
+        };
+        let txn = ctx.txn().await?;
+        // Find the iteration referenced by parent_id to get its header
+        let parent_iter = task::Entity::find_by_id(parent_id).one(txn).await?;
+        let parent_iter = match parent_iter {
+            Some(pi) => pi,
+            None => return Ok(None),
+        };
+        match parent_iter.header_id {
+            Some(hid) => {
+                let active = task::Entity::find()
+                    .filter(task::Column::HeaderId.eq(hid))
+                    .filter(active_for_revision(
+                        task::Column::RevCreated,
+                        task::Column::RevDeleted,
+                        self.revision,
+                    )?)
+                    .one(txn)
+                    .await?;
+                Ok(active.map(|m| GQLTask::at_revision(m, self.revision)))
+            }
+            None => {
+                // No header – fall back to direct lookup
+                let active = task::Entity::find_by_id(parent_id)
+                    .filter(active_for_revision(
+                        task::Column::RevCreated,
+                        task::Column::RevDeleted,
+                        self.revision,
+                    )?)
+                    .one(txn)
+                    .await?;
+                Ok(active.map(|m| GQLTask::at_revision(m, self.revision)))
             }
         }
     }
+
+    // -- Resource constraints (revision-aware) ------------------------------
     async fn resource_constraints(
         &self,
         ctx: &Context,
-    ) -> anyhow::Result<Vec<resource_constraint::Model>> {
-        const CIDX: usize = resource_constraint::Column::TaskId as usize;
-        ctx.load_by_col::<resource_constraint::Entity, CIDX>(self.id).await
+    ) -> anyhow::Result<Vec<GQLResourceConstraint>> {
+        let txn = ctx.txn().await?;
+        let constraints = resource_constraint::Entity::find()
+            .filter(resource_constraint::Column::TaskId.eq(self.model.id))
+            .filter(active_for_revision(
+                resource_constraint::Column::RevCreated,
+                resource_constraint::Column::RevDeleted,
+                self.revision,
+            )?)
+            .order_by_asc(resource_constraint::Column::Id)
+            .all(txn)
+            .await?;
+        Ok(constraints
+            .into_iter()
+            .map(|m| GQLResourceConstraint { model: m, revision: self.revision })
+            .collect())
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
         const CIDX: usize = allocation::Column::TaskId as usize;
-        ctx.load_by_col::<allocation::Entity, CIDX>(self.id).await.map(|mut res| {
+        ctx.load_by_col::<allocation::Entity, CIDX>(self.model.id).await.map(|mut res| {
             res.sort_by_key(|a| a.end);
             res
         })
     }
 }
 
+// ---------------------------------------------------------------------------
+// GQLResourceConstraint – revision-aware wrapper
+// ---------------------------------------------------------------------------
+
+pub struct GQLResourceConstraint {
+    pub model: resource_constraint::Model,
+    pub revision: Option<i64>,
+}
+
 #[graphql_object]
 #[graphql(name = "ResourceConstraint")]
-impl resource_constraint::Model {
+impl GQLResourceConstraint {
     fn id(&self) -> i32 {
-        self.id
+        self.model.id
     }
     fn optional(&self) -> bool {
-        self.optional
+        self.model.optional
     }
     fn speed(&self) -> f64 {
-        self.speed as f64
+        self.model.speed as f64
     }
-    async fn entries(
-        &self,
-        ctx: &Context,
-    ) -> anyhow::Result<Vec<resource_constraint_entry::Model>> {
+    async fn entries(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResourceConstraintEntry>> {
         let entries = resource_constraint_entry::Entity::find()
-            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(self.id))
+            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(self.model.id))
             .all(ctx.txn().await?)
             .await?;
-        Ok(entries)
+        Ok(entries
+            .into_iter()
+            .map(|m| GQLResourceConstraintEntry { model: m, revision: self.revision })
+            .collect())
     }
+}
+
+// ---------------------------------------------------------------------------
+// GQLResourceConstraintEntry – revision-aware wrapper
+// ---------------------------------------------------------------------------
+
+pub struct GQLResourceConstraintEntry {
+    pub model: resource_constraint_entry::Model,
+    pub revision: Option<i64>,
 }
 
 #[graphql_object]
 #[graphql(name = "ResourceConstraintEntry")]
-impl resource_constraint_entry::Model {
+impl GQLResourceConstraintEntry {
     fn id(&self) -> i32 {
-        self.id
+        self.model.id
     }
-    async fn resource(&self, ctx: &Context) -> anyhow::Result<resource::Model> {
-        const CIDX: usize = resource::Column::Id as usize;
-        let result = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
-        result.ok_or(anyhow!("Resource not found"))
+    async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
+        let txn = ctx.txn().await?;
+        // Resolve via header so we return the iteration active at the target revision
+        let iter = resource::Entity::find_by_id(self.model.resource_id).one(txn).await?;
+        let iter = match iter {
+            Some(it) => it,
+            None => return Err(anyhow!("Resource not found")),
+        };
+        match iter.header_id {
+            Some(hid) => {
+                let active = resource::Entity::find()
+                    .filter(resource::Column::HeaderId.eq(hid))
+                    .filter(active_for_revision(
+                        resource::Column::RevCreated,
+                        resource::Column::RevDeleted,
+                        self.revision,
+                    )?)
+                    .one(txn)
+                    .await?;
+                active
+                    .map(|m| GQLResource::at_revision(m, self.revision))
+                    .ok_or_else(|| anyhow!("Resource not found at revision"))
+            }
+            None => Ok(GQLResource::at_revision(iter, self.revision)),
+        }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Input types (unchanged)
+// ---------------------------------------------------------------------------
 
 #[derive(juniper::GraphQLInputObject, Clone)]
 pub struct ResourceConstraintEntryInput {
@@ -205,13 +345,45 @@ impl From<TaskSaveInput> for crate::entity::task_iteration::ActiveModel {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Internal helpers (not exposed as GraphQL)
+// ---------------------------------------------------------------------------
+
+/// Return every iteration id that belongs to the same header as `model`.
+async fn all_iteration_ids_for_header(
+    txn: &sea_orm::DatabaseTransaction,
+    model: &task::Model,
+) -> anyhow::Result<Vec<i32>> {
+    match model.header_id {
+        Some(hid) => Ok(task::Entity::find()
+            .filter(task::Column::HeaderId.eq(hid))
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|m| m.id)
+            .collect()),
+        None => Ok(vec![model.id]),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mutation helpers – update predecessors / successors / children / constraints
+// ---------------------------------------------------------------------------
+
 async fn update_predecessors(
     ctx: &Context,
     model: &task::Model,
     mut predecessors: Vec<i32>,
+    revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let existing: HashSet<i32> = model.predecessors(ctx).await?.iter().map(|el| el.id).collect();
+    // Query existing active predecessors directly (latest)
+    let existing_deps = dependency::Entity::find()
+        .filter(dependency::Column::SuccessorId.eq(model.id))
+        .filter(dependency::Column::RevDeleted.is_null())
+        .all(txn)
+        .await?;
+    let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.predecessor_id).collect();
     let target: HashSet<i32> = HashSet::from_iter(predecessors.drain(..));
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
     let add: HashSet<i32> = target.difference(&existing).cloned().collect();
@@ -220,12 +392,14 @@ async fn update_predecessors(
         existing, target, remove, add
     );
     if !remove.is_empty() {
-        dependency::Entity::delete_many()
+        dependency::Entity::update_many()
+            .col_expr(dependency::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(
                 dependency::Column::SuccessorId
                     .eq(model.id)
                     .and(dependency::Column::PredecessorId.is_in(remove)),
             )
+            .filter(dependency::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
     }
@@ -233,6 +407,8 @@ async fn update_predecessors(
         dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
             predecessor_id: sea_orm::ActiveValue::Set(i),
             successor_id: sea_orm::ActiveValue::Set(model.id),
+            rev_created: sea_orm::ActiveValue::Set(revision_id),
+            rev_deleted: sea_orm::ActiveValue::Set(None),
             ..Default::default()
         }))
         .exec(txn)
@@ -245,9 +421,15 @@ async fn update_successors(
     ctx: &Context,
     model: &task::Model,
     mut successors: Vec<i32>,
+    revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let existing: HashSet<i32> = model.successors(ctx).await?.iter().map(|el| el.id).collect();
+    let existing_deps = dependency::Entity::find()
+        .filter(dependency::Column::PredecessorId.eq(model.id))
+        .filter(dependency::Column::RevDeleted.is_null())
+        .all(txn)
+        .await?;
+    let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.successor_id).collect();
     let target: HashSet<i32> = HashSet::from_iter(successors.drain(..));
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
     let add: HashSet<i32> = target.difference(&existing).cloned().collect();
@@ -256,12 +438,14 @@ async fn update_successors(
         existing, target, remove, add
     );
     if !remove.is_empty() {
-        dependency::Entity::delete_many()
+        dependency::Entity::update_many()
+            .col_expr(dependency::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(
                 dependency::Column::PredecessorId
                     .eq(model.id)
                     .and(dependency::Column::SuccessorId.is_in(remove)),
             )
+            .filter(dependency::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
     }
@@ -269,6 +453,8 @@ async fn update_successors(
         dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
             successor_id: sea_orm::ActiveValue::Set(i),
             predecessor_id: sea_orm::ActiveValue::Set(model.id),
+            rev_created: sea_orm::ActiveValue::Set(revision_id),
+            rev_deleted: sea_orm::ActiveValue::Set(None),
             ..Default::default()
         }))
         .exec(txn)
@@ -283,7 +469,12 @@ async fn update_children(
     mut children: Vec<i32>,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let existing: HashSet<i32> = model.children(ctx).await?.iter().map(|el| el.id).collect();
+    let existing_children = task::Entity::find()
+        .filter(task::Column::ParentId.eq(model.id))
+        .filter(task::Column::RevDeleted.is_null())
+        .all(txn)
+        .await?;
+    let existing: HashSet<i32> = existing_children.into_iter().map(|el| el.id).collect();
     let target: HashSet<i32> = HashSet::from_iter(children.drain(..));
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
     let add: HashSet<i32> = target.difference(&existing).cloned().collect();
@@ -326,8 +517,7 @@ async fn update_resource_constraints(
     let new_len = constraints.len();
     let min_len = old_len.min(new_len);
 
-    // check if new reosurce constraints do not use one resource multiple times
-    // TODO: this restriction could be lifted by making the scheduling algorithm more complex
+    // check if new resource constraints do not use one resource multiple times
     let all_used_resources: HashSet<i32> =
         constraints.iter().flat_map(|c| c.entries.iter().map(|e| e.resource_id)).collect();
     let num_entries: usize = constraints.iter().map(|c| c.entries.len()).sum();
@@ -434,34 +624,126 @@ async fn update_resource_constraints(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// task_save – public mutation entry-point (returns raw model; caller wraps)
+// ---------------------------------------------------------------------------
+
 pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result<task::Model> {
     let predecessors = task.predecessors.take();
     let successors = task.successors.take();
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
-    // keep a copy for issue detection after mutations (not used for now)
     let txn = ctx.txn().await?;
     let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
     let mut am = task::ActiveModel::from(task);
     let model = if am.id.is_set() {
-        am.rev_deleted = ActiveValue::Set(Some(revision_id));
-        let old = am.update(txn).await?;
-        task::ActiveModel {
-            id: ActiveValue::NotSet,
-            parent_id: ActiveValue::Set(old.parent_id),
-            title: ActiveValue::Set(old.title),
-            description: ActiveValue::Set(old.description),
-            designation: ActiveValue::Set(old.designation),
-            earliest_start: ActiveValue::Set(old.earliest_start),
-            schedule_target: ActiveValue::Set(old.schedule_target),
-            effort: ActiveValue::Set(old.effort),
-            priority: ActiveValue::Set(old.priority),
-            header_id: ActiveValue::Set(old.header_id),
-            rev_created: ActiveValue::Set(revision_id),
-            rev_deleted: ActiveValue::Set(None),
+        let old_id = am.id.clone().unwrap();
+        // Fetch the existing iteration to get its header_id
+        let existing = task::Entity::find_by_id(old_id)
+            .one(txn)
+            .await?
+            .ok_or_else(|| anyhow!("Task iteration {} not found", old_id))?;
+        // Soft-delete the old iteration
+        task::Entity::update_many()
+            .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+            .filter(task::Column::Id.eq(old_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .exec(txn)
+            .await?;
+        // Create new iteration
+        am.id = ActiveValue::NotSet;
+        am.header_id = ActiveValue::Set(existing.header_id);
+        am.rev_created = ActiveValue::Set(revision_id);
+        am.rev_deleted = ActiveValue::Set(None);
+        let new_model = am.insert(txn).await?;
+
+        // ── Migrate relationships from old iteration to new iteration ──
+
+        // 1. Dependencies
+        let old_deps = dependency::Entity::find()
+            .filter(
+                Condition::any()
+                    .add(dependency::Column::PredecessorId.eq(old_id))
+                    .add(dependency::Column::SuccessorId.eq(old_id)),
+            )
+            .filter(dependency::Column::RevDeleted.is_null())
+            .all(txn)
+            .await?;
+        for dep in &old_deps {
+            dependency::Entity::update_many()
+                .col_expr(
+                    dependency::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(dependency::Column::Id.eq(dep.id))
+                .filter(dependency::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+            let new_pred =
+                if dep.predecessor_id == old_id { new_model.id } else { dep.predecessor_id };
+            let new_succ = if dep.successor_id == old_id { new_model.id } else { dep.successor_id };
+            dependency::ActiveModel {
+                predecessor_id: sea_orm::ActiveValue::Set(new_pred),
+                successor_id: sea_orm::ActiveValue::Set(new_succ),
+                rev_created: sea_orm::ActiveValue::Set(revision_id),
+                rev_deleted: sea_orm::ActiveValue::Set(None),
+                ..Default::default()
+            }
+            .insert(txn)
+            .await?;
         }
-        .insert(txn)
-        .await?
+
+        // 2. Resource constraints
+        let old_constraints = resource_constraint::Entity::find()
+            .filter(resource_constraint::Column::TaskId.eq(old_id))
+            .filter(resource_constraint::Column::RevDeleted.is_null())
+            .all(txn)
+            .await?;
+        for old_c in &old_constraints {
+            resource_constraint::Entity::update_many()
+                .col_expr(
+                    resource_constraint::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(resource_constraint::Column::Id.eq(old_c.id))
+                .filter(resource_constraint::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+            let old_entries = resource_constraint_entry::Entity::find()
+                .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(old_c.id))
+                .all(txn)
+                .await?;
+            let new_c = resource_constraint::ActiveModel {
+                id: ActiveValue::NotSet,
+                task_id: ActiveValue::Set(new_model.id),
+                r#type: ActiveValue::Set(old_c.r#type.clone()),
+                optional: ActiveValue::Set(old_c.optional),
+                speed: ActiveValue::Set(old_c.speed),
+                rev_created: ActiveValue::Set(revision_id),
+                rev_deleted: ActiveValue::Set(None),
+            }
+            .insert(txn)
+            .await?;
+            for entry in &old_entries {
+                resource_constraint_entry::ActiveModel {
+                    id: ActiveValue::NotSet,
+                    resource_constraint_id: ActiveValue::Set(new_c.id),
+                    resource_id: ActiveValue::Set(entry.resource_id),
+                }
+                .insert(txn)
+                .await?;
+            }
+        }
+
+        // 3. Children: update active children's parent_id to point to new iteration
+        task::Entity::update_many()
+            .col_expr(task::Column::ParentId, Expr::value(Value::Int(Some(new_model.id))))
+            .filter(task::Column::ParentId.eq(old_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .exec(txn)
+            .await?;
+
+        new_model
     } else {
         let header = crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
@@ -477,16 +759,14 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     };
 
     if let Some(predecessors) = predecessors {
-        update_predecessors(ctx, &model, predecessors).await?;
+        update_predecessors(ctx, &model, predecessors, revision_id).await?;
     }
     if let Some(successors) = successors {
-        update_successors(ctx, &model, successors).await?;
+        update_successors(ctx, &model, successors, revision_id).await?;
     }
     if let Some(children) = children {
         update_children(ctx, &model, children).await?;
     }
-    // Check if the provided resource constraints reuse the same resource across
-    // multiple constraints. If so, abort early with an error.
     if let Some(ref constraints) = resource_constraints {
         let all_used_resources: std::collections::HashSet<i32> =
             constraints.iter().flat_map(|c| c.entries.iter().map(|e| e.resource_id)).collect();
@@ -494,17 +774,16 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         if num_entries != all_used_resources.len() {
             return Err(anyhow::anyhow!("Each resource can only be used once!"));
         }
-        update_resource_constraints(&ctx, &model, &constraints, revision_id).await?;
+        update_resource_constraints(ctx, &model, constraints, revision_id).await?;
     }
-    // Check for dependency cycles (abort save on loop)
-    // Fetch dependencies and run a simple DFS cycle detection
+
+    // Dependency cycle detection
     let deps = dependency::Entity::find().all(txn).await?;
     use std::collections::HashMap as _HM;
     let mut adj: _HM<i32, Vec<i32>> = _HM::new();
     for d in deps.iter() {
         adj.entry(d.predecessor_id).or_default().push(d.successor_id);
     }
-    // DFS
     fn has_cycle(adj: &std::collections::HashMap<i32, Vec<i32>>) -> bool {
         fn visit(
             n: i32,
@@ -543,7 +822,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         return Err(anyhow!("Dependency loop detected"));
     }
 
-    // Check parent (hierarchy) loops for this task
+    // Hierarchy loop detection
     {
         use std::collections::HashSet;
         let mut seen: HashSet<i32> = HashSet::new();
@@ -560,8 +839,6 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
             };
         }
     }
-
-    // resource-constraint checks are handled as planning issues in detect_project_issues
 
     Ok(model)
 }

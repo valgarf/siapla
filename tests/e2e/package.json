@@ -13,6 +13,7 @@
         "test:resources": "npx playwright test tests/resources.spec.ts",
         "test:tasks": "npx playwright test tests/tasks.spec.ts",
         "test:planning": "npx playwright test tests/planning.spec.ts",
+        "test:revisions": "npx playwright test tests/revisions.spec.ts",
         "install:browsers": "npx playwright install --with-deps chromium"
     },
     "devDependencies": {

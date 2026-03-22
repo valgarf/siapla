@@ -1,4 +1,5 @@
 use std::{
+    any::TypeId,
     env,
     marker::PhantomData,
     sync::{Arc, Weak},
@@ -6,8 +7,8 @@ use std::{
 
 use super::dataloader::{AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader};
 use crate::SiaplaError;
-use crate::revisioning::resolve_revision;
 use crate::scheduling::Intervals;
+use crate::{RevColumns, revisioning::resolve_revision};
 use chrono::NaiveDateTime;
 
 type AvailabilityLoaderMap =
@@ -18,7 +19,11 @@ use futures::{TryFutureExt, lock::Mutex};
 use sea_orm::{
     Database, DatabaseTransaction, EntityTrait, TransactionTrait as _, strum::IntoEnumIterator,
 };
+use std::collections::HashMap;
 use tokio::sync::{OnceCell, RwLock};
+
+type RevisionedByColLoaderMap =
+    HashMap<(TypeId, usize, Option<i64>), Arc<dyn std::any::Any + Send + Sync>>;
 
 // global database url that can be set from the server's command line
 static GLOBAL_DATABASE_URL: OnceCell<String> = OnceCell::const_new();
@@ -31,6 +36,7 @@ pub fn set_global_database_url(url: impl Into<String>) {
 pub struct Context {
     txn: OnceCell<DatabaseTransaction>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
+    revisioned_by_col_loaders: Arc<RwLock<RevisionedByColLoaderMap>>,
     availability_loaders: Arc<RwLock<AvailabilityLoaderMap>>,
     me: Weak<Self>,
     app_state: Arc<AppState>,
@@ -70,6 +76,7 @@ impl Context {
             by_col_loaders: Arc::new(RwLock::new(
                 anymap::Map::<dyn anymap::any::Any + Send + Sync>::new(),
             )),
+            revisioned_by_col_loaders: Arc::new(RwLock::new(HashMap::new())),
             availability_loaders: Arc::new(RwLock::new(AvailabilityLoaderMap::new())),
             me: me.clone(),
             success: Mutex::new(true),
@@ -151,6 +158,9 @@ impl Context {
                                 let loader =
                                     ByColLoader::<ET, CIDX>::new(ByColBatcher::<ET, CIDX> {
                                         ctx: me.clone(),
+                                        revision: None,
+                                        rev_created_idx: None,
+                                        rev_deleted_idx: None,
                                         pd: PhantomData,
                                     })
                                     .with_yield_count(100);
@@ -193,6 +203,74 @@ impl Context {
         // } else {
         //     Err(anyhow::anyhow!("More than one entry found"))
         // }
+    }
+
+    pub fn load_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: Option<i64>,
+    ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
+    where
+        ET: RevColumns,
+        ET::Column: IntoEnumIterator,
+    {
+        let loaders = Arc::clone(&self.revisioned_by_col_loaders);
+        let me = self.me.clone();
+        let value: sea_orm::Value = value.into();
+        let fut = async move {
+            <ET::Column as IntoEnumIterator>::iter()
+                .nth(CIDX)
+                .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
+            let key = (std::any::TypeId::of::<ET>(), CIDX, revision);
+            loop {
+                let read_loaders = loaders.read().await;
+                let opt_loader = read_loaders
+                    .get(&key)
+                    .and_then(|loader| Arc::clone(loader).downcast::<ByColLoader<ET, CIDX>>().ok());
+                if let Some(loader) = opt_loader {
+                    return load_by_column_value(loader.as_ref(), value).await;
+                }
+                drop(read_loaders);
+
+                let mut write_loaders = loaders.write().await;
+                write_loaders.entry(key).or_insert_with(|| {
+                    Arc::new(
+                        ByColLoader::<ET, CIDX>::new(ByColBatcher::<ET, CIDX> {
+                            ctx: me.clone(),
+                            revision,
+                            rev_created_idx: Some(ET::rev_created_column_index()),
+                            rev_deleted_idx: Some(ET::rev_deleted_column_index()),
+                            pd: PhantomData,
+                        })
+                        .with_yield_count(100),
+                    )
+                });
+                drop(write_loaders);
+            }
+        };
+        fut
+    }
+
+    pub fn load_one_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: Option<i64>,
+    ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
+    where
+        ET: RevColumns,
+        ET::Column: IntoEnumIterator,
+    {
+        let fut = self.load_by_col_at_revision::<ET, CIDX>(value, revision);
+        let new_fut = fut.and_then(|mut res: Vec<ET::Model>| async move {
+            if res.is_empty() {
+                Ok(None)
+            } else if res.len() == 1 {
+                Ok(res.drain(..).next())
+            } else {
+                Err(anyhow::anyhow!("More than one entry found"))
+            }
+        });
+        new_fut
     }
 
     /// Load availability intervals for a single resource id, for the given start/end window.

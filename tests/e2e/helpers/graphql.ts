@@ -66,6 +66,90 @@ export async function graphqlRequest<T = Record<string, unknown>>(
 }
 
 // ---------------------------------------------------------------------------
+// Revision helpers
+// ---------------------------------------------------------------------------
+
+export const QUERY_LATEST_REVISION = `
+  query LatestRevision {
+    latestRevision
+  }
+`;
+
+/**
+ * Get the current latest revision number.
+ */
+export async function getLatestRevision(): Promise<number> {
+    const res = await graphqlRequest<{ latestRevision: number }>(
+        QUERY_LATEST_REVISION,
+    );
+    return res.latestRevision;
+}
+
+/**
+ * Query tasks at a specific revision.
+ */
+export async function queryTasksAtRevision(revision: number) {
+    return graphqlRequest<{ tasks: Array<TaskFields> }>(
+        `query Tasks($revision: Int64) {
+            tasks(revision: $revision) {
+                dbId title description designation priority effort
+                earliestStart scheduleTarget
+                predecessors { dbId }
+                successors { dbId }
+                parent { dbId }
+                children { dbId }
+                resourceConstraints {
+                    optional speed
+                    entries { resource { dbId } }
+                }
+            }
+        }`,
+        { revision },
+    );
+}
+
+/**
+ * Query resources at a specific revision.
+ */
+export async function queryResourcesAtRevision(revision: number) {
+    return graphqlRequest<{ resources: Array<ResourceFields> }>(
+        `query Resources($revision: Int64) {
+            resources(revision: $revision) {
+                dbId name timezone added removed
+                availability { weekday duration }
+                vacation { dbId from until }
+            }
+        }`,
+        { revision },
+    );
+}
+
+/**
+ * Query bookings at a specific revision.
+ */
+export async function queryBookingsAtRevision(revision: number) {
+    return graphqlRequest<{
+        bookings: Array<{
+            dbId: number;
+            start: string;
+            end: string;
+            final: boolean;
+            task: { dbId: number };
+            resources: Array<{ dbId: number }>;
+        }>;
+    }>(
+        `query Bookings($revision: Int64) {
+            bookings(revision: $revision) {
+                dbId start end final
+                task { dbId }
+                resources { dbId }
+            }
+        }`,
+        { revision },
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Commonly-used query / mutation strings
 // ---------------------------------------------------------------------------
 
@@ -169,6 +253,12 @@ export const MUTATION_RESOURCE_DELETE = `
 export const MUTATION_RECALCULATE = `
   mutation RecalculateNow {
     recalculateNow
+  }
+`;
+
+export const MUTATION_RESET_DATABASE = `
+  mutation ResetDatabase {
+    resetDatabase
   }
 `;
 

@@ -2,14 +2,18 @@ use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
 use sea_orm::{ActiveValue, prelude::*};
 
+use crate::entity::{
+    allocated_resource, allocation, availability, dependency, issue, resource_constraint,
+    resource_constraint_entry, resource_header, revision, task_header, vacation,
+};
 use crate::entity::{booking, booking_resource};
 use crate::entity::{resource_iteration as resource, task_iteration as task};
 use crate::revisioning::{PlanState, create_revision};
 
 use super::{
     context::Context,
-    resource::{ResourceSaveInput, resource_save},
-    task::{TaskSaveInput, task_save},
+    resource::{GQLResource, ResourceSaveInput, resource_save},
+    task::{GQLTask, TaskSaveInput, task_save},
 };
 
 #[derive(Default)]
@@ -22,7 +26,7 @@ impl Mutation {
         Default::default()
     }
 
-    async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<task::Model> {
+    async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<GQLTask> {
         let res = match task_save(ctx, task).await {
             Ok(res) => res,
             Err(err) => {
@@ -30,9 +34,8 @@ impl Mutation {
                 Err(err)?
             }
         };
-        // notify modification channel
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(res)
+        Ok(GQLTask::from(res))
     }
 
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
@@ -54,7 +57,7 @@ impl Mutation {
     async fn resource_save(
         ctx: &Context,
         resource: ResourceSaveInput,
-    ) -> anyhow::Result<resource::Model> {
+    ) -> anyhow::Result<GQLResource> {
         let res = match resource_save(ctx, resource).await {
             Ok(res) => res,
             Err(err) => {
@@ -63,7 +66,7 @@ impl Mutation {
             }
         };
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(res)
+        Ok(GQLResource::from(res))
     }
 
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
@@ -103,7 +106,10 @@ impl Mutation {
                 return Err(anyhow::anyhow!("Booking {existing_id} has already been deleted"));
             }
             let soft_delete = booking::Entity::update_many()
-                .col_expr(booking::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+                .col_expr(
+                    booking::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
                 .filter(booking::Column::Id.eq(existing_id))
                 .filter(booking::Column::RevDeleted.is_null())
                 .exec(txn)
@@ -159,6 +165,36 @@ impl Mutation {
     /// Trigger a manual recalculation now
     async fn recalculate_now(ctx: &Context) -> anyhow::Result<bool> {
         ctx.app_state().trigger_manual();
+        Ok(true)
+    }
+
+    /// Reset the database by hard-deleting all data and creating a fresh revision.
+    /// Only available when the server is started with `--allow-reset`.
+    async fn reset_database(ctx: &Context) -> anyhow::Result<bool> {
+        if !ctx.app_state().allow_reset {
+            return Err(anyhow::anyhow!(
+                "resetDatabase is disabled. Start the server with --allow-reset to enable it."
+            ));
+        }
+        let txn = ctx.txn().await?;
+        // Delete in order respecting foreign key constraints
+        allocated_resource::Entity::delete_many().exec(txn).await?;
+        allocation::Entity::delete_many().exec(txn).await?;
+        issue::Entity::delete_many().exec(txn).await?;
+        resource_constraint_entry::Entity::delete_many().exec(txn).await?;
+        resource_constraint::Entity::delete_many().exec(txn).await?;
+        booking_resource::Entity::delete_many().exec(txn).await?;
+        booking::Entity::delete_many().exec(txn).await?;
+        dependency::Entity::delete_many().exec(txn).await?;
+        vacation::Entity::delete_many().exec(txn).await?;
+        availability::Entity::delete_many().exec(txn).await?;
+        task::Entity::delete_many().exec(txn).await?;
+        resource::Entity::delete_many().exec(txn).await?;
+        task_header::Entity::delete_many().exec(txn).await?;
+        resource_header::Entity::delete_many().exec(txn).await?;
+        revision::Entity::delete_many().exec(txn).await?;
+        // Create a fresh initial revision
+        create_revision(txn, PlanState::NotCalculated).await?;
         Ok(true)
     }
 }
