@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use tokio::sync::OnceCell;
 
-use juniper::{ScalarValue, Variables};
+use juniper::{ScalarValue as _, Variables};
 use sea_orm::{Database, DatabaseConnection, TransactionTrait as _};
 use serial_test::serial;
 use siapla::{

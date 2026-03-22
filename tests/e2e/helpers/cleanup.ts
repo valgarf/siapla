@@ -68,7 +68,7 @@ async function deleteAllTasks(): Promise<void> {
     );
 
     if (verify.tasks.length > 0) {
-        console.warn(
+        throw new Error(
             `[cleanup] ${verify.tasks.length} task(s) remain after cleanup: ${verify.tasks.map((t) => t.dbId).join(", ")}`,
         );
     }
@@ -92,10 +92,11 @@ async function deleteAllResources(): Promise<void> {
                 { resourceId: resource.dbId },
             );
         } catch (err) {
-            console.warn(
+            console.error(
                 `[cleanup] Failed to delete resource ${resource.dbId} (${resource.name}):`,
                 err,
             );
+            throw err;
         }
     }
 
