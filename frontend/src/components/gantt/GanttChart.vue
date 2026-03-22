@@ -639,7 +639,7 @@ const visibleRows = computed(() => [...rowMap.value.values()].filter((r) => r.vi
 
 const chartHeight = computed(() => (visibleRows.value.length ?? 0) * rowHeight.value)
 
-// when external data arrives after a drag ended, clear the overwrite and only keep the overwrite 
+// when external data arrives after a drag ended, clear the overwrite and only keep the overwrite
 // for any active drag
 watch(() => props.rows, () => {
     const allocMap: Map<number, { start: Date, end: Date }> = new Map();
@@ -678,7 +678,7 @@ const scrollY = computed({
         scrollYMap.value[props.dataKey] = newValue
     }
 })
-// internal collapsed groups state 
+// internal collapsed groups state
 const collapsedGroups = computed({
     // getter
     get(): Set<number> {
@@ -1139,8 +1139,10 @@ function onJoinBookings(rowId: number | null, leftAllocId: number, rightAllocId:
 }
 
 function toggleGroup(id: number) {
-    if (collapsedGroups.value.has(id)) collapsedGroups.value.delete(id)
-    else collapsedGroups.value.add(id)
+    const newSet = new Set(collapsedGroups.value)
+    if (newSet.has(id)) newSet.delete(id)
+    else newSet.add(id)
+    collapsedGroups.value = newSet
 }
 </script>
 
