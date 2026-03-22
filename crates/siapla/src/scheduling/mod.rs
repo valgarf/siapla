@@ -2,6 +2,8 @@ mod datastructures;
 mod db_layer;
 mod ga;
 mod interval;
+#[cfg(test)]
+mod tests;
 mod weak_hash_set;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
