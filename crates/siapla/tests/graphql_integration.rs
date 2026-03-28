@@ -90,6 +90,31 @@ async fn clean_database() {
         .unwrap_or_else(|e| panic!("clean_database: failed to clear {table}: {e}"));
     }
 
+    txn.execute(sea_orm::Statement::from_string(
+        sea_orm::DatabaseBackend::Sqlite,
+        r#"DELETE FROM sqlite_sequence
+           WHERE name IN (
+               'allocated_resource',
+               'allocation',
+               'issue',
+               'dependency',
+               'resource_constraint_entry',
+               'resource_constraint',
+               'availability',
+               'vacation',
+               'task_iteration',
+               'task_header',
+               'resource_iteration',
+               'resource_header',
+               'revision',
+               'holiday_entry',
+               'holiday'
+           );"#
+        .to_string(),
+    ))
+    .await
+    .expect("clean_database: failed to reset sqlite_sequence");
+
     txn.commit().await.expect("clean_database: commit failed");
     db.close().await.ok();
 }
@@ -283,19 +308,60 @@ async fn create_task(
     id
 }
 
-/// Query predecessors for a task by its dbId using a fresh GraphQL context.
-/// Returns a sorted list of predecessor dbIds.
+/// Query predecessors for a task by resolving the current task and predecessor
+/// rows via their titles, because dependency storage is header-based.
 async fn query_task_predecessors(task_id: i64) -> Vec<i64> {
-    let val = gql_ok_simple(r#"{ tasks { dbId predecessors { dbId } } }"#).await;
-    let tasks = extract_list(&val, "tasks");
-    let task = tasks
+    let current_val = gql_ok_simple(r#"{ tasks { dbId title predecessors { dbId title } } }"#).await;
+    let current_tasks = extract_list(&current_val, "tasks");
+
+    let historical_title = find_task_title(task_id).await;
+    let current_task = current_tasks
         .iter()
-        .find(|t| extract_i64(t, "dbId") == task_id)
-        .unwrap_or_else(|| panic!("task with dbId={task_id} not found"));
-    let preds = extract_list(task, "predecessors");
-    let mut ids: Vec<i64> = preds.iter().map(|p| extract_i64(p, "dbId")).collect();
+        .find(|t| extract_str(t, "title") == historical_title)
+        .unwrap_or_else(|| panic!("current task for dbId={task_id} not found"));
+
+    let preds = extract_list(current_task, "predecessors");
+    let mut ids: Vec<i64> = preds
+        .iter()
+        .filter_map(|p| {
+            let title = extract_str(p, "title");
+            current_tasks
+                .iter()
+                .find(|t| extract_str(t, "title") == title)
+                .map(|t| extract_i64(t, "dbId"))
+        })
+        .collect();
     ids.sort();
     ids
+}
+
+async fn find_task_title(task_id: i64) -> String {
+    let latest = latest_revision().await;
+    for revision_id in 1..=latest {
+        let query = format!(
+            r#"{{
+                tasks(revision: {revision_id}) {{
+                    dbId
+                    title
+                }}
+            }}"#
+        );
+        let val = gql_ok_simple(&query).await;
+        let tasks = extract_list(&val, "tasks");
+        if let Some(task) = tasks.iter().find(|t| extract_i64(t, "dbId") == task_id) {
+            return extract_str(task, "title").to_string();
+        }
+    }
+    panic!("task with dbId={task_id} not found");
+}
+
+async fn find_current_task_id_by_title(title: &str) -> i64 {
+    let val = gql_ok_simple(r#"{ tasks { dbId title } }"#).await;
+    let tasks = extract_list(&val, "tasks");
+    tasks.iter()
+        .find(|t| extract_str(t, "title") == title)
+        .map(|t| extract_i64(t, "dbId"))
+        .unwrap_or_else(|| panic!("current task with title='{title}' not found"))
 }
 
 async fn latest_revision() -> i64 {
@@ -610,22 +676,45 @@ async fn test_dependency_types() {
     // dataloader inside a single Context caches dependency rows and may return
     // stale data in the mutation response when predecessors are replaced.
     let update_task_preds = |id: i64, title: &str, designation: &str, preds: &[i64]| {
-        let preds_str = format!("{:?}", preds);
-        let mutation = format!(
-            r#"mutation {{
-                taskSave(task: {{
-                    dbId: {id},
-                    title: "{title}",
-                    description: "desc",
-                    designation: {designation},
-                    priority: 1.0,
-                    predecessors: {preds_str}
-                }}) {{
-                    dbId
-                }}
-            }}"#
-        );
+        let title = title.to_string();
+        let designation = designation.to_string();
+        let preds = preds.to_vec();
         async move {
+            let current_tasks_val = gql_ok_simple(r#"{ tasks { dbId title } }"#).await;
+            let current_tasks = extract_list(&current_tasks_val, "tasks");
+
+            let current_task_id = current_tasks
+                .iter()
+                .find(|t| extract_str(t, "title") == title)
+                .map(|t| extract_i64(t, "dbId"))
+                .unwrap_or(id);
+
+            let mut current_pred_ids = Vec::new();
+            for pred_id in preds {
+                let pred_title = find_task_title(pred_id).await;
+                let current_pred_id = current_tasks
+                    .iter()
+                    .find(|t| extract_str(t, "title") == pred_title)
+                    .map(|t| extract_i64(t, "dbId"))
+                    .unwrap_or_else(|| panic!("current predecessor for dbId={} not found", pred_id));
+                current_pred_ids.push(current_pred_id);
+            }
+
+            let preds_str = format!("{:?}", current_pred_ids);
+            let mutation = format!(
+                r#"mutation {{
+                    taskSave(task: {{
+                        dbId: {current_task_id},
+                        title: "{title}",
+                        description: "desc",
+                        designation: {designation},
+                        priority: 1.0,
+                        predecessors: {preds_str}
+                    }}) {{
+                        dbId
+                    }}
+                }}"#
+            );
             gql_ok_simple(&mutation).await;
         }
     };
@@ -643,27 +732,30 @@ async fn test_dependency_types() {
     // 3. Task → Task
     update_task_preds(task_b, "Dep-TaskB", "TASK", &[task_a]).await;
     let preds = query_task_predecessors(task_b).await;
-    assert_eq!(preds, vec![task_a], "Task->Task predecessor mismatch");
+    let current_task_a = find_current_task_id_by_title("Dep-TaskA").await;
+    assert_eq!(preds, vec![current_task_a], "Task->Task predecessor mismatch");
 
     // 4. Task → Group (change group's predecessor from req to task_a)
     update_task_preds(group, "Dep-Group", "GROUP", &[task_a]).await;
     let preds = query_task_predecessors(group).await;
-    assert_eq!(preds, vec![task_a], "Task->Group predecessor mismatch");
+    assert_eq!(preds, vec![current_task_a], "Task->Group predecessor mismatch");
 
     // 5. Group → Task (change task_b's predecessor from task_a to group)
     update_task_preds(task_b, "Dep-TaskB", "TASK", &[group]).await;
     let preds = query_task_predecessors(task_b).await;
-    assert_eq!(preds, vec![group], "Group->Task predecessor mismatch");
+    let current_group = find_current_task_id_by_title("Dep-Group").await;
+    assert_eq!(preds, vec![current_group], "Group->Task predecessor mismatch");
 
     // 6. Task → Milestone
     update_task_preds(ms, "Dep-Milestone", "MILESTONE", &[task_b]).await;
     let preds = query_task_predecessors(ms).await;
-    assert_eq!(preds, vec![task_b], "Task->Milestone predecessor mismatch");
+    let current_task_b = find_current_task_id_by_title("Dep-TaskB").await;
+    assert_eq!(preds, vec![current_task_b], "Task->Milestone predecessor mismatch");
 
     // 7. Group → Milestone (change milestone's predecessor from task_b to group)
     update_task_preds(ms, "Dep-Milestone", "MILESTONE", &[group]).await;
     let preds = query_task_predecessors(ms).await;
-    assert_eq!(preds, vec![group], "Group->Milestone predecessor mismatch");
+    assert_eq!(preds, vec![current_group], "Group->Milestone predecessor mismatch");
 }
 
 #[tokio::test]
@@ -690,16 +782,18 @@ async fn test_dependency_query_uses_distinct_dataloaders_per_revision() {
     let predecessor_v2 =
         create_task("Rev-Pred-V2", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
 
+    let current_successor_v1 = find_current_task_id_by_title("Rev-Succ").await;
+    let current_predecessor_v2 = find_current_task_id_by_title("Rev-Pred-V2").await;
     let update_successor = format!(
         r#"mutation {{
             taskSave(task: {{
-                dbId: {successor_v1},
+                dbId: {current_successor_v1},
                 title: "Rev-Succ",
                 description: "desc for Rev-Succ",
                 designation: TASK,
                 priority: 1.0,
                 effort: 4.0,
-                predecessors: [{predecessor_v2}]
+                predecessors: [{current_predecessor_v2}]
             }}) {{
                 dbId
             }}
@@ -771,15 +865,17 @@ async fn test_nested_groups() {
             .await;
 
     // Also update Group A to declare Group B as a child (via children field)
+    let current_group_a = find_current_task_id_by_title("GroupA").await;
+    let current_group_b = find_current_task_id_by_title("GroupB").await;
     let mutation = format!(
         r#"mutation {{
             taskSave(task: {{
-                dbId: {group_a},
+                dbId: {current_group_a},
                 title: "GroupA",
                 description: "top group",
                 designation: GROUP,
                 priority: 1.0,
-                children: [{group_b}]
+                children: [{current_group_b}]
             }}) {{
                 dbId
                 children {{ dbId title }}
@@ -794,8 +890,8 @@ async fn test_nested_groups() {
         "expected GroupA to have exactly 1 child, got {}",
         children_a.len()
     );
-    let child_id = extract_i64(&children_a[0], "dbId");
-    assert_eq!(child_id, group_b, "expected GroupA child to be GroupB ({group_b}), got {child_id}");
+    let child_title = extract_str(&children_a[0], "title");
+    assert_eq!(child_title, "GroupB", "expected GroupA child to be GroupB, got {child_title}");
 
     // Verify Group B's children via query
     let val = gql_ok_simple(r#"{ tasks { dbId title children { dbId title } } }"#).await;
@@ -1058,16 +1154,18 @@ async fn test_complex_dependencies_and_update() {
     );
 
     // Update T2 to depend on Req directly (instead of T1).
+    let current_t2 = find_current_task_id_by_title("Chain-T2").await;
+    let current_req = find_current_task_id_by_title("Chain-Req").await;
     let mutation = format!(
         r#"mutation {{
             taskSave(task: {{
-                dbId: {t2},
+                dbId: {current_t2},
                 title: "Chain-T2",
                 description: "updated",
                 designation: TASK,
                 priority: 3.0,
                 effort: 4.0,
-                predecessors: [{req}]
+                predecessors: [{current_req}]
             }}) {{
                 dbId
             }}

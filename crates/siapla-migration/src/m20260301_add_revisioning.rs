@@ -94,6 +94,8 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+
+
         manager
             .alter_table(
                 Table::alter()
@@ -141,9 +143,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(ResourceIteration::Table)
-                    .add_column(
-                        ColumnDef::new(ResourceIteration::RevDeleted).big_unsigned().null(),
-                    )
+                    .add_column(ColumnDef::new(ResourceIteration::RevDeleted).big_unsigned().null())
                     .to_owned(),
             )
             .await?;
@@ -153,10 +153,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Dependency::Table)
                     .add_column(
-                        ColumnDef::new(Dependency::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
+                        ColumnDef::new(Dependency::RevCreated).big_unsigned().not_null().default(1),
                     )
                     .to_owned(),
             )
@@ -175,10 +172,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Vacation::Table)
                     .add_column(
-                        ColumnDef::new(Vacation::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
+                        ColumnDef::new(Vacation::RevCreated).big_unsigned().not_null().default(1),
                     )
                     .to_owned(),
             )
@@ -243,10 +237,7 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Allocation::Table)
                     .add_column(
-                        ColumnDef::new(Allocation::Revision)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
+                        ColumnDef::new(Allocation::Revision).big_unsigned().not_null().default(1),
                     )
                     .to_owned(),
             )
@@ -380,7 +371,7 @@ impl MigrationTrait for Migration {
                 Query::select()
                     .column(ResourceIteration::Id)
                     .expr(Expr::value(1))
-                        .expr(Expr::value(Value::BigUnsigned(None)))
+                    .expr(Expr::value(Value::BigUnsigned(None)))
                     .from(ResourceIteration::Table)
                     .to_owned(),
             )
@@ -396,6 +387,21 @@ impl MigrationTrait for Migration {
             .to_owned();
 
         db.execute(backend.build(&fill_task_header_ids)).await?;
+
+        let rewrite_task_parent_ids_to_headers = Query::update()
+            .table(TaskIteration::Table)
+            .value(
+                TaskIteration::ParentId,
+                Expr::cust(
+                    "(SELECT parent.header_id FROM task_iteration AS parent WHERE parent.id = task_iteration.parent_id)",
+                ),
+            )
+            .and_where(Expr::col(TaskIteration::ParentId).is_not_null())
+            .to_owned();
+
+        db.execute(backend.build(&rewrite_task_parent_ids_to_headers)).await?;
+
+
 
         let fill_resource_header_ids = Query::update()
             .table(ResourceIteration::Table)
@@ -446,7 +452,9 @@ impl MigrationTrait for Migration {
                         Expr::col((AllocatedResource::Table, AllocatedResource::AllocationId))
                             .equals((Allocation::Table, Allocation::Id)),
                     )
-                    .and_where(Expr::col((Allocation::Table, Allocation::AllocationType)).eq("BOOKING"))
+                    .and_where(
+                        Expr::col((Allocation::Table, Allocation::AllocationType)).eq("BOOKING"),
+                    )
                     .to_owned(),
             )
             .map_err(|e| DbErr::Custom(e.to_string()))?
@@ -584,6 +592,7 @@ enum ResourceHeader {
 enum TaskIteration {
     Table,
     Id,
+    ParentId,
     HeaderId,
     RevCreated,
     RevDeleted,

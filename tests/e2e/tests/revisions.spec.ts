@@ -785,6 +785,71 @@ test.describe("Revision System", () => {
             expect(child2!.parent).toBeDefined();
             expect(child2!.parent!.dbId).toBe(updatedGroup.taskSave.dbId);
         });
+
+        test("old and new revisions resolve parent relationships via parent header id", async () => {
+            const group = await createTask({
+                title: "Parent Group",
+                designation: "GROUP",
+            });
+
+            const child = await createTask({
+                title: "Child Task",
+                designation: "TASK",
+                effort: 4.0,
+                parentId: group.dbId,
+            });
+
+            const revBeforeParentUpdate = await getLatestRevision();
+
+            const updatedGroup = await graphqlRequest<{
+                taskSave: { dbId: number; title: string };
+            }>(TASK_SAVE, {
+                task: {
+                    dbId: group.dbId,
+                    title: "Parent Group v2",
+                    description: "",
+                    designation: "GROUP",
+                    priority: 1.0,
+                },
+            });
+
+            const revAfterParentUpdate = await getLatestRevision();
+
+            const oldRevision = await queryTasksAtRevision(
+                revBeforeParentUpdate,
+            );
+            const oldParent = oldRevision.tasks.find(
+                (t) => t.title === "Parent Group",
+            );
+            const oldChild = oldRevision.tasks.find(
+                (t) => t.dbId === child.dbId,
+            );
+
+            expect(oldParent).toBeDefined();
+            expect(oldChild).toBeDefined();
+            expect(oldChild!.parent).toBeDefined();
+            expect(oldChild!.parent!.dbId).toBe(group.dbId);
+            expect(oldParent!.children.some((c) => c.dbId === child.dbId)).toBe(
+                true,
+            );
+
+            const newRevision =
+                await queryTasksAtRevision(revAfterParentUpdate);
+            const newParent = newRevision.tasks.find(
+                (t) => t.dbId === updatedGroup.taskSave.dbId,
+            );
+            const currentChild = newRevision.tasks.find(
+                (t) => t.title === "Child Task",
+            );
+
+            expect(newParent).toBeDefined();
+            expect(currentChild).toBeDefined();
+            expect(currentChild!.parent).toBeDefined();
+            expect(currentChild!.parent!.dbId).toBe(updatedGroup.taskSave.dbId);
+            expect(
+                newParent!.children.some((c) => c.dbId === currentChild!.dbId),
+            ).toBe(true);
+        });
     });
 
     // -----------------------------------------------------------------------
