@@ -87,6 +87,7 @@ pub enum Node {
 #[derive(Debug, Clone)]
 pub struct Resource {
     pub db_id: i32,
+    pub header_id: i32,
     pub name: String,
     pub timezone: String,
     pub slots: Vec<Slot>,

@@ -12,6 +12,7 @@ use crate::revisioning::{PlanState, create_revision};
 
 use super::{
     context::Context,
+    booking::GQLBooking,
     resource::{GQLResource, ResourceSaveInput, resource_save},
     task::{GQLTask, TaskSaveInput, task_save},
 };
@@ -77,7 +78,7 @@ impl Mutation {
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
         let res = resource::Entity::update_many()
             .col_expr(resource::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(resource::Column::Id.eq(resource_id))
+            .filter(resource::Column::HeaderId.eq(resource_id))
             .filter(resource::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
@@ -96,7 +97,7 @@ impl Mutation {
         end: chrono::DateTime<chrono::Utc>,
         resources: Vec<i32>,
         r#final: bool,
-    ) -> anyhow::Result<booking::Model> {
+    ) -> anyhow::Result<GQLBooking> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
 
@@ -158,16 +159,35 @@ impl Mutation {
         .await?;
 
         for rid in resources {
+            let resolved_resource_header_id = if let Some(active_resource) = resource::Entity::find()
+                .filter(resource::Column::HeaderId.eq(rid))
+                .filter(resource::Column::RevDeleted.is_null())
+                .one(txn)
+                .await?
+            {
+                active_resource.header_id.unwrap_or(active_resource.id)
+            } else if let Some(active_resource) = resource::Entity::find_by_id(rid)
+                .filter(resource::Column::RevDeleted.is_null())
+                .one(txn)
+                .await?
+            {
+                active_resource.header_id.unwrap_or(active_resource.id)
+            } else {
+                return Err(anyhow::anyhow!(
+                    "No active resource iteration found for resource header {rid}"
+                ));
+            };
+
             let arm = booking_resource::ActiveModel {
                 id: ActiveValue::NotSet,
                 booking_id: ActiveValue::Set(db_booking.id),
-                resource_id: ActiveValue::Set(rid),
+                resource_id: ActiveValue::Set(resolved_resource_header_id),
             };
             arm.insert(txn).await?;
         }
 
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(db_booking)
+        Ok(GQLBooking::from(db_booking))
     }
 
     async fn booking_delete(ctx: &Context, db_id: i32) -> anyhow::Result<bool> {

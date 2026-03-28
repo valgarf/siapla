@@ -55,6 +55,7 @@ fn make_work_slots(resource: &Rc<RefCell<Resource>>, start: NaiveDateTime, end: 
 fn make_resource(db_id: i32, name: &str) -> Rc<RefCell<Resource>> {
     Rc::new(RefCell::new(Resource {
         db_id,
+        header_id: db_id,
         name: name.to_string(),
         timezone: "UTC".to_string(),
         slots: vec![],

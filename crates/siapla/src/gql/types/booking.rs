@@ -3,60 +3,77 @@ use crate::{
     entity::{booking, booking_resource, resource_iteration as resource, task_iteration as task},
     gql::context::Context,
 };
-use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _};
 use chrono::{DateTime, Utc};
-use itertools::Itertools;
 use juniper::graphql_object;
 
 use super::resource::GQLResource;
 use super::task::GQLTask;
 
+pub struct GQLBooking {
+    pub model: booking::Model,
+    pub revision: Option<i64>,
+}
+
+impl GQLBooking {
+    pub fn at_revision(model: booking::Model, revision: Option<i64>) -> Self {
+        Self { model, revision }
+    }
+}
+
+impl From<booking::Model> for GQLBooking {
+    fn from(model: booking::Model) -> Self {
+        Self { model, revision: None }
+    }
+}
+
 #[graphql_object]
 #[graphql(name = "Booking")]
-impl booking::Model {
+impl GQLBooking {
     fn db_id(&self) -> &i32 {
-        &self.id
+        &self.model.id
     }
 
     fn start(&self) -> &DateTime<Utc> {
-        &self.start
+        &self.model.start
     }
 
     fn end(&self) -> &DateTime<Utc> {
-        &self.end
+        &self.model.end
     }
 
     fn r#final(&self) -> bool {
-        self.r#final
+        self.model.r#final
     }
 
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
         let models: Vec<resource::Model> = resolve_many_to_many!(
             ctx,
+            target_revision: self.revision,
             booking_resource::Entity,
             booking_resource::Column::BookingId,
-            self.id,
+            self.model.id,
             |l: booking_resource::Model| l.resource_id,
             resource::Entity,
-            resource::Column::Id
+            resource::Column::HeaderId
         )?;
-        Ok(models.into_iter().map(GQLResource::from).collect())
+        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        let txn = ctx.txn().await?;
-        if let Some(model) = task::Entity::find()
-            .filter(task::Column::HeaderId.eq(self.task_id))
-            .filter(task::Column::RevDeleted.is_null())
-            .one(txn)
+        const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
+        if let Some(model) = ctx
+            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(
+                self.model.task_id,
+                self.revision,
+            )
             .await?
         {
-            return Ok(GQLTask::from(model));
+            return Ok(GQLTask::at_revision(model, self.revision));
         }
 
-        const CIDX: usize = task::Column::Id as usize;
-        ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
+        const TASK_ID_CIDX: usize = task::Column::Id as usize;
+        ctx.load_one_by_col::<task::Entity, TASK_ID_CIDX>(self.model.task_id)
             .await
-            .map(|opt_t| GQLTask::from(opt_t.expect("Task must exist.")))
+            .map(|opt_t| GQLTask::at_revision(opt_t.expect("Task must exist."), self.revision))
     }
 }

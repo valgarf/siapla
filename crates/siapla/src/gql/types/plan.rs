@@ -1,4 +1,7 @@
-use crate::{entity::allocation, gql::context::Context};
+use crate::{
+    entity::allocation,
+    gql::{allocation::GQLAllocation, context::Context},
+};
 use juniper::graphql_object;
 use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _, QueryOrder as _};
 
@@ -9,7 +12,7 @@ pub struct Plan {
 #[graphql_object]
 #[graphql(name = "Plan")]
 impl Plan {
-    pub async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
+    pub async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
         let txn = ctx.txn().await?;
         let revision = crate::revisioning::resolve_plan_revision(txn, self.revision).await?;
         let Some(revision) = revision else {
@@ -19,6 +22,9 @@ impl Plan {
             .filter(allocation::Column::Revision.eq(revision))
             .order_by_asc(allocation::Column::TaskId)
             .all(txn)
-            .await?)
+            .await?
+            .into_iter()
+            .map(|m| GQLAllocation::at_revision(m, Some(revision)))
+            .collect())
     }
 }

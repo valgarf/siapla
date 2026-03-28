@@ -55,6 +55,10 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         )?)
         .all(db)
         .await?;
+    let resource_header_to_iter = db_resource_vec
+        .iter()
+        .filter_map(|r| r.header_id.map(|hid| (hid, r.id)))
+        .collect::<HashMap<i32, i32>>();
     let db_dependencies_vec = dependency::Entity::find()
         .filter(active_for_revision(
             dependency::Column::RevCreated,
@@ -119,7 +123,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let resources: Vec<i32> = booking_allocated
             .iter()
             .filter(|ar| ar.booking_id == a.id)
-            .map(|ar| ar.resource_id)
+            .map(|ar| resource_header_to_iter.get(&ar.resource_id).copied().unwrap_or(ar.resource_id))
             .collect();
         let task_iter_id = header_to_task_iter.get(&a.task_id).copied().unwrap_or(a.task_id);
         task_bookings
@@ -292,6 +296,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             let last = resource_last_booking.get(&rm.id).cloned();
             Rc::new(RefCell::new(Resource {
                 db_id: rm.id,
+                header_id: rm.header_id.unwrap_or(rm.id),
                 name: rm.name,
                 timezone: rm.timezone,
                 slots: vec![],
@@ -305,7 +310,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
     let resource_map = project_objects
         .resources
         .iter()
-        .map(|r| (r.borrow().db_id, Rc::clone(r)))
+        .map(|r| (r.borrow().header_id, Rc::clone(r)))
         .collect::<HashMap<i32, _>>();
 
     let mut constraint_map = db_constraints_vec
@@ -609,7 +614,7 @@ pub async fn query_slots(
     // Load availability per-resource in parallel using a JoinSet, then apply in original order.
     let mut set: JoinSet<(usize, anyhow::Result<Intervals<NaiveDateTime>>)> = JoinSet::new();
     for (idx, r) in resources.iter().enumerate() {
-        let rid = r.borrow().db_id;
+        let rid = r.borrow().header_id;
         // start availability query at resource.last_booking_end if present so earlier slots are excluded
         let resource_start = cmp::max(start, r.borrow().last_booking_end.unwrap_or(start));
         let fut = ctx.load_combined_availability(rid, resource_start, end, Some(revision));
@@ -686,10 +691,17 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
         };
         let db_alloc = am.insert(txn).await?;
         for (res_id, _) in assignment {
+            let stored_resource_id = project
+                .objs
+                .resources
+                .iter()
+                .find(|r| r.borrow().db_id == *res_id)
+                .map(|r| r.borrow().header_id)
+                .unwrap_or(*res_id);
             let am = allocated_resource::ActiveModel {
                 id: ActiveValue::NotSet,
                 allocation_id: ActiveValue::Set(db_alloc.id),
-                resource_id: ActiveValue::Set(*res_id),
+                resource_id: ActiveValue::Set(stored_resource_id),
                 revision: ActiveValue::Set(revision_id),
             };
             am.insert(txn).await?;

@@ -1,13 +1,15 @@
 use crate::{
-    entity::{booking, holiday, issue, resource_iteration as resource, task_iteration as task},
-    gql::plan::Plan,
+    entity::{holiday, resource_iteration as resource, task_iteration as task},
     gql::scalars::Int64,
-    revisioning::{active_for_revision, resolve_revision},
+    revisioning::{active_for_revision, resolve_plan_revision, resolve_revision},
 };
 
 use super::{
+    booking::GQLBooking,
     context::Context,
     holiday::{Country, GQLHoliday, Region},
+    issue::GQLIssue,
+    plan::Plan,
     resource::GQLResource,
     task::GQLTask,
 };
@@ -93,41 +95,43 @@ impl Query {
         Ok(Some(GQLHoliday::from_model(result)))
     }
 
-    async fn current_plan(_ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Plan> {
-        Ok(Plan { revision: revision.map(i64::from) })
+    async fn current_plan(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Plan> {
+        let txn = ctx.txn().await?;
+        let revision = resolve_plan_revision(txn, revision.map(i64::from)).await?;
+        Ok(Plan { revision })
     }
 
     async fn bookings(
         ctx: &Context,
         revision: Option<Int64>,
-    ) -> anyhow::Result<Vec<booking::Model>> {
+    ) -> anyhow::Result<Vec<GQLBooking>> {
         let txn = ctx.txn().await?;
         let revision = resolve_revision(txn, revision.map(i64::from)).await?;
-        let res = booking::Entity::find()
+        let res = crate::entity::booking::Entity::find()
             .filter(active_for_revision(
-                booking::Column::RevCreated,
-                booking::Column::RevDeleted,
+                crate::entity::booking::Column::RevCreated,
+                crate::entity::booking::Column::RevDeleted,
                 revision,
             )?)
-            .order_by_asc(booking::Column::TaskId)
-            .order_by_asc(booking::Column::Start)
+            .order_by_asc(crate::entity::booking::Column::TaskId)
+            .order_by_asc(crate::entity::booking::Column::Start)
             .all(txn)
             .await?;
-        Ok(res)
+        Ok(res.into_iter().map(|m| GQLBooking::at_revision(m, revision)).collect())
     }
 
-    async fn issues(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<issue::Model>> {
+    async fn issues(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLIssue>> {
         let tx = ctx.txn().await?;
         let revision = resolve_revision(tx, revision.map(i64::from)).await?;
         let Some(revision) = revision else {
             return Ok(Vec::new());
         };
-        let res = issue::Entity::find()
-            .filter(issue::Column::Revision.eq(revision))
-            .order_by_asc(issue::Column::Id)
+        let res = crate::entity::issue::Entity::find()
+            .filter(crate::entity::issue::Column::Revision.eq(revision))
+            .order_by_asc(crate::entity::issue::Column::Id)
             .all(tx)
             .await?;
-        Ok(res)
+        Ok(res.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
     }
 
     async fn latest_revision(ctx: &Context) -> anyhow::Result<Option<Int64>> {

@@ -5,7 +5,10 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use super::dataloader::{AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader};
+use super::dataloader::{
+    AvailabilityBatcher, AvailabilityLoader, ByColBatcher, ByColLoader,
+    ByFixedRevisionColBatcher, ByFixedRevisionColLoader,
+};
 use crate::SiaplaError;
 use crate::scheduling::Intervals;
 use crate::{RevColumns, revisioning::resolve_revision};
@@ -24,6 +27,8 @@ use tokio::sync::{OnceCell, RwLock};
 
 type RevisionedByColLoaderMap =
     HashMap<(TypeId, usize, Option<i64>), Arc<dyn std::any::Any + Send + Sync>>;
+type FixedRevisionByColLoaderMap =
+    HashMap<(TypeId, usize, usize, i64), Arc<dyn std::any::Any + Send + Sync>>;
 
 // global database url that can be set from the server's command line
 static GLOBAL_DATABASE_URL: OnceCell<String> = OnceCell::const_new();
@@ -37,6 +42,7 @@ pub struct Context {
     txn: OnceCell<DatabaseTransaction>,
     by_col_loaders: Arc<RwLock<anymap::Map<dyn anymap::any::Any + Send + Sync>>>,
     revisioned_by_col_loaders: Arc<RwLock<RevisionedByColLoaderMap>>,
+    fixed_revision_by_col_loaders: Arc<RwLock<FixedRevisionByColLoaderMap>>,
     availability_loaders: Arc<RwLock<AvailabilityLoaderMap>>,
     me: Weak<Self>,
     app_state: Arc<AppState>,
@@ -69,6 +75,25 @@ where
     }
 }
 
+async fn load_by_column_value_fixed_revision<
+    ET: EntityTrait,
+    const KEY_CIDX: usize,
+    const REV_CIDX: usize,
+>(
+    loader: &ByFixedRevisionColLoader<ET, KEY_CIDX, REV_CIDX>,
+    value: impl Into<sea_orm::Value>,
+) -> anyhow::Result<Vec<ET::Model>>
+where
+    ET::Column: IntoEnumIterator,
+{
+    let id_value: sea_orm::Value = value.into();
+    let res = loader.try_load(id_value).await;
+    match res {
+        Err(_) => Ok(vec![]), // id cannot be found
+        Ok(value) => Ok(value.map_err(|err| anyhow::anyhow!("{err}"))?),
+    }
+}
+
 impl Context {
     pub fn new(app_state: Arc<AppState>) -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
@@ -77,6 +102,7 @@ impl Context {
                 anymap::Map::<dyn anymap::any::Any + Send + Sync>::new(),
             )),
             revisioned_by_col_loaders: Arc::new(RwLock::new(HashMap::new())),
+            fixed_revision_by_col_loaders: Arc::new(RwLock::new(HashMap::new())),
             availability_loaders: Arc::new(RwLock::new(AvailabilityLoaderMap::new())),
             me: me.clone(),
             success: Mutex::new(true),
@@ -276,13 +302,116 @@ impl Context {
     /// Load availability intervals for a single resource id, for the given start/end window.
     /// Loaders are cached per (start,end) pair in an AvailabilityLoaderMap stored in the same anymap
     /// used for the `by_col_loaders`.
+    pub fn load_by_col_at_fixed_revision<
+        ET: EntityTrait,
+        const KEY_CIDX: usize,
+        const REV_CIDX: usize,
+    >(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
+    where
+        ET::Column: IntoEnumIterator,
+    {
+        let loaders = Arc::clone(&self.fixed_revision_by_col_loaders);
+        let me = self.me.clone();
+        let value: sea_orm::Value = value.into();
+        let fut = async move {
+            <ET::Column as IntoEnumIterator>::iter()
+                .nth(KEY_CIDX)
+                .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
+            <ET::Column as IntoEnumIterator>::iter()
+                .nth(REV_CIDX)
+                .ok_or(anyhow::anyhow!("Revision column index does not exist!"))?;
+            let key = (std::any::TypeId::of::<ET>(), KEY_CIDX, REV_CIDX, revision);
+            loop {
+                let read_loaders = loaders.read().await;
+                let opt_loader = read_loaders.get(&key).and_then(|loader| {
+                    Arc::clone(loader)
+                        .downcast::<ByFixedRevisionColLoader<ET, KEY_CIDX, REV_CIDX>>()
+                        .ok()
+                });
+                if let Some(loader) = opt_loader {
+                    return load_by_column_value_fixed_revision(loader.as_ref(), value).await;
+                }
+                drop(read_loaders);
+
+                let mut write_loaders = loaders.write().await;
+                write_loaders.entry(key).or_insert_with(|| {
+                    Arc::new(
+                        ByFixedRevisionColLoader::<ET, KEY_CIDX, REV_CIDX>::new(
+                            ByFixedRevisionColBatcher::<ET, KEY_CIDX, REV_CIDX> {
+                                ctx: me.clone(),
+                                revision,
+                                pd: PhantomData,
+                            },
+                        )
+                        .with_yield_count(100),
+                    )
+                });
+                drop(write_loaders);
+            }
+        };
+        fut
+    }
+
+    pub fn load_one_by_col_at_fixed_revision<
+        ET: EntityTrait,
+        const KEY_CIDX: usize,
+        const REV_CIDX: usize,
+    >(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: i64,
+    ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
+    where
+        ET::Column: IntoEnumIterator,
+    {
+        let fut = self.load_by_col_at_fixed_revision::<ET, KEY_CIDX, REV_CIDX>(value, revision);
+        let new_fut = fut.and_then(|mut res: Vec<ET::Model>| async move {
+            if res.is_empty() {
+                Ok(None)
+            } else if res.len() == 1 {
+                Ok(res.drain(..).next())
+            } else {
+                Err(anyhow::anyhow!("More than one entry found"))
+            }
+        });
+        new_fut
+    }
+
+    pub fn load_allocations_by_task_at_revision<const KEY_CIDX: usize>(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<crate::entity::allocation::Model>>> + 'static {
+        self.load_by_col_at_fixed_revision::<
+            crate::entity::allocation::Entity,
+            KEY_CIDX,
+            { crate::entity::allocation::Column::Revision as usize },
+        >(value, revision)
+    }
+
+    pub fn load_issues_by_task_at_revision<const KEY_CIDX: usize>(
+        &self,
+        value: impl Into<sea_orm::Value>,
+        revision: i64,
+    ) -> impl Future<Output = anyhow::Result<Vec<crate::entity::issue::Model>>> + 'static {
+        self.load_by_col_at_fixed_revision::<
+            crate::entity::issue::Entity,
+            KEY_CIDX,
+            { crate::entity::issue::Column::Revision as usize },
+        >(value, revision)
+    }
+
     pub fn load_combined_availability(
         &self,
         resource_id: i32,
         start: NaiveDateTime,
         end: NaiveDateTime,
         revision: Option<i64>,
-    ) -> impl std::future::Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
+    ) -> impl Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
         let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
         let fut = async move {

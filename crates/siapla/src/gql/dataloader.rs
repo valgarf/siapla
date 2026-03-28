@@ -118,7 +118,7 @@ impl Iterator for _AvailabilityIterator {
     }
 }
 
-/// Query combined availability for a list of resource ids.
+/// Query combined availability for a list of resource header ids.
 /// Returns a vector of `Intervals<NaiveDateTime>` in the same order as `resource_ids`.
 pub async fn query_combined_availability(
     ctx: &Context,
@@ -129,6 +129,19 @@ pub async fn query_combined_availability(
 ) -> anyhow::Result<Vec<Intervals<NaiveDateTime>>> {
     let id_set = resource_ids.iter().cloned().collect::<HashSet<_>>();
     let db = ctx.txn().await?;
+
+    let db_resources = resource::Entity::find()
+        .filter(resource::Column::HeaderId.is_in(resource_ids.clone()))
+        .filter(active_for_revision(
+            resource::Column::RevCreated,
+            resource::Column::RevDeleted,
+            Some(revision),
+        )?)
+        .all(db)
+        .await?;
+    let res_map =
+        db_resources.into_iter().filter_map(|r| r.header_id.map(|hid| (hid, r))).collect::<HashMap<i32, _>>();
+
     let db_availabilities = availability::Entity::find()
         .filter(availability::Column::ResourceId.is_in(id_set.clone()))
         .filter(active_for_revision(
@@ -150,16 +163,6 @@ pub async fn query_combined_availability(
         .order_by(vacation::Column::From, Order::Asc)
         .all(db)
         .await?;
-    let db_resources = resource::Entity::find()
-        .filter(resource::Column::Id.is_in(resource_ids.clone()))
-        .filter(active_for_revision(
-            resource::Column::RevCreated,
-            resource::Column::RevDeleted,
-            Some(revision),
-        )?)
-        .all(db)
-        .await?;
-    let res_map = db_resources.into_iter().map(|r| (r.id, r)).collect::<HashMap<i32, _>>();
 
     let mut results: Vec<Intervals<NaiveDateTime>> = Vec::with_capacity(resource_ids.len());
     for &rid in resource_ids.iter() {
@@ -188,31 +191,31 @@ pub async fn query_combined_availability(
                 .map(|he| {
                     let start = NaiveDateTime::new(
                         he.date,
-                        NaiveTime::from_hms_opt(0, 0, 0).expect("Must be a valid time"),
-                    )
-                    .and_local_timezone(availability_iter.timezone)
-                    .earliest()
-                    .expect("Cannot determine holidays datetime.")
-                    .to_utc()
-                    .naive_local();
-                    let end = start + TimeDelta::hours(24);
+                        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+                    );
+                    let end = start + chrono::Duration::days(1);
                     Interval::new_lcro(start, end)
                 })
-                .collect(),
-            None => Intervals::new(),
+                .collect::<Vec<_>>(),
+            None => vec![],
         };
 
-        let vacation_intervals: Intervals<NaiveDateTime> = db_vacations
+        let vacation_intervals = db_vacations
             .iter()
             .filter(|v| v.resource_id == rid)
-            .map(|v| Interval::new_lcro(v.from.naive_local(), v.until.naive_local()))
-            .collect();
+            .map(|v| Interval::new_lcro(v.from.naive_utc(), v.until.naive_utc()))
+            .collect::<Vec<_>>();
 
-        let availability_intervals: Intervals<NaiveDateTime> = availability_iter.collect();
-        let intervals =
-            availability_intervals.difference(&vacation_intervals).difference(&holiday_intervals);
-        results.push(intervals);
+        let mut all_intervals = Intervals::new();
+        for iv in availability_iter {
+            all_intervals.insert(iv);
+        }
+        for iv in holiday_intervals.into_iter().chain(vacation_intervals.into_iter()) {
+            all_intervals.remove(iv);
+        }
+        results.push(all_intervals);
     }
+
     Ok(results)
 }
 
@@ -255,6 +258,71 @@ impl dataloader::BatchFn<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error
 
 pub type AvailabilityLoader =
     Loader<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>, AvailabilityBatcher>;
+
+pub struct ByFixedRevisionColBatcher<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>
+where
+    ET::Column: IntoEnumIterator,
+{
+    pub ctx: Weak<Context>,
+    pub revision: i64,
+    pub pd: std::marker::PhantomData<ET>,
+}
+
+async fn fallible_load_fixed_revision<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>(
+    ctx: &Weak<Context>,
+    values: &[sea_orm::Value],
+    revision: i64,
+) -> Result<HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>, anyhow::Error>
+where
+    ET::Column: IntoEnumIterator,
+{
+    let key_col: ET::Column =
+        ET::Column::iter().nth(KEY_CIDX).expect("Loader with invalid key column index");
+    let rev_col: ET::Column =
+        ET::Column::iter().nth(REV_CIDX).expect("Loader with invalid revision column index");
+    let ctx = ctx.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
+    let txn = ctx.txn().await?;
+    let rows: Vec<ET::Model> = ET::find()
+        .filter(key_col.is_in(values.to_vec()))
+        .filter(rev_col.eq(revision))
+        .order_by_asc(key_col)
+        .all(txn)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .chunk_by(|row| row.get(key_col))
+        .into_iter()
+        .map(|(key, rows)| (key, Ok(rows.collect())))
+        .collect())
+}
+
+impl<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>
+    dataloader::BatchFn<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>
+    for ByFixedRevisionColBatcher<ET, KEY_CIDX, REV_CIDX>
+where
+    ET::Column: IntoEnumIterator,
+{
+    async fn load(
+        &mut self,
+        values: &[sea_orm::Value],
+    ) -> HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>> {
+        match fallible_load_fixed_revision::<ET, KEY_CIDX, REV_CIDX>(&self.ctx, values, self.revision)
+            .await
+        {
+            Ok(data) => data,
+            Err(err) => {
+                let clonable_err = Arc::new(err);
+                values.iter().map(|k| (k.clone(), Err(clonable_err.clone()))).collect()
+            }
+        }
+    }
+}
+
+pub type ByFixedRevisionColLoader<ET, const KEY_CIDX: usize, const REV_CIDX: usize> = Loader<
+    sea_orm::Value,
+    Result<Vec<<ET as EntityTrait>::Model>, Arc<anyhow::Error>>,
+    ByFixedRevisionColBatcher<ET, KEY_CIDX, REV_CIDX>,
+>;
 
 pub struct ByColBatcher<ET: EntityTrait, const CIDX: usize>
 where

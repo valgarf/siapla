@@ -20,7 +20,11 @@ use crate::{
     revisioning::{PlanState, active_for_revision, create_revision},
 };
 
-use super::resource::GQLResource;
+use super::{
+    allocation::GQLAllocation,
+    issue::GQLIssue,
+    resource::GQLResource,
+};
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -170,10 +174,14 @@ impl GQLTask {
         Ok(children.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
-    pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<crate::entity::issue::Model>> {
+    pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
+        let Some(revision) = self.revision else {
+            return Ok(Vec::new());
+        };
         let header_id = self.model.header_id.unwrap_or(self.model.id);
         const CIDX: usize = crate::entity::issue::Column::TaskId as usize;
-        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(header_id).await
+        let issues = ctx.load_issues_by_task_at_revision::<CIDX>(header_id, revision).await?;
+        Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
@@ -216,13 +224,15 @@ impl GQLTask {
             .collect())
     }
 
-    async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
+    async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
         let header_id = self.model.header_id.unwrap_or(self.model.id);
+        let Some(revision) = self.revision else {
+            return Ok(Vec::new());
+        };
         const CIDX: usize = allocation::Column::TaskId as usize;
-        ctx.load_by_col::<allocation::Entity, CIDX>(header_id).await.map(|mut res| {
-            res.sort_by_key(|a| a.end);
-            res
-        })
+        let mut res = ctx.load_allocations_by_task_at_revision::<CIDX>(header_id, revision).await?;
+        res.sort_by_key(|a| a.end);
+        Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, Some(revision))).collect())
     }
 }
 
@@ -288,30 +298,15 @@ impl GQLResourceConstraintEntry {
         self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let txn = ctx.txn().await?;
-        // Resolve via header so we return the iteration active at the target revision
-        let iter = resource::Entity::find_by_id(self.model.resource_id).one(txn).await?;
-        let iter = match iter {
-            Some(it) => it,
-            None => return Err(anyhow!("Resource not found")),
-        };
-        match iter.header_id {
-            Some(hid) => {
-                let active = resource::Entity::find()
-                    .filter(resource::Column::HeaderId.eq(hid))
-                    .filter(active_for_revision(
-                        resource::Column::RevCreated,
-                        resource::Column::RevDeleted,
-                        self.revision,
-                    )?)
-                    .one(txn)
-                    .await?;
-                active
-                    .map(|m| GQLResource::at_revision(m, self.revision))
-                    .ok_or_else(|| anyhow!("Resource not found at revision"))
-            }
-            None => Ok(GQLResource::at_revision(iter, self.revision)),
-        }
+        const CIDX: usize = resource::Column::HeaderId as usize;
+        let model = ctx
+            .load_one_by_col_at_revision::<resource::Entity, CIDX>(
+                self.model.resource_id,
+                self.revision,
+            )
+            .await?;
+        let model = model.ok_or(anyhow!("Resource not found at revision"))?;
+        Ok(GQLResource::at_revision(model, self.revision))
     }
 }
 
@@ -638,15 +633,20 @@ async fn update_resource_constraints(
             .await?;
 
             if !c.entries.is_empty() {
-                resource_constraint_entry::Entity::insert_many(c.entries.iter().map(|entry| {
-                    resource_constraint_entry::ActiveModel {
+                let mut entry_models: Vec<resource_constraint_entry::ActiveModel> = Vec::new();
+                for entry in &c.entries {
+                    let resource_header_id = resource::Entity::find_by_id(entry.resource_id)
+                        .one(txn)
+                        .await?
+                        .and_then(|r| r.header_id)
+                        .unwrap_or(entry.resource_id);
+                    entry_models.push(resource_constraint_entry::ActiveModel {
                         id: ActiveValue::NotSet,
                         resource_constraint_id: ActiveValue::Set(new_constraint.id),
-                        resource_id: ActiveValue::Set(entry.resource_id),
-                    }
-                }))
-                .exec(txn)
-                .await?;
+                        resource_id: ActiveValue::Set(resource_header_id),
+                    });
+                }
+                resource_constraint_entry::Entity::insert_many(entry_models).exec(txn).await?;
             }
         }
     }
@@ -664,15 +664,20 @@ async fn update_resource_constraints(
                 rev_deleted: ActiveValue::Set(None),
             };
             let rc = rc.insert(txn).await?;
-            let entries: Vec<resource_constraint_entry::ActiveModel> = c
-                .entries
-                .iter()
-                .map(|entry| resource_constraint_entry::ActiveModel {
+            let mut entries: Vec<resource_constraint_entry::ActiveModel> = Vec::new();
+            for entry in &c.entries {
+                let resource_id = entry.resource_id;
+                let resource_header_id = resource::Entity::find_by_id(resource_id)
+                    .one(txn)
+                    .await?
+                    .and_then(|r| r.header_id)
+                    .unwrap_or(resource_id);
+                entries.push(resource_constraint_entry::ActiveModel {
                     id: ActiveValue::NotSet,
                     resource_constraint_id: ActiveValue::Set(rc.id),
-                    resource_id: ActiveValue::Set(entry.resource_id),
-                })
-                .collect();
+                    resource_id: ActiveValue::Set(resource_header_id),
+                });
+            }
             if !entries.is_empty() {
                 resource_constraint_entry::Entity::insert_many(entries).exec(txn).await?;
             }
@@ -823,7 +828,13 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
                 resource_constraint_entry::ActiveModel {
                     id: ActiveValue::NotSet,
                     resource_constraint_id: ActiveValue::Set(new_c.id),
-                    resource_id: ActiveValue::Set(entry.resource_id),
+                    resource_id: ActiveValue::Set(
+                        resource::Entity::find_by_id(entry.resource_id)
+                            .one(txn)
+                            .await?
+                            .and_then(|r| r.header_id)
+                            .unwrap_or(entry.resource_id),
+                    ),
                 }
                 .insert(txn)
                 .await?;

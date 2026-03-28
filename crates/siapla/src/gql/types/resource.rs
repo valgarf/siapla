@@ -6,13 +6,18 @@ use sea_orm::prelude::*;
 use tracing::error;
 
 use crate::{
-    entity::{availability, holiday, resource_iteration as resource, vacation},
-    gql::{
-        common::{nullable_to_av, opt_to_av},
-        context::Context,
+    entity::{
+        availability, holiday, resource_header, resource_iteration as resource, vacation,
     },
-    revisioning::{PlanState, active_for_revision, create_revision},
+    gql::{
+        availability::GQLAvailability,
+        common::nullable_to_av,
+        context::Context,
+        vacation::GQLVacation,
+    },
+    revisioning::{PlanState, create_revision},
 };
+
 
 use super::{
     availability::{AvailabilityInput, update_availability},
@@ -48,24 +53,32 @@ impl GQLInterval {
 pub struct GQLResource {
     pub model: resource::Model,
     pub revision: Option<i64>,
+    pub header_model: Option<resource_header::Model>,
 }
 
 impl GQLResource {
     pub fn at_revision(model: resource::Model, revision: Option<i64>) -> Self {
-        Self { model, revision }
+        Self { model, revision, header_model: None }
+    }
+
+    pub fn with_header(model: resource::Model, header_model: resource_header::Model) -> Self {
+        Self { model, revision: None, header_model: Some(header_model) }
     }
 }
 
 impl From<resource::Model> for GQLResource {
     fn from(model: resource::Model) -> Self {
-        Self { model, revision: None }
+        Self { model, revision: None, header_model: None }
     }
 }
 
 #[graphql_object]
 #[graphql(name = "Resource")]
 impl GQLResource {
-    fn db_id(&self) -> &i32 {
+    fn db_id(&self) -> i32 {
+        self.model.header_id.unwrap_or(self.model.id)
+    }
+    fn iteration_id(&self) -> &i32 {
         &self.model.id
     }
     fn name(&self) -> &str {
@@ -80,6 +93,20 @@ impl GQLResource {
     fn removed(&self) -> &Option<DateTime<Utc>> {
         &self.model.removed
     }
+    fn rev_created(&self) -> i32 {
+        self.model.rev_created as i32
+    }
+    fn rev_deleted(&self) -> Option<i32> {
+        self.model.rev_deleted.map(|v| v as i32)
+    }
+    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
+        let hm = self.load_header(ctx).await?;
+        Ok(hm.and_then(|h| h.rev_created).map(|v| v as i32))
+    }
+    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
+        let hm = self.load_header(ctx).await?;
+        Ok(hm.and_then(|h| h.rev_deleted).map(|v| v as i32))
+    }
 
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
         const CIDX: usize = holiday::Column::Id as usize;
@@ -87,32 +114,28 @@ impl GQLResource {
         Ok(holiday.map(GQLHoliday::from_model))
     }
 
-    pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<availability::Model>> {
-        let txn = ctx.txn().await?;
-        let availability = availability::Entity::find()
-            .filter(availability::Column::ResourceId.eq(self.model.id))
-            .filter(active_for_revision(
-                availability::Column::RevCreated,
-                availability::Column::RevDeleted,
-                self.revision,
-            )?)
-            .all(txn)
-            .await?;
-        Ok(availability)
+    pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
+        let resource_id = self.model.header_id.unwrap_or(self.model.id);
+        const CIDX: usize = availability::Column::ResourceId as usize;
+        let availability =
+            ctx.load_by_col_at_revision::<availability::Entity, CIDX>(resource_id, self.revision)
+                .await?;
+        Ok(availability
+            .into_iter()
+            .map(|m| GQLAvailability::at_revision(m, self.revision))
+            .collect())
     }
 
-    pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<vacation::Model>> {
-        let txn = ctx.txn().await?;
-        let vacation = vacation::Entity::find()
-            .filter(vacation::Column::ResourceId.eq(self.model.id))
-            .filter(active_for_revision(
-                vacation::Column::RevCreated,
-                vacation::Column::RevDeleted,
-                self.revision,
-            )?)
-            .all(txn)
-            .await?;
-        Ok(vacation)
+    pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
+        let resource_id = self.model.header_id.unwrap_or(self.model.id);
+        const CIDX: usize = vacation::Column::ResourceId as usize;
+        let vacation =
+            ctx.load_by_col_at_revision::<vacation::Entity, CIDX>(resource_id, self.revision)
+                .await?;
+        Ok(vacation
+            .into_iter()
+            .map(|m| GQLVacation::at_revision(m, self.revision))
+            .collect())
     }
 
     pub async fn combined_availability(
@@ -139,6 +162,19 @@ impl GQLResource {
     }
 }
 
+impl GQLResource {
+    async fn load_header(&self, ctx: &Context) -> anyhow::Result<Option<resource_header::Model>> {
+        if let Some(ref hm) = self.header_model {
+            return Ok(Some(hm.clone()));
+        }
+        let Some(hid) = self.model.header_id else {
+            return Ok(None);
+        };
+        let txn = ctx.txn().await?;
+        Ok(resource_header::Entity::find_by_id(hid).one(txn).await?)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Non-GraphQL helper methods on resource::Model (used by internal save logic)
 // ---------------------------------------------------------------------------
@@ -149,8 +185,9 @@ impl resource::Model {
         &self,
         ctx: &Context,
     ) -> anyhow::Result<Vec<availability::Model>> {
+        let resource_id = self.header_id.unwrap_or(self.id);
         let availability = availability::Entity::find()
-            .filter(availability::Column::ResourceId.eq(self.id))
+            .filter(availability::Column::ResourceId.eq(resource_id))
             .filter(availability::Column::RevDeleted.is_null())
             .all(ctx.txn().await?)
             .await?;
@@ -171,6 +208,7 @@ impl resource::Model {
 
 #[derive(juniper::GraphQLInputObject)]
 pub struct ResourceSaveInput {
+    /// When set, this is the **header id** (stable identity) of the resource to update.
     db_id: Option<i32>,
     name: String,
     timezone: String,
@@ -182,15 +220,15 @@ pub struct ResourceSaveInput {
     pub removed_vacations: Option<Vec<i32>>,
 }
 
-impl From<ResourceSaveInput> for crate::entity::resource_iteration::ActiveModel {
-    fn from(value: ResourceSaveInput) -> Self {
+impl ResourceSaveInput {
+    fn into_active_model(self) -> crate::entity::resource_iteration::ActiveModel {
         crate::entity::resource_iteration::ActiveModel {
-            id: opt_to_av!(value.db_id),
-            name: ActiveValue::Set(value.name),
-            timezone: ActiveValue::Set(value.timezone),
-            added: ActiveValue::Set(value.added),
-            removed: nullable_to_av!(value.removed),
-            holiday_id: nullable_to_av!(value.holiday_id),
+            id: ActiveValue::NotSet,
+            name: ActiveValue::Set(self.name),
+            timezone: ActiveValue::Set(self.timezone),
+            added: ActiveValue::Set(self.added),
+            removed: nullable_to_av!(self.removed),
+            holiday_id: nullable_to_av!(self.holiday_id),
             header_id: ActiveValue::NotSet,
             rev_created: ActiveValue::NotSet,
             rev_deleted: ActiveValue::NotSet,
@@ -206,16 +244,19 @@ pub async fn resource_save(
     let availability = resource.availability.take();
     let added_vacations = resource.added_vacations.take().unwrap_or_default();
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
+    let input_header_id = resource.db_id.take();
     let txn = ctx.txn().await?;
     let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-    let mut am = resource::ActiveModel::from(resource);
+    let mut am = resource.into_active_model();
 
-    let model = if am.id.is_set() {
-        let old_id = am.id.clone().unwrap();
-        let existing = resource::Entity::find_by_id(old_id)
+    let model = if let Some(header_id) = input_header_id {
+        let existing = resource::Entity::find()
+            .filter(resource::Column::HeaderId.eq(header_id))
+            .filter(resource::Column::RevDeleted.is_null())
             .one(txn)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Resource iteration {} not found", old_id))?;
+            .ok_or_else(|| anyhow::anyhow!("No active resource iteration found for header {}", header_id))?;
+        let old_id = existing.id;
         // Soft-delete the old iteration
         resource::Entity::update_many()
             .col_expr(resource::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
@@ -224,7 +265,6 @@ pub async fn resource_save(
             .exec(txn)
             .await?;
         // Create new iteration
-        am.id = ActiveValue::NotSet;
         am.header_id = ActiveValue::Set(existing.header_id);
         am.rev_created = ActiveValue::Set(revision_id);
         am.rev_deleted = ActiveValue::Set(None);
@@ -246,7 +286,7 @@ pub async fn resource_save(
     // Handle adding new vacations
     for vacation_input in added_vacations {
         let mut vacation_am = crate::entity::vacation::ActiveModel::from(vacation_input);
-        vacation_am.resource_id = ActiveValue::Set(model.id);
+        vacation_am.resource_id = ActiveValue::Set(model.header_id.unwrap_or(model.id));
         vacation_am.rev_created = ActiveValue::Set(revision_id);
         vacation_am.rev_deleted = ActiveValue::Set(None);
         vacation_am.insert(txn).await?;
@@ -267,4 +307,3 @@ pub async fn resource_save(
 
     Ok(model)
 }
-

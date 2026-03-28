@@ -29,25 +29,44 @@ impl From<Weekday> for String {
     }
 }
 
+pub struct GQLAvailability {
+    pub model: availability::Model,
+    pub revision: Option<i64>,
+}
+
+impl GQLAvailability {
+    pub fn at_revision(model: availability::Model, revision: Option<i64>) -> Self {
+        Self { model, revision }
+    }
+}
+
+impl From<availability::Model> for GQLAvailability {
+    fn from(model: availability::Model) -> Self {
+        Self { model, revision: None }
+    }
+}
+
 #[graphql_object]
 #[graphql(name = "Availability")]
-impl availability::Model {
+impl GQLAvailability {
     fn db_id(&self) -> &i32 {
-        &self.id
+        &self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        const CIDX: usize = resource::Column::Id as usize;
-        let model = ctx.load_one_by_col::<resource::Entity, CIDX>(self.resource_id).await?;
+        const CIDX: usize = resource::Column::HeaderId as usize;
+        let model = ctx
+            .load_one_by_col_at_revision::<resource::Entity, CIDX>(self.model.resource_id, self.revision)
+            .await?;
         let model = model.ok_or(anyhow!("Failed to find resource for Availability"))?;
-        Ok(GQLResource::from(model))
+        Ok(GQLResource::at_revision(model, self.revision))
     }
     fn duration(&self) -> anyhow::Result<i32> {
-        let mut secs = self.duration * Decimal::new(3600, 0);
+        let mut secs = self.model.duration * Decimal::new(3600, 0);
         secs.rescale(0); // rounding to whole seconds
         Ok(secs.try_into()?)
     }
     fn weekday(&self) -> anyhow::Result<Weekday> {
-        Ok(self.weekday.as_str().try_into()?)
+        Ok(self.model.weekday.as_str().try_into()?)
     }
 }
 
@@ -78,8 +97,10 @@ pub async fn update_availability(
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let existing_availability: Vec<_> = model.availability_latest(ctx).await?.into_iter().collect();
-    let existing: HashSet<Weekday> =
-        existing_availability.iter().map(|el| el.weekday()).collect::<anyhow::Result<_>>()?;
+    let existing: HashSet<Weekday> = existing_availability
+        .iter()
+        .map(|el| el.weekday.as_str().try_into().map_err(anyhow::Error::from))
+        .collect::<anyhow::Result<_>>()?;
     let target: HashSet<Weekday> = availability.iter().map(|a| a.weekday).collect();
     let remove: HashSet<Weekday> = existing.difference(&target).cloned().collect();
     let add: HashSet<Weekday> = target.difference(&existing).cloned().collect();
@@ -116,7 +137,7 @@ pub async fn update_availability(
             .filter(|a| add.contains(&a.weekday))
             .map(|a| {
                 let mut am: availability::ActiveModel = a.into();
-                am.resource_id = ActiveValue::Set(model.id);
+                am.resource_id = ActiveValue::Set(model.header_id.unwrap_or(model.id));
                 am.rev_created = ActiveValue::Set(revision_id);
                 am.rev_deleted = ActiveValue::Set(None);
                 am
@@ -128,7 +149,8 @@ pub async fn update_availability(
         let existing_models: Vec<&availability::Model> = existing_availability
             .iter()
             .filter(|a| {
-                let wd = a.weekday();
+                let wd: anyhow::Result<Weekday> =
+                    a.weekday.as_str().try_into().map_err(anyhow::Error::from);
                 if let Ok(wd) = wd { update.contains(&wd) } else { false }
             })
             .collect();
@@ -154,7 +176,7 @@ pub async fn update_availability(
                 .await?;
 
             let mut am: availability::ActiveModel = input.into();
-            am.resource_id = ActiveValue::Set(model.id);
+            am.resource_id = ActiveValue::Set(model.header_id.unwrap_or(model.id));
             am.rev_created = ActiveValue::Set(revision_id);
             am.rev_deleted = ActiveValue::Set(None);
             am.insert(txn).await?;

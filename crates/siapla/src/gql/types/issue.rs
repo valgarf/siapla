@@ -6,40 +6,55 @@ use juniper::graphql_object;
 use std::str::FromStr;
 use strum::{EnumString, FromRepr, IntoStaticStr};
 
+pub struct GQLIssue {
+    pub model: issue::Model,
+    pub revision: Option<i64>,
+}
+
+impl GQLIssue {
+    pub fn at_revision(model: issue::Model, revision: Option<i64>) -> Self {
+        Self { model, revision }
+    }
+}
+
+impl From<issue::Model> for GQLIssue {
+    fn from(model: issue::Model) -> Self {
+        Self { model, revision: None }
+    }
+}
+
 #[graphql_object]
 #[graphql(name = "Issue")]
-impl issue::Model {
+impl GQLIssue {
     fn db_id(&self) -> &i32 {
-        &self.id
+        &self.model.id
     }
     fn code(&self) -> IssueCode {
-        IssueCode::from_repr(self.code as usize).unwrap_or(IssueCode::Unknown)
+        IssueCode::from_repr(self.model.code as usize).unwrap_or(IssueCode::Unknown)
     }
     fn description(&self) -> &str {
-        &self.description
+        &self.model.description
     }
     fn r#type(&self) -> anyhow::Result<IssueType> {
-        Ok(IssueType::from_str(&self.r#type)?)
+        Ok(IssueType::from_str(&self.model.r#type)?)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let Some(task_id) = self.task_id else {
+        let Some(task_id) = self.model.task_id else {
             return Ok(None);
         };
-        // task_id now stores task_header.id; find the current active iteration
-        let txn = ctx.txn().await?;
-        use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _};
-        let current = task::Entity::find()
-            .filter(task::Column::HeaderId.eq(task_id))
-            .filter(task::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?;
-        if let Some(model) = current {
-            return Ok(Some(GQLTask::from(model)));
+        const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
+        if let Some(model) = ctx
+            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(
+                task_id,
+                self.revision,
+            )
+            .await?
+        {
+            return Ok(Some(GQLTask::at_revision(model, self.revision)));
         }
-        // Fallback: direct id lookup for backward compatibility
-        const CIDX: usize = task::Column::Id as usize;
-        let t = ctx.load_one_by_col::<task::Entity, CIDX>(task_id).await?;
-        Ok(t.map(GQLTask::from))
+        const TASK_ID_CIDX: usize = task::Column::Id as usize;
+        let t = ctx.load_one_by_col::<task::Entity, TASK_ID_CIDX>(task_id).await?;
+        Ok(t.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 }
 

@@ -3,17 +3,34 @@ use chrono::{DateTime, Utc};
 use juniper::graphql_object;
 use sea_orm::ActiveValue;
 
+pub struct GQLVacation {
+    pub model: vacation::Model,
+    pub revision: Option<i64>,
+}
+
+impl GQLVacation {
+    pub fn at_revision(model: vacation::Model, revision: Option<i64>) -> Self {
+        Self { model, revision }
+    }
+}
+
+impl From<vacation::Model> for GQLVacation {
+    fn from(model: vacation::Model) -> Self {
+        Self { model, revision: None }
+    }
+}
+
 #[graphql_object]
 #[graphql(name = "Vacation")]
-impl vacation::Model {
+impl GQLVacation {
     fn db_id(&self) -> &i32 {
-        &self.id
+        &self.model.id
     }
     fn from(&self) -> DateTime<Utc> {
-        self.from
+        self.model.from
     }
     fn until(&self) -> DateTime<Utc> {
-        self.until
+        self.model.until
     }
 }
 
