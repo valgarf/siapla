@@ -156,9 +156,6 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                 }
             }
             drop(problem);
-            app_state.set_state(crate::app_state::CalculationState::Finished {
-                revision: calculated_revision,
-            });
         }
     }
 
@@ -170,5 +167,8 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
         Err(err) => println!("Error committing: {}", err),
         Ok(_) => {}
     }
+    app_state.set_state(crate::app_state::CalculationState::Finished {
+        revision: calculated_revision,
+    });
     Ok(())
 }
