@@ -22,8 +22,23 @@ impl issue::Model {
         Ok(IssueType::from_str(&self.r#type)?)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
+        let Some(task_id) = self.task_id else {
+            return Ok(None);
+        };
+        // task_id now stores task_header.id; find the current active iteration
+        let txn = ctx.txn().await?;
+        use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _};
+        let current = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(task_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?;
+        if let Some(model) = current {
+            return Ok(Some(GQLTask::from(model)));
+        }
+        // Fallback: direct id lookup for backward compatibility
         const CIDX: usize = task::Column::Id as usize;
-        let t = ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id).await?;
+        let t = ctx.load_one_by_col::<task::Entity, CIDX>(task_id).await?;
         Ok(t.map(GQLTask::from))
     }
 }

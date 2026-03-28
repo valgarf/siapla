@@ -568,7 +568,7 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
     for task_gene in ordered_vec.iter() {
         match plan_task(project, task_gene, &mut resource_slots, &mut g_finished) {
             Ok(assignment) => {
-                plan.assignments.insert(task_gene.task.borrow().db_id, assignment);
+                plan.assignments.insert(task_gene.task.borrow().header_id, assignment);
             }
             Err(Some(issue)) => {
                 let task = task_gene.task.borrow();
@@ -609,7 +609,7 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             let mut all_assigned = true;
             for t in pred_tasks.iter() {
                 let borrowd_task = t.borrow();
-                let tid = borrowd_task.db_id;
+                let tid = borrowd_task.header_id;
                 let booked_finishes =
                     if borrowd_task.booked_final { borrowd_task.booked_until } else { None };
                 drop(borrowd_task);
@@ -640,9 +640,9 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             if all_assigned {
                 if let Some(date) = max_end {
                     plan.fulfilled_milestones.insert(
-                        milestone.db_id,
+                        milestone.header_id,
                         crate::scheduling::datastructures::FulfilledMilestone {
-                            task_id: milestone.db_id,
+                            task_id: milestone.header_id,
                             date,
                         },
                     );
@@ -774,14 +774,14 @@ pub fn plan_task(
             description:
                 "Failed to determine start timestamp - might be an issue in a predecessor."
                     .to_string(),
-            task_id: Some(task.db_id),
+            task_id: Some(task.header_id),
         }));
     };
     if task.effort <= 0.0 {
         return Err(Some(PlanningIssue {
             code: crate::gql::issue::IssueCode::NoEffort,
             description: "No effort set for this task.".to_string(),
-            task_id: Some(task.db_id),
+            task_id: Some(task.header_id),
         })); // detected on creation
     }
     // divide effort by total_speed to account for faster/slower constraints
@@ -810,7 +810,7 @@ pub fn plan_task(
             description: format!(
                 "Could not find any resource slot - resource constraints likely missing"
             ),
-            task_id: Some(task.db_id),
+            task_id: Some(task.header_id),
         }));
     }
     // Create selectable iterators once (may be empty)
@@ -835,7 +835,7 @@ pub fn plan_task(
                     description:
                         "Failed to find overlapping slots for the given resource constraints."
                             .to_string(),
-                    task_id: Some(task.db_id),
+                    task_id: Some(task.header_id),
                 }));
             }
         }
@@ -852,7 +852,7 @@ pub fn plan_task(
                     return Err(Some(PlanningIssue {
                         code: crate::gql::issue::IssueCode::NoSlotFound,
                         description: "Failed to compute overlapping intervals.".to_string(),
-                        task_id: Some(task.db_id),
+                        task_id: Some(task.header_id),
                     }));
                 }
             }
@@ -977,7 +977,7 @@ pub fn plan_task(
                 code: crate::gql::issue::IssueCode::NoSlotFound,
                 description: "Failed to find overlapping slots for the given resource constraints."
                     .to_string(),
-                task_id: Some(task.db_id),
+                task_id: Some(task.header_id),
             }));
         }
     }

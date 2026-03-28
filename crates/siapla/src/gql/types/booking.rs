@@ -3,6 +3,7 @@ use crate::{
     entity::{booking, booking_resource, resource_iteration as resource, task_iteration as task},
     gql::context::Context,
 };
+use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _};
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use juniper::graphql_object;
@@ -43,6 +44,16 @@ impl booking::Model {
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
+        let txn = ctx.txn().await?;
+        if let Some(model) = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(self.task_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?
+        {
+            return Ok(GQLTask::from(model));
+        }
+
         const CIDX: usize = task::Column::Id as usize;
         ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
             .await

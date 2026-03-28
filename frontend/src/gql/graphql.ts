@@ -169,8 +169,14 @@ export type Mutation = {
   new: Mutation;
   /** Trigger a manual recalculation now */
   recalculateNow: Scalars['Boolean']['output'];
+  /**
+   * Reset the database by hard-deleting all data and creating a fresh revision.
+   * Only available when the server is started with `--allow-reset`.
+   */
+  resetDatabase: Scalars['Boolean']['output'];
   resourceDelete: Scalars['Boolean']['output'];
   resourceSave: Resource;
+  /** Delete a task by its **header id** (stable identity). */
   taskDelete: Scalars['Boolean']['output'];
   taskSave: Task;
 };
@@ -224,6 +230,7 @@ export type Query = {
   getFromOpenHolidays?: Maybe<Holiday>;
   helloWorld: Scalars['String']['output'];
   issues: Array<Issue>;
+  latestRevision?: Maybe<Scalars['Int64']['output']>;
   region?: Maybe<Region>;
   resources: Array<Resource>;
   tasks: Array<Task>;
@@ -344,16 +351,23 @@ export type Task = {
   __typename?: 'Task';
   allocations: Array<Allocation>;
   children: Array<Task>;
+  /** Stable identity — always the `task_header.id`. */
   dbId: Scalars['Int']['output'];
   description: Scalars['String']['output'];
   designation: TaskDesignation;
   earliestStart?: Maybe<Scalars['DateTime']['output']>;
   effort?: Maybe<Scalars['Float']['output']>;
+  headerRevCreated?: Maybe<Scalars['Int']['output']>;
+  headerRevDeleted?: Maybe<Scalars['Int']['output']>;
   issues: Array<Issue>;
+  /** The mutable iteration id (changes on every edit). */
+  iterationId: Scalars['Int']['output'];
   parent?: Maybe<Task>;
   predecessors: Array<Task>;
   priority: Scalars['Float']['output'];
   resourceConstraints: Array<ResourceConstraint>;
+  revCreated: Scalars['Int']['output'];
+  revDeleted?: Maybe<Scalars['Int']['output']>;
   scheduleTarget?: Maybe<Scalars['DateTime']['output']>;
   successors: Array<Task>;
   title: Scalars['String']['output'];
@@ -368,6 +382,7 @@ export enum TaskDesignation {
 
 export type TaskSaveInput = {
   children?: InputMaybe<Array<Scalars['Int']['input']>>;
+  /** When set, this is the **header id** (stable identity) of the task to update. */
   dbId?: InputMaybe<Scalars['Int']['input']>;
   description: Scalars['String']['input'];
   designation: TaskDesignation;

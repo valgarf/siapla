@@ -9,7 +9,9 @@ use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
 use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
 // availability now loaded via Context::load_combined_availability
-use crate::entity::{booking, booking_resource, resource_iteration as resource, task_iteration as task};
+use crate::entity::{
+    booking, booking_resource, resource_iteration as resource, task_iteration as task,
+};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
 use chrono::NaiveDateTime;
@@ -102,6 +104,14 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
     let mut task_bookings: StdMap<i32, Vec<(NaiveDateTime, NaiveDateTime, Vec<i32>, bool)>> =
         StdMap::new();
     let mut resource_last_booking: StdMap<i32, NaiveDateTime> = StdMap::new();
+
+    let mut header_to_task_iter: StdMap<i32, i32> = StdMap::new();
+    for t in db_task_map.values() {
+        if let Some(header_id) = t.header_id {
+            header_to_task_iter.insert(header_id, t.id);
+        }
+    }
+
     for a in booking_allocs.iter() {
         let start = a.start.naive_utc();
         let end = a.end.naive_utc();
@@ -111,9 +121,11 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             .filter(|ar| ar.booking_id == a.id)
             .map(|ar| ar.resource_id)
             .collect();
-        if let Some(tid) = Some(a.task_id) {
-            task_bookings.entry(tid).or_default().push((start, end, resources.clone(), final_flag));
-        }
+        let task_iter_id = header_to_task_iter.get(&a.task_id).copied().unwrap_or(a.task_id);
+        task_bookings
+            .entry(task_iter_id)
+            .or_default()
+            .push((start, end, resources.clone(), final_flag));
         for rid in resources {
             let entry = resource_last_booking.entry(rid).or_insert(start);
             if *entry < end {
@@ -136,6 +148,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let node = if t.designation.as_str() == <&'static str>::from(TaskDesignation::Requirement) {
             let new_ref = Rc::new(RefCell::new(Requirement {
                 db_id: t.id,
+                header_id: t.header_id.unwrap_or(t.id),
                 title: t.title.clone(),
                 earliest_start: t.earliest_start.map(|dt| dt.naive_utc()).unwrap_or_default(),
             }));
@@ -144,6 +157,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Milestone) {
             let new_ref = Rc::new(RefCell::new(Milestone {
                 db_id: t.id,
+                header_id: t.header_id.unwrap_or(t.id),
                 title: t.title.clone(),
                 schedule_target: t.schedule_target.map(|dt| dt.naive_utc()).unwrap_or_default(),
                 priority: t.priority as f64,
@@ -154,6 +168,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             let base_effort = t.effort.unwrap_or(0.0) as f64;
             let new_ref = Rc::new(RefCell::new(Task {
                 db_id: t.id,
+                header_id: t.header_id.unwrap_or(t.id),
                 parent: None,
                 title: t.title.clone(),
                 constraints: Vec::new(), // filled later
@@ -172,6 +187,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Group) {
             let new_ref = Rc::new(RefCell::new(Group {
                 db_id: t.id,
+                header_id: t.header_id.unwrap_or(t.id),
                 parent: None,
                 constraints: Vec::new(), // filled later
             }));
@@ -192,6 +208,11 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             db_to_nidx.insert(t.id, g.add_node(node));
         }
     }
+
+    // Map header_id → iteration_id so we can translate header-based references
+    // (used by dependencies and parent_id) to iteration-based keys used in our maps.
+    let header_to_iter: HashMap<i32, i32> =
+        db_task_map.values().filter_map(|t| t.header_id.map(|hid| (hid, t.id))).collect();
 
     let group_map = project_objects
         .groups
@@ -218,7 +239,9 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let designation =
             TaskDesignation::from_str(&t.designation).expect("Must have a valid designation");
         if let Some(pid) = t.parent_id {
-            if let (Some(&in_nidx), Some(&out_nidx)) = (grp_in_idx.get(&pid), grp_out_idx.get(&pid))
+            let parent_key = header_to_iter.get(&pid).copied().unwrap_or(pid);
+            if let (Some(&in_nidx), Some(&out_nidx)) =
+                (grp_in_idx.get(&parent_key), grp_out_idx.get(&parent_key))
             {
                 if let (Some(&t_in_nidx), Some(&t_out_nidx)) =
                     (grp_in_idx.get(&t.id), grp_out_idx.get(&t.id))
@@ -235,7 +258,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                     }
                 }
             }
-            let parent = group_map.get(&pid).expect("Group must exist.");
+            let parent = group_map.get(&parent_key).expect("Group must exist.");
             if let Some(child) = group_map.get(&t.id) {
                 child.borrow_mut().parent = Some(Rc::downgrade(parent));
             } else if let Some(child) = task_map.get(&t.id) {
@@ -250,8 +273,8 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
 
     // fill edges from dependencies
     for dep in db_dependencies_vec {
-        let pre_id = dep.predecessor_id;
-        let suc_id = dep.successor_id;
+        let pre_id = header_to_iter.get(&dep.predecessor_id).copied().unwrap_or(dep.predecessor_id);
+        let suc_id = header_to_iter.get(&dep.successor_id).copied().unwrap_or(dep.successor_id);
         let pre_nidx =
             db_to_nidx.get(&pre_id).or_else(|| grp_out_idx.get(&pre_id)).expect("Missing id");
         let suc_nidx =
@@ -470,7 +493,7 @@ pub fn detect_project_issues(
         if let Some(crate::scheduling::datastructures::Node::Task(t_rc)) =
             project.g.node_weight(nidx)
         {
-            has_requirement_ancestor.insert(t_rc.borrow().db_id);
+            has_requirement_ancestor.insert(t_rc.borrow().header_id);
             for nei in project.g.neighbors_directed(nidx, petgraph::Direction::Outgoing) {
                 stack.push(nei);
             }
@@ -492,7 +515,7 @@ pub fn detect_project_issues(
         if let Some(crate::scheduling::datastructures::Node::Task(t_rc)) =
             project.g.node_weight(nidx)
         {
-            is_required_by_milestone.insert(t_rc.borrow().db_id);
+            is_required_by_milestone.insert(t_rc.borrow().header_id);
             for pred in project.g.neighbors_directed(nidx, petgraph::Direction::Incoming) {
                 stack.push(pred);
             }
@@ -500,7 +523,7 @@ pub fn detect_project_issues(
     }
 
     for t in project.objs.tasks.iter() {
-        let tid = t.borrow().db_id;
+        let tid = t.borrow().header_id;
         if !has_requirement_ancestor.contains(&tid) {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::RequirementMissing,

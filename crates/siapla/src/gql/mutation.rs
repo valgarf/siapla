@@ -1,6 +1,6 @@
 use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
-use sea_orm::{ActiveValue, prelude::*};
+use sea_orm::{ActiveValue, EntityTrait as _, QueryFilter as _, prelude::*};
 
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
@@ -38,12 +38,15 @@ impl Mutation {
         Ok(GQLTask::from(res))
     }
 
+    /// Delete a task by its **header id** (stable identity).
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+        // task_id is now the header_id; soft-delete the active iteration that
+        // belongs to this header.
         let res = task::Entity::update_many()
             .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(task::Column::Id.eq(task_id))
+            .filter(task::Column::HeaderId.eq(task_id))
             .filter(task::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
@@ -121,9 +124,30 @@ impl Mutation {
             }
         }
 
+        // Store booking.task_id as the stable task header id. Accept both
+        // header ids and iteration ids at the API boundary for compatibility.
+        let resolved_header_id = if let Some(active_task) = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(task_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?
+        {
+            active_task.header_id.unwrap_or(active_task.id)
+        } else if let Some(active_task) = task::Entity::find_by_id(task_id)
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?
+        {
+            active_task.header_id.unwrap_or(active_task.id)
+        } else {
+            return Err(anyhow::anyhow!(
+                "No active task iteration found for task header {task_id}"
+            ));
+        };
+
         let db_booking = booking::ActiveModel {
             id: ActiveValue::NotSet,
-            task_id: ActiveValue::Set(task_id),
+            task_id: ActiveValue::Set(resolved_header_id),
             start: ActiveValue::Set(start),
             end: ActiveValue::Set(end),
             r#final: ActiveValue::Set(r#final),

@@ -11,7 +11,7 @@ pub struct Plan {
 impl Plan {
     pub async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
         let txn = ctx.txn().await?;
-        let revision = crate::revisioning::resolve_revision(txn, self.revision).await?;
+        let revision = crate::revisioning::resolve_plan_revision(txn, self.revision).await?;
         let Some(revision) = revision else {
             return Ok(Vec::new());
         };

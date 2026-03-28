@@ -67,6 +67,7 @@ fn make_task(db_id: i32, title: &str, effort: f64) -> Rc<RefCell<Task>> {
     Rc::new(RefCell::new(Task {
         parent: None,
         db_id,
+        header_id: db_id,
         title: title.to_string(),
         effort,
         constraints: vec![],
@@ -84,7 +85,7 @@ fn make_requirement(
     title: &str,
     earliest_start: NaiveDateTime,
 ) -> Rc<RefCell<Requirement>> {
-    Rc::new(RefCell::new(Requirement { db_id, title: title.to_string(), earliest_start }))
+    Rc::new(RefCell::new(Requirement { db_id, header_id: db_id, title: title.to_string(), earliest_start }))
 }
 
 /// Create a `Milestone`.
@@ -96,6 +97,7 @@ fn make_milestone(
 ) -> Rc<RefCell<Milestone>> {
     Rc::new(RefCell::new(Milestone {
         db_id,
+        header_id: db_id,
         title: title.to_string(),
         schedule_target: target,
         priority,
@@ -104,7 +106,7 @@ fn make_milestone(
 
 /// Create a `Group`.
 fn make_group(db_id: i32) -> Rc<RefCell<Group>> {
-    Rc::new(RefCell::new(Group { parent: None, db_id, constraints: vec![] }))
+    Rc::new(RefCell::new(Group { parent: None, db_id, header_id: db_id, constraints: vec![] }))
 }
 
 /// Create a `ResourceConstraint` with a single resource entry.
@@ -1142,6 +1144,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
@@ -1170,6 +1173,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
@@ -1198,6 +1202,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
@@ -1226,6 +1231,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
@@ -1247,6 +1253,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
@@ -1283,12 +1290,14 @@ mod milestone_cost_tests {
 
         let ms_low = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "Low".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,
         };
         let ms_high = Milestone {
             db_id: 2,
+            header_id: 2,
             title: "High".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 5.0,
@@ -1318,6 +1327,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 0.0,
@@ -1335,6 +1345,7 @@ mod milestone_cost_tests {
         let settings = make_settings();
         let ms = Milestone {
             db_id: 1,
+            header_id: 1,
             title: "M1".to_string(),
             schedule_target: ndt(2025, 6, 1, 0),
             priority: 1.0,

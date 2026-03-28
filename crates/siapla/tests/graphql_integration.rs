@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 use juniper::{ScalarValue as _, Variables};
-use sea_orm::{Database, DatabaseConnection, TransactionTrait as _};
+use sea_orm::{Database, DatabaseConnection, EntityTrait, TransactionTrait as _};
 use serial_test::serial;
 use siapla::gql::scalars::MyScalarValue;
 use siapla::{
@@ -294,6 +294,7 @@ async fn create_task(
                 {rc_frag}
             }}) {{
                 dbId
+                iterationId
                 title
                 designation
                 priority
@@ -361,6 +362,15 @@ async fn find_current_task_id_by_title(title: &str) -> i64 {
     tasks.iter()
         .find(|t| extract_str(t, "title") == title)
         .map(|t| extract_i64(t, "dbId"))
+        .unwrap_or_else(|| panic!("current task with title='{title}' not found"))
+}
+
+async fn find_current_iteration_id_by_title(title: &str) -> i64 {
+    let val = gql_ok_simple(r#"{ tasks { iterationId title } }"#).await;
+    let tasks = extract_list(&val, "tasks");
+    tasks.iter()
+        .find(|t| extract_str(t, "title") == title)
+        .map(|t| extract_i64(t, "iterationId"))
         .unwrap_or_else(|| panic!("current task with title='{title}' not found"))
 }
 
@@ -1179,5 +1189,599 @@ async fn test_complex_dependencies_and_update() {
         t2_preds,
         vec![req],
         "expected Chain-T2 predecessors to update to [{req}], got {t2_preds:?}"
+    );
+}
+
+/// Directly execute raw SQL against the shared test database.
+async fn exec_raw_sql(sql: &str) {
+    let url = shared_db_url().await;
+    let db = Database::connect(url).await.expect("exec_raw_sql: connect failed");
+    let txn = db.begin().await.expect("exec_raw_sql: begin failed");
+    use sea_orm::ConnectionTrait as _;
+    txn.execute(sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite, sql.to_string()))
+        .await
+        .unwrap_or_else(|e| panic!("exec_raw_sql failed: {e}\nSQL: {sql}"));
+    txn.commit().await.expect("exec_raw_sql: commit failed");
+    db.close().await.ok();
+}
+
+// ── Bug-reproduction tests ────────────────────────────────────────────────
+
+/// Bug 2: After modifying a task that has dependencies, `query_problem` panics
+/// because dependency edges reference `task_header.id` while the node-index maps
+/// are keyed by `task_iteration.id`. After a modification the two diverge.
+#[tokio::test]
+#[serial]
+async fn test_query_problem_after_task_modification() {
+    clean_database().await;
+    shared_db_url().await;
+
+    let alice_id = create_resource("QP-Alice", "Europe/Berlin", true).await;
+
+    // Requirement with earliest_start
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "QP-Req",
+            description: "req",
+            designation: REQUIREMENT,
+            priority: 1.0,
+            earliestStart: "2025-06-01T00:00:00Z"
+        }}) {{ dbId iterationId }} }}"#
+    )).await;
+    let req_id = extract_i64(&val, "taskSave.dbId");
+
+    // Task with dependency on requirement and a resource constraint
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let task_id = create_task(
+        "QP-Task",
+        "TASK",
+        2.0,
+        Some(8.0),
+        None,
+        Some(&[req_id]),
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+
+    // Milestone with schedule_target depending on the task
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "QP-Milestone",
+            description: "ms",
+            designation: MILESTONE,
+            priority: 3.0,
+            scheduleTarget: "2025-09-01T00:00:00Z",
+            predecessors: [{task_id}]
+        }}) {{ dbId }} }}"#
+    )).await;
+    let _ms_id = extract_i64(&val, "taskSave.dbId");
+
+    // First query_problem must succeed (header_id == iteration_id on fresh DB).
+    {
+        let (app_state, _rx) = AppState::new(true);
+        let ctx = Context::new(app_state);
+        let result = siapla::scheduling::query_problem(&ctx, None).await;
+        assert!(result.is_ok(), "First query_problem should succeed: {:?}", result.err());
+        Arc::into_inner(ctx)
+            .expect("only strong ref")
+            .commit()
+            .await
+            .expect("commit after first query_problem");
+    }
+
+    // Modify the task (reduce effort). This creates a new iteration whose id
+    // differs from its header_id.
+    let task_header_id = find_current_task_id_by_title("QP-Task").await;
+    let iter_before = find_current_iteration_id_by_title("QP-Task").await;
+    let current_req = find_current_task_id_by_title("QP-Req").await;
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_header_id},
+                title: "QP-Task",
+                description: "reduced effort",
+                designation: TASK,
+                priority: 2.0,
+                effort: 4.0,
+                predecessors: [{current_req}]
+            }}) {{
+                dbId
+                iterationId
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&mutation).await;
+    let returned_header = extract_i64(&val, "taskSave.dbId");
+    let iter_after = extract_i64(&val, "taskSave.iterationId");
+    assert_eq!(
+        returned_header, task_header_id,
+        "dbId (header) must stay the same after modification"
+    );
+    assert_ne!(
+        iter_after, iter_before,
+        "iterationId must change after modification"
+    );
+
+    // query_problem after modification must NOT panic (Bug 2 reproduced here).
+    {
+        let (app_state, _rx) = AppState::new(true);
+        let ctx = Context::new(app_state);
+        let result = siapla::scheduling::query_problem(&ctx, None).await;
+        assert!(
+            result.is_ok(),
+            "query_problem after task modification should succeed: {:?}",
+            result.err()
+        );
+        let project = result.unwrap();
+        assert_eq!(project.objs.tasks.len(), 1, "project should still contain 1 task");
+        Arc::into_inner(ctx)
+            .expect("only strong ref")
+            .commit()
+            .await
+            .expect("commit after second query_problem");
+    }
+}
+
+/// Bug 1: After modifying an already-planned task the plan disappears from the
+/// frontend because `currentPlan` resolved to the latest (NOT_CALCULATED)
+/// revision which has no allocations.
+#[tokio::test]
+#[serial]
+async fn test_plan_visible_after_task_modification() {
+    clean_database().await;
+    shared_db_url().await;
+
+    let alice_id = create_resource("PV-Alice", "Europe/Berlin", true).await;
+
+    // Requirement with earliest_start
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "PV-Req",
+            description: "req",
+            designation: REQUIREMENT,
+            priority: 1.0,
+            earliestStart: "2025-06-01T00:00:00Z"
+        }}) {{ dbId }} }}"#
+    )).await;
+    let req_id = extract_i64(&val, "taskSave.dbId");
+
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let task_header_id = create_task(
+        "PV-Task",
+        "TASK",
+        2.0,
+        Some(8.0),
+        None,
+        Some(&[req_id]),
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+
+    // Milestone with schedule_target
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "PV-Milestone",
+            description: "ms",
+            designation: MILESTONE,
+            priority: 3.0,
+            scheduleTarget: "2025-09-01T00:00:00Z",
+            predecessors: [{task_header_id}]
+        }}) {{ dbId }} }}"#
+    )).await;
+    let _ms_id = extract_i64(&val, "taskSave.dbId");
+
+    // Mark the current (latest) revision as AVAILABLE and insert a fake
+    // allocation whose task_id is the **header_id** (as store_plan now does).
+    let plan_revision = latest_revision().await;
+    exec_raw_sql(&format!(
+        "UPDATE revision SET plan_state = 'AVAILABLE' WHERE id = {plan_revision}"
+    ))
+    .await;
+    exec_raw_sql(&format!(
+        "INSERT INTO allocation (task_id, start, end, revision) \
+         VALUES ({task_header_id}, '2025-06-01T00:00:00Z', '2025-06-10T00:00:00Z', {plan_revision})"
+    ))
+    .await;
+
+    // Verify the allocation is visible before modification.
+    let val = gql_ok_simple(
+        r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#,
+    )
+    .await;
+    let allocations = extract_list(&val, "currentPlan.allocations");
+    assert!(
+        !allocations.is_empty(),
+        "allocations should be visible before modification"
+    );
+
+    // Modify the task (reduce effort) → new NOT_CALCULATED revision.
+    // dbId in the mutation is the header_id (stable identity).
+    let current_req = find_current_task_id_by_title("PV-Req").await;
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_header_id},
+                title: "PV-Task",
+                description: "reduced effort",
+                designation: TASK,
+                priority: 2.0,
+                effort: 4.0,
+                predecessors: [{current_req}]
+            }}) {{
+                dbId
+                iterationId
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&mutation).await;
+    let returned_header = extract_i64(&val, "taskSave.dbId");
+    assert_eq!(
+        returned_header, task_header_id,
+        "dbId (header) must stay the same after modification"
+    );
+
+    // The latest revision is now NOT_CALCULATED. The plan query must still
+    // return the allocations from the last AVAILABLE revision (Bug 1).
+    let val = gql_ok_simple(
+        r#"{ currentPlan { allocations { dbId task { dbId } } } }"#,
+    )
+    .await;
+    let allocations = extract_list(&val, "currentPlan.allocations");
+    assert!(
+        !allocations.is_empty(),
+        "allocations should still be visible after task modification"
+    );
+
+    // The allocation's task.dbId must be the header_id (stable identity).
+    let alloc_task_id = extract_i64(&allocations[0], "task.dbId");
+    assert_eq!(
+        alloc_task_id, task_header_id,
+        "allocation task.dbId should be the header_id ({task_header_id})"
+    );
+}
+
+/// Verify that:
+/// 1. `dbId` is the header_id (stable) and `iterationId` is the iteration id
+///    (changes on every edit). After modification, header_id stays the same
+///    but iterationId changes.
+/// 2. Allocations stored by `store_plan` reference the header_id. When queried
+///    via `currentPlan → allocations → task`, the returned `task.dbId` is the
+///    header_id.
+/// 3. The task also exposes `revCreated`, `revDeleted`, `headerRevCreated`,
+///    `headerRevDeleted` revision metadata.
+#[tokio::test]
+#[serial]
+async fn test_allocation_references_header_id_and_revision_fields() {
+    clean_database().await;
+    shared_db_url().await;
+
+    let alice_id = create_resource("HID-Alice", "Europe/Berlin", true).await;
+
+    // ── Create a minimal project: Req → Task → Milestone ──
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "HID-Req",
+            description: "req",
+            designation: REQUIREMENT,
+            priority: 1.0,
+            earliestStart: "2025-06-01T00:00:00Z"
+        }}) {{ dbId iterationId }} }}"#
+    )).await;
+    let req_header = extract_i64(&val, "taskSave.dbId");
+
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let task_header = create_task(
+        "HID-Task",
+        "TASK",
+        2.0,
+        Some(8.0),
+        None,
+        Some(&[req_header]),
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+    let iter_before = find_current_iteration_id_by_title("HID-Task").await;
+
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "HID-Milestone",
+            description: "ms",
+            designation: MILESTONE,
+            priority: 3.0,
+            scheduleTarget: "2025-09-01T00:00:00Z",
+            predecessors: [{task_header}]
+        }}) {{ dbId }} }}"#
+    )).await;
+    let _ms_header = extract_i64(&val, "taskSave.dbId");
+
+    // ── Modify the task so header_id ≠ iteration_id ──
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_header},
+                title: "HID-Task",
+                description: "modified",
+                designation: TASK,
+                priority: 2.0,
+                effort: 4.0,
+                predecessors: [{req_header}]
+                {rc_frag}
+            }}) {{
+                dbId
+                iterationId
+                revCreated
+                revDeleted
+                headerRevCreated
+                headerRevDeleted
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&mutation).await;
+    let returned_header = extract_i64(&val, "taskSave.dbId");
+    let iter_after = extract_i64(&val, "taskSave.iterationId");
+    assert_eq!(
+        returned_header, task_header,
+        "dbId (header) must be stable across modifications"
+    );
+    assert_ne!(
+        iter_after, iter_before,
+        "iterationId must differ from the original iteration"
+    );
+    assert_ne!(
+        returned_header as i64, iter_after,
+        "header_id and iterationId must be different after modification"
+    );
+    assert!(
+        value_at_path(&val, "taskSave.revDeleted").is_null(),
+        "revDeleted of the active iteration should be null"
+    );
+    assert!(
+        value_at_path(&val, "taskSave.headerRevDeleted").is_null(),
+        "headerRevDeleted should be null for a live task"
+    );
+    let header_rev_created = extract_i64(&val, "taskSave.headerRevCreated");
+    assert!(header_rev_created > 0, "headerRevCreated should be > 0");
+    let iter_rev_created = extract_i64(&val, "taskSave.revCreated");
+    assert!(
+        iter_rev_created > header_rev_created,
+        "iteration revCreated ({iter_rev_created}) should be > \
+         headerRevCreated ({header_rev_created})"
+    );
+
+    // ── Insert an allocation referencing the header_id and verify via GQL ──
+    let plan_revision = latest_revision().await;
+    exec_raw_sql(&format!(
+        "UPDATE revision SET plan_state = 'AVAILABLE' WHERE id = {plan_revision}"
+    ))
+    .await;
+    exec_raw_sql(&format!(
+        "INSERT INTO allocation (task_id, start, end, revision) \
+         VALUES ({task_header}, '2025-07-01T00:00:00Z', '2025-07-10T00:00:00Z', {plan_revision})"
+    ))
+    .await;
+
+    let val = gql_ok_simple(
+        r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#,
+    )
+    .await;
+    let allocations = extract_list(&val, "currentPlan.allocations");
+    assert!(
+        !allocations.is_empty(),
+        "should have allocations after inserting one"
+    );
+    let alloc_task_db_id = extract_i64(&allocations[0], "task.dbId");
+    let alloc_task_iter_id = extract_i64(&allocations[0], "task.iterationId");
+    assert_eq!(
+        alloc_task_db_id, task_header,
+        "allocation → task.dbId must be the header_id ({task_header}), got {alloc_task_db_id}"
+    );
+    assert_eq!(
+        alloc_task_iter_id, iter_after,
+        "allocation → task.iterationId must be the current iteration ({iter_after}), \
+         got {alloc_task_iter_id}"
+    );
+
+    // ── Verify tasks query also exposes both ids ──
+    let val = gql_ok_simple(
+        r#"{ tasks { dbId iterationId revCreated revDeleted headerRevCreated headerRevDeleted } }"#,
+    )
+    .await;
+    let tasks = extract_list(&val, "tasks");
+    let hid_task = tasks
+        .iter()
+        .find(|t| extract_i64(t, "dbId") == task_header)
+        .expect("HID-Task should be in the tasks list");
+    assert_eq!(
+        extract_i64(hid_task, "iterationId"),
+        iter_after,
+        "tasks query iterationId should match"
+    );
+    assert!(
+        value_at_path(hid_task, "revDeleted").is_null(),
+        "active task revDeleted should be null"
+    );
+}
+
+/// Verify that bookings also store and expose stable task header ids:
+/// 1. `bookingSave(taskId: ...)` accepts a task header id and stores that
+///    header id in `booking.task_id`.
+/// 2. `bookings { task { dbId iterationId ... } }` resolves `task.dbId` to the
+///    stable header id and `task.iterationId` to the current active iteration.
+/// 3. After editing the task, the existing booking still resolves to the same
+///    stable header id while following the latest active iteration.
+#[tokio::test]
+#[serial]
+async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
+    clean_database().await;
+    shared_db_url().await;
+
+    let alice_id = create_resource("BKG-Alice", "Europe/Berlin", true).await;
+
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "BKG-Req",
+            description: "req",
+            designation: REQUIREMENT,
+            priority: 1.0,
+            earliestStart: "2025-06-01T00:00:00Z"
+        }}) {{ dbId iterationId }} }}"#
+    )).await;
+    let req_header = extract_i64(&val, "taskSave.dbId");
+
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let task_header = create_task(
+        "BKG-Task",
+        "TASK",
+        2.0,
+        Some(8.0),
+        None,
+        Some(&[req_header]),
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+    let iter_before = find_current_iteration_id_by_title("BKG-Task").await;
+
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{ taskSave(task: {{
+            title: "BKG-Milestone",
+            description: "ms",
+            designation: MILESTONE,
+            priority: 3.0,
+            scheduleTarget: "2025-09-01T00:00:00Z",
+            predecessors: [{task_header}]
+        }}) {{ dbId }} }}"#
+    )).await;
+    let _ms_header = extract_i64(&val, "taskSave.dbId");
+
+    let booking_val = gql_ok_simple(&format!(
+        r#"mutation {{
+            bookingSave(
+                dbId: null,
+                taskId: {task_header},
+                start: "2025-07-01T08:00:00Z",
+                end: "2025-07-01T16:00:00Z",
+                resources: [{alice_id}],
+                final: false
+            ) {{
+                dbId
+                task {{
+                    dbId
+                    iterationId
+                    revCreated
+                    revDeleted
+                    headerRevCreated
+                    headerRevDeleted
+                }}
+            }}
+        }}"#
+    )).await;
+    let booking_id = extract_i64(&booking_val, "bookingSave.dbId");
+    assert!(booking_id > 0, "bookingSave should return a booking id");
+    assert_eq!(
+        extract_i64(&booking_val, "bookingSave.task.dbId"),
+        task_header,
+        "bookingSave.task.dbId should be the stable task header id"
+    );
+    assert_eq!(
+        extract_i64(&booking_val, "bookingSave.task.iterationId"),
+        iter_before,
+        "bookingSave.task.iterationId should initially resolve to the current iteration"
+    );
+    assert!(
+        value_at_path(&booking_val, "bookingSave.task.revDeleted").is_null(),
+        "bookingSave.task.revDeleted should be null for the active iteration"
+    );
+    assert!(
+        value_at_path(&booking_val, "bookingSave.task.headerRevDeleted").is_null(),
+        "bookingSave.task.headerRevDeleted should be null for a live task"
+    );
+
+    let url = shared_db_url().await;
+    let db = Database::connect(url).await.expect("booking header test: connect failed");
+    let txn = db.begin().await.expect("booking header test: begin failed");
+    let stored_booking = siapla::entity::booking::Entity::find_by_id(booking_id as i32)
+        .one(&txn)
+        .await
+        .expect("booking header test: query booking failed")
+        .expect("booking header test: booking not found");
+    assert_eq!(
+        stored_booking.task_id as i64,
+        task_header,
+        "booking.task_id in the database must store the stable task header id"
+    );
+    txn.commit().await.expect("booking header test: commit failed");
+    db.close().await.ok();
+
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_header},
+                title: "BKG-Task",
+                description: "modified",
+                designation: TASK,
+                priority: 2.0,
+                effort: 4.0,
+                predecessors: [{req_header}]
+                {rc_frag}
+            }}) {{
+                dbId
+                iterationId
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&mutation).await;
+    let returned_header = extract_i64(&val, "taskSave.dbId");
+    let iter_after = extract_i64(&val, "taskSave.iterationId");
+    assert_eq!(
+        returned_header, task_header,
+        "taskSave must keep returning the stable header id after edits"
+    );
+    assert_ne!(
+        iter_after, iter_before,
+        "taskSave.iterationId must change after editing the task"
+    );
+
+    let bookings_val = gql_ok_simple(
+        r#"{ bookings { dbId task { dbId iterationId revCreated revDeleted headerRevCreated headerRevDeleted } } }"#,
+    )
+    .await;
+    let bookings = extract_list(&bookings_val, "bookings");
+    let booking = bookings
+        .iter()
+        .find(|b| extract_i64(b, "dbId") == booking_id)
+        .expect("stored booking should be returned by bookings query");
+    assert_eq!(
+        extract_i64(booking, "task.dbId"),
+        task_header,
+        "bookings.task.dbId must remain the stable header id"
+    );
+    assert_eq!(
+        extract_i64(booking, "task.iterationId"),
+        iter_after,
+        "bookings.task.iterationId must follow the latest active iteration"
+    );
+    assert!(
+        value_at_path(booking, "task.revDeleted").is_null(),
+        "bookings.task.revDeleted should be null for the active iteration"
+    );
+    assert!(
+        value_at_path(booking, "task.headerRevDeleted").is_null(),
+        "bookings.task.headerRevDeleted should be null for a live task"
     );
 }

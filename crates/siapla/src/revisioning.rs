@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait as _, ActiveValue, ColumnTrait, Condition, DatabaseTransaction,
-    EntityTrait as _, QueryOrder as _,
+    EntityTrait as _, QueryFilter as _, QueryOrder as _,
 };
 use strum::{EnumString, IntoStaticStr};
 
@@ -61,7 +61,24 @@ pub async fn resolve_revision(
     if revision.is_some() { Ok(revision) } else { latest_revision_id(txn).await }
 }
 
-
+/// Like `resolve_revision`, but when no explicit revision is given, returns the
+/// latest revision whose `plan_state` is `AVAILABLE`. This ensures that plan
+/// queries keep showing the last successfully calculated plan even after
+/// mutations create newer `NOT_CALCULATED` revisions.
+pub async fn resolve_plan_revision(
+    txn: &DatabaseTransaction,
+    revision: Option<i64>,
+) -> anyhow::Result<Option<i64>> {
+    if revision.is_some() {
+        return Ok(revision);
+    }
+    let rev = revision::Entity::find()
+        .filter(revision::Column::PlanState.eq(PlanState::Available.as_str()))
+        .order_by_desc(revision::Column::Id)
+        .one(txn)
+        .await?;
+    Ok(rev.map(|r| r.id))
+}
 
 pub fn active_for_revision<C: ColumnTrait>(
     rev_created_column: C,

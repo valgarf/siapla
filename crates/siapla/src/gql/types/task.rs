@@ -11,10 +11,10 @@ use tracing::trace;
 use crate::{
     entity::{
         allocation, dependency, resource_constraint, resource_constraint_entry,
-        resource_iteration as resource, task_iteration as task,
+        resource_iteration as resource, task_header, task_iteration as task,
     },
     gql::{
-        common::{nullable_to_av, opt_to_av, resolve_many_to_many},
+        common::{nullable_to_av, resolve_many_to_many},
         context::Context,
     },
     revisioning::{PlanState, active_for_revision, create_revision},
@@ -48,24 +48,34 @@ impl From<TaskDesignation> for String {
 pub struct GQLTask {
     pub model: task::Model,
     pub revision: Option<i64>,
+    pub header_model: Option<task_header::Model>,
 }
 
 impl GQLTask {
     pub fn at_revision(model: task::Model, revision: Option<i64>) -> Self {
-        Self { model, revision }
+        Self { model, revision, header_model: None }
+    }
+
+    pub fn with_header(model: task::Model, header_model: task_header::Model) -> Self {
+        Self { model, revision: None, header_model: Some(header_model) }
     }
 }
 
 impl From<task::Model> for GQLTask {
     fn from(model: task::Model) -> Self {
-        Self { model, revision: None }
+        Self { model, revision: None, header_model: None }
     }
 }
 
 #[graphql_object]
 #[graphql(name = "Task")]
 impl GQLTask {
-    fn db_id(&self) -> &i32 {
+    /// Stable identity — always the `task_header.id`.
+    fn db_id(&self) -> i32 {
+        self.model.header_id.unwrap_or(self.model.id)
+    }
+    /// The mutable iteration id (changes on every edit).
+    fn iteration_id(&self) -> &i32 {
         &self.model.id
     }
     fn title(&self) -> &str {
@@ -88,6 +98,20 @@ impl GQLTask {
     }
     fn designation(&self) -> anyhow::Result<TaskDesignation> {
         Ok(TaskDesignation::from_str(&self.model.designation)?)
+    }
+    fn rev_created(&self) -> i32 {
+        self.model.rev_created as i32
+    }
+    fn rev_deleted(&self) -> Option<i32> {
+        self.model.rev_deleted.map(|v| v as i32)
+    }
+    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
+        let hm = self.load_header(ctx).await?;
+        Ok(hm.and_then(|h| h.rev_created).map(|v| v as i32))
+    }
+    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
+        let hm = self.load_header(ctx).await?;
+        Ok(hm.and_then(|h| h.rev_deleted).map(|v| v as i32))
     }
 
     // -- Predecessors (revision-aware via revision-aware dataloader) ---------
@@ -147,8 +171,9 @@ impl GQLTask {
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<crate::entity::issue::Model>> {
+        let header_id = self.model.header_id.unwrap_or(self.model.id);
         const CIDX: usize = crate::entity::issue::Column::TaskId as usize;
-        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(self.model.id).await
+        ctx.load_by_col::<crate::entity::issue::Entity, CIDX>(header_id).await
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
@@ -192,11 +217,25 @@ impl GQLTask {
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<allocation::Model>> {
+        let header_id = self.model.header_id.unwrap_or(self.model.id);
         const CIDX: usize = allocation::Column::TaskId as usize;
-        ctx.load_by_col::<allocation::Entity, CIDX>(self.model.id).await.map(|mut res| {
+        ctx.load_by_col::<allocation::Entity, CIDX>(header_id).await.map(|mut res| {
             res.sort_by_key(|a| a.end);
             res
         })
+    }
+}
+
+impl GQLTask {
+    async fn load_header(&self, ctx: &Context) -> anyhow::Result<Option<task_header::Model>> {
+        if let Some(ref hm) = self.header_model {
+            return Ok(Some(hm.clone()));
+        }
+        let Some(hid) = self.model.header_id else {
+            return Ok(None);
+        };
+        let txn = ctx.txn().await?;
+        Ok(task_header::Entity::find_by_id(hid).one(txn).await?)
     }
 }
 
@@ -294,6 +333,7 @@ pub struct ResourceConstraintInput {
 
 #[derive(juniper::GraphQLInputObject)]
 pub struct TaskSaveInput {
+    /// When set, this is the **header id** (stable identity) of the task to update.
     db_id: Option<i32>,
     title: String,
     description: String,
@@ -309,18 +349,18 @@ pub struct TaskSaveInput {
     pub resource_constraints: Option<Vec<ResourceConstraintInput>>,
 }
 
-impl From<TaskSaveInput> for crate::entity::task_iteration::ActiveModel {
-    fn from(value: TaskSaveInput) -> Self {
+impl TaskSaveInput {
+    fn into_active_model(self) -> crate::entity::task_iteration::ActiveModel {
         crate::entity::task_iteration::ActiveModel {
-            id: opt_to_av!(value.db_id),
-            title: ActiveValue::Set(value.title),
-            description: ActiveValue::Set(value.description),
-            designation: ActiveValue::Set(value.designation.into()),
-            parent_id: nullable_to_av!(value.parent_id),
-            earliest_start: nullable_to_av!(value.earliest_start),
-            schedule_target: nullable_to_av!(value.schedule_target),
-            effort: nullable_to_av!(value.effort.map(|v| v as f32)),
-            priority: ActiveValue::Set(value.priority as f32),
+            id: ActiveValue::NotSet,
+            title: ActiveValue::Set(self.title),
+            description: ActiveValue::Set(self.description),
+            designation: ActiveValue::Set(self.designation.into()),
+            parent_id: nullable_to_av!(self.parent_id),
+            earliest_start: nullable_to_av!(self.earliest_start),
+            schedule_target: nullable_to_av!(self.schedule_target),
+            effort: nullable_to_av!(self.effort.map(|v| v as f32)),
+            priority: ActiveValue::Set(self.priority as f32),
             header_id: ActiveValue::NotSet,
             rev_created: ActiveValue::NotSet,
             rev_deleted: ActiveValue::NotSet,
@@ -666,16 +706,21 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     let successors = task.successors.take();
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
+    let input_header_id = task.db_id.take();
     let txn = ctx.txn().await?;
     let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-    let mut am = task::ActiveModel::from(task);
-    let model = if am.id.is_set() {
-        let old_id = am.id.clone().unwrap();
-        // Fetch the existing iteration to get its header_id
-        let existing = task::Entity::find_by_id(old_id)
+    let mut am = task.into_active_model();
+    let model = if let Some(header_id) = input_header_id {
+        // Resolve header_id → current active iteration
+        let existing = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(header_id))
+            .filter(task::Column::RevDeleted.is_null())
             .one(txn)
             .await?
-            .ok_or_else(|| anyhow!("Task iteration {} not found", old_id))?;
+            .ok_or_else(|| {
+                anyhow!("No active task iteration found for header {}", header_id)
+            })?;
+        let old_id = existing.id;
         // Soft-delete the old iteration
         task::Entity::update_many()
             .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
@@ -684,7 +729,6 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
             .exec(txn)
             .await?;
         // Create new iteration
-        am.id = ActiveValue::NotSet;
         am.header_id = ActiveValue::Set(existing.header_id);
         am.rev_created = ActiveValue::Set(revision_id);
         am.rev_deleted = ActiveValue::Set(None);

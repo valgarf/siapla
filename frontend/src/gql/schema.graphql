@@ -79,7 +79,7 @@ input ResourceSaveInput {
 }
 
 input TaskSaveInput {
-  dbId: Int
+  "When set, this is the **header id** (stable identity) of the task to update." dbId: Int
   title: String!
   description: String!
   designation: TaskDesignation!
@@ -201,6 +201,7 @@ type Issue {
 type Mutation {
   new: Mutation!
   taskSave(task: TaskSaveInput!): Task!
+  "Delete a task by its **header id** (stable identity)."
   taskDelete(taskId: Int!): Boolean!
   resourceSave(resource: ResourceSaveInput!): Resource!
   resourceDelete(resourceId: Int!): Boolean!
@@ -272,7 +273,10 @@ type Subscription {
 }
 
 type Task {
+  "Stable identity — always the `task_header.id`."
   dbId: Int!
+  "The mutable iteration id (changes on every edit)."
+  iterationId: Int!
   title: String!
   description: String!
   earliestStart: DateTime
@@ -280,6 +284,10 @@ type Task {
   effort: Float
   priority: Float!
   designation: TaskDesignation!
+  revCreated: Int!
+  revDeleted: Int
+  headerRevCreated: Int
+  headerRevDeleted: Int
   predecessors: [Task!]!
   successors: [Task!]!
   children: [Task!]!

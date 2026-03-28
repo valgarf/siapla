@@ -1245,6 +1245,22 @@
             "deprecationReason": null
           },
           {
+            "name": "resetDatabase",
+            "description": "Reset the database by hard-deleting all data and creating a fresh revision.\nOnly available when the server is started with `--allow-reset`.",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Boolean",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
             "name": "resourceDelete",
             "description": null,
             "args": [
@@ -1312,7 +1328,7 @@
           },
           {
             "name": "taskDelete",
-            "description": null,
+            "description": "Delete a task by its **header id** (stable identity).",
             "args": [
               {
                 "name": "taskId",
@@ -1621,6 +1637,18 @@
                   }
                 }
               }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "latestRevision",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int64",
+              "ofType": null
             },
             "isDeprecated": false,
             "deprecationReason": null
@@ -2538,7 +2566,7 @@
           },
           {
             "name": "dbId",
-            "description": null,
+            "description": "Stable identity — always the `task_header.id`.",
             "args": [],
             "type": {
               "kind": "NON_NULL",
@@ -2609,6 +2637,30 @@
             "deprecationReason": null
           },
           {
+            "name": "headerRevCreated",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "headerRevDeleted",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
             "name": "issues",
             "description": null,
             "args": [],
@@ -2627,6 +2679,22 @@
                     "ofType": null
                   }
                 }
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "iterationId",
+            "description": "The mutable iteration id (changes on every edit).",
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
               }
             },
             "isDeprecated": false,
@@ -2704,6 +2772,34 @@
                   }
                 }
               }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "revCreated",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            },
+            "isDeprecated": false,
+            "deprecationReason": null
+          },
+          {
+            "name": "revDeleted",
+            "description": null,
+            "args": [],
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
+              "ofType": null
             },
             "isDeprecated": false,
             "deprecationReason": null
@@ -2831,7 +2927,7 @@
           },
           {
             "name": "dbId",
-            "description": null,
+            "description": "When set, this is the **header id** (stable identity) of the task to update.",
             "type": {
               "kind": "SCALAR",
               "name": "Int",

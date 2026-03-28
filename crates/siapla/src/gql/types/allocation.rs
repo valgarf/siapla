@@ -56,9 +56,23 @@ impl allocation::Model {
         Ok(models.into_iter().map(GQLResource::from).collect())
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
+        let txn = ctx.txn().await?;
+        use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _};
+        // task_id references task_header.id; find the current active iteration
+        let current = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(self.task_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?;
+        if let Some(model) = current {
+            return Ok(GQLTask::from(model));
+        }
+        // Fallback: try direct id lookup for backward compatibility
         const CIDX: usize = task::Column::Id as usize;
-        ctx.load_one_by_col::<task::Entity, CIDX>(self.task_id)
-            .await
-            .map(|opt_t| GQLTask::from(opt_t.expect("Task must exist.")))
+        let model = ctx
+            .load_one_by_col::<task::Entity, CIDX>(self.task_id)
+            .await?
+            .expect("Task must exist.");
+        Ok(GQLTask::from(model))
     }
 }

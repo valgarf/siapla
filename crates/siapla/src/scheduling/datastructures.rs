@@ -32,6 +32,7 @@ pub struct ProjectObjects {
 pub struct Task {
     pub parent: Option<Weak<RefCell<Group>>>,
     pub db_id: i32,
+    pub header_id: i32,
     pub title: String,
     pub effort: f64,
     pub constraints: Vec<ResourceConstraint>,
@@ -47,6 +48,7 @@ pub struct Task {
 #[derive(Debug, Clone)]
 pub struct Requirement {
     pub db_id: i32,
+    pub header_id: i32,
     pub title: String,
     pub earliest_start: NaiveDateTime,
 }
@@ -54,6 +56,7 @@ pub struct Requirement {
 #[derive(Debug, Clone)]
 pub struct Milestone {
     pub db_id: i32,
+    pub header_id: i32,
     pub title: String,
     pub schedule_target: NaiveDateTime,
     pub priority: f64,
@@ -69,6 +72,7 @@ pub struct FulfilledMilestone {
 pub struct Group {
     pub parent: Option<Weak<RefCell<Group>>>,
     pub db_id: i32,
+    pub header_id: i32,
     pub constraints: Vec<ResourceConstraint>,
 }
 

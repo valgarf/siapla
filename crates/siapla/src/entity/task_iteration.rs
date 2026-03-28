@@ -58,7 +58,6 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Allocation,
     Issue,
     ResourceConstraint,
     SelfRef,
@@ -87,19 +86,12 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Allocation => Entity::has_many(super::allocation::Entity).into(),
             Self::Issue => Entity::has_many(super::issue::Entity).into(),
             Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
             Self::SelfRef => {
                 Entity::belongs_to(Entity).from(Column::ParentId).to(Column::Id).into()
             }
         }
-    }
-}
-
-impl Related<super::allocation::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Allocation.def()
     }
 }
 

@@ -121,7 +121,7 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
                 .objs
                 .tasks
                 .iter()
-                .map(|t| (t.borrow().db_id, t))
+                .map(|t| (t.borrow().header_id, t))
                 .collect::<HashMap<i32, _>>();
             println!("Plan:");
             for (tid, assignments) in &plan.assignments {

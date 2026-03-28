@@ -481,6 +481,18 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&delete_bookings_from_allocation)).await?;
 
+        // Delete remaining (PLAN) allocated_resources and allocations to avoid
+        // duplication when the backend recalculates on startup.
+        let delete_plan_allocated_resources = Query::delete()
+            .from_table(AllocatedResource::Table)
+            .to_owned();
+        db.execute(backend.build(&delete_plan_allocated_resources)).await?;
+
+        let delete_plan_allocations = Query::delete()
+            .from_table(Allocation::Table)
+            .to_owned();
+        db.execute(backend.build(&delete_plan_allocations)).await?;
+
         manager
             .alter_table(
                 Table::alter()
