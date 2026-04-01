@@ -59,7 +59,6 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     Issue,
-    ResourceConstraint,
     SelfRef,
 }
 
@@ -87,7 +86,6 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::Issue => Entity::has_many(super::issue::Entity).into(),
-            Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
             Self::SelfRef => {
                 Entity::belongs_to(Entity).from(Column::ParentId).to(Column::Id).into()
             }
@@ -98,12 +96,6 @@ impl RelationTrait for Relation {
 impl Related<super::issue::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Issue.def()
-    }
-}
-
-impl Related<super::resource_constraint::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::ResourceConstraint.def()
     }
 }
 

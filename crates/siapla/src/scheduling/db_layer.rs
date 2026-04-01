@@ -67,9 +67,9 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         )?)
         .all(db)
         .await?;
-    let task_ids = db_task_vec.iter().map(|t| t.id).collect::<Vec<_>>();
+    let task_header_ids: Vec<i32> = db_task_vec.iter().filter_map(|t| t.header_id).collect();
     let db_constraints_vec = resource_constraint::Entity::find()
-        .filter(resource_constraint::Column::TaskId.is_in(task_ids))
+        .filter(resource_constraint::Column::TaskId.is_in(task_header_ids))
         .filter(active_for_revision(
             resource_constraint::Column::RevCreated,
             resource_constraint::Column::RevDeleted,
@@ -123,13 +123,17 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let resources: Vec<i32> = booking_allocated
             .iter()
             .filter(|ar| ar.booking_id == a.id)
-            .map(|ar| resource_header_to_iter.get(&ar.resource_id).copied().unwrap_or(ar.resource_id))
+            .map(|ar| {
+                resource_header_to_iter.get(&ar.resource_id).copied().unwrap_or(ar.resource_id)
+            })
             .collect();
         let task_iter_id = header_to_task_iter.get(&a.task_id).copied().unwrap_or(a.task_id);
-        task_bookings
-            .entry(task_iter_id)
-            .or_default()
-            .push((start, end, resources.clone(), final_flag));
+        task_bookings.entry(task_iter_id).or_default().push((
+            start,
+            end,
+            resources.clone(),
+            final_flag,
+        ));
         for rid in resources {
             let entry = resource_last_booking.entry(rid).or_insert(start);
             if *entry < end {
@@ -337,7 +341,8 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let entry = ResourceConstraintEntry { db_id: ce.id, resource: Rc::downgrade(r) };
         c.constraints.push(entry);
     }
-    for (c, task_id) in constraint_map.into_values() {
+    for (c, task_header_id) in constraint_map.into_values() {
+        let task_id = header_to_iter.get(&task_header_id).copied().unwrap_or(task_header_id);
         if let Some(group) = group_map.get(&task_id) {
             group.borrow_mut().constraints.push(c);
         } else if let Some(task) = task_map.get(&task_id) {

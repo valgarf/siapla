@@ -1,3 +1,5 @@
+use chrono::{DateTime, Utc};
+
 use crate::{
     entity::{holiday, resource_iteration as resource, task_iteration as task},
     gql::scalars::Int64,
@@ -7,6 +9,7 @@ use crate::{
 use super::{
     booking::GQLBooking,
     context::Context,
+    history::{SearchDirection, TaskHistoryResult},
     holiday::{Country, GQLHoliday, Region},
     issue::GQLIssue,
     plan::Plan,
@@ -138,6 +141,25 @@ impl Query {
         let txn = ctx.txn().await?;
         let rev = crate::revisioning::latest_revision_id(txn).await?;
         Ok(rev.map(Int64::from))
+    }
+
+    async fn task_history(
+        ctx: &Context,
+        task_header_id: i32,
+        from_revision: Option<Int64>,
+        from_timestamp: Option<DateTime<Utc>>,
+        direction: SearchDirection,
+        limit: Option<i32>,
+    ) -> anyhow::Result<TaskHistoryResult> {
+        super::history::query_task_history(
+            ctx,
+            task_header_id,
+            from_revision,
+            from_timestamp,
+            direction,
+            limit,
+        )
+        .await
     }
 }
 

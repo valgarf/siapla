@@ -31,7 +31,7 @@
     <q-drawer side="right" :model-value="sidebarStore.isOpen" bordered :elevated="false"
       :width="sidebarStore.isExpanded ? windowSize.width - 57 : DEFAULT_SIDEBAR_WIDTH" @before-hide="sidebarStartHiding"
       @hide="sidebarHidden">
-      <div class="q-pa-md sidebar-content">
+      <div class="sidebar-content">
         <SidebarComponentSelector />
       </div>
     </q-drawer>

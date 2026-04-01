@@ -15,6 +15,12 @@ enum CalculationState {
   FINISHED
 }
 
+enum ChangeType {
+  CREATED
+  UPDATED
+  DELETED
+}
+
 enum IssueCode {
   PRED_ISSUE
   REQUIREMENT_MISSING
@@ -32,6 +38,11 @@ enum IssueType {
   PLANNING_TASK
   PLANNING_GENERAL
   GENERAL
+}
+
+enum SearchDirection {
+  BACKWARD
+  FORWARD
 }
 
 enum TaskDesignation {
@@ -67,7 +78,7 @@ input ResourceConstraintInput {
 }
 
 input ResourceSaveInput {
-  dbId: Int
+  "When set, this is the **header id** (stable identity) of the resource to update." dbId: Int
   name: String!
   timezone: String!
   added: DateTime!
@@ -97,6 +108,12 @@ input TaskSaveInput {
 input VacationInput {
   from: DateTime!
   until: DateTime!
+}
+
+interface IChange {
+  revisionId: Int64!
+  timestamp: DateTime!
+  changeType: ChangeType!
 }
 
 """
@@ -158,6 +175,13 @@ type Booking {
   task: Task!
 }
 
+type BookingChange implements IChange {
+  revisionId: Int64!
+  timestamp: DateTime!
+  changeType: ChangeType!
+  booking: Booking
+}
+
 type CalculationUpdate {
   state: CalculationState!
   plan: Plan
@@ -167,6 +191,14 @@ type Country {
   isocode: String!
   name: String!
   regions: [Region!]!
+}
+
+type DependencyChange implements IChange {
+  revisionId: Int64!
+  timestamp: DateTime!
+  changeType: ChangeType!
+  predecessorId: Int!
+  successorId: Int!
 }
 
 type Holiday {
@@ -232,6 +264,7 @@ type Query {
   bookings(revision: Int64): [Booking!]!
   issues(revision: Int64): [Issue!]!
   latestRevision: Int64
+  taskHistory(taskHeaderId: Int!, fromRevision: Int64, fromTimestamp: DateTime, direction: SearchDirection!, limit: Int): TaskHistoryResult!
 }
 
 type Region {
@@ -245,10 +278,15 @@ type Region {
 
 type Resource {
   dbId: Int!
+  iterationId: Int!
   name: String!
   timezone: String!
   added: DateTime!
   removed: DateTime
+  revCreated: Int!
+  revDeleted: Int
+  headerRevCreated: Int
+  headerRevDeleted: Int
   holiday: Holiday
   availability: [Availability!]!
   vacation: [Vacation!]!
@@ -260,6 +298,16 @@ type ResourceConstraint {
   optional: Boolean!
   speed: Float!
   entries: [ResourceConstraintEntry!]!
+}
+
+type ResourceConstraintChange implements IChange {
+  revisionId: Int64!
+  timestamp: DateTime!
+  changeType: ChangeType!
+  constraintId: Int!
+  optional: Boolean!
+  speed: Float!
+  resourceIds: [Int!]!
 }
 
 type ResourceConstraintEntry {
@@ -295,6 +343,18 @@ type Task {
   parent: Task
   resourceConstraints: [ResourceConstraint!]!
   allocations: [Allocation!]!
+}
+
+type TaskHistoryResult {
+  changes: [IChange!]!
+  hasMore: Boolean!
+}
+
+type TaskIterationChange implements IChange {
+  revisionId: Int64!
+  timestamp: DateTime!
+  changeType: ChangeType!
+  taskIteration: Task!
 }
 
 type Vacation {

@@ -312,7 +312,8 @@ async fn create_task(
 /// Query predecessors for a task by resolving the current task and predecessor
 /// rows via their titles, because dependency storage is header-based.
 async fn query_task_predecessors(task_id: i64) -> Vec<i64> {
-    let current_val = gql_ok_simple(r#"{ tasks { dbId title predecessors { dbId title } } }"#).await;
+    let current_val =
+        gql_ok_simple(r#"{ tasks { dbId title predecessors { dbId title } } }"#).await;
     let current_tasks = extract_list(&current_val, "tasks");
 
     let historical_title = find_task_title(task_id).await;
@@ -359,7 +360,8 @@ async fn find_task_title(task_id: i64) -> String {
 async fn find_current_task_id_by_title(title: &str) -> i64 {
     let val = gql_ok_simple(r#"{ tasks { dbId title } }"#).await;
     let tasks = extract_list(&val, "tasks");
-    tasks.iter()
+    tasks
+        .iter()
         .find(|t| extract_str(t, "title") == title)
         .map(|t| extract_i64(t, "dbId"))
         .unwrap_or_else(|| panic!("current task with title='{title}' not found"))
@@ -368,7 +370,8 @@ async fn find_current_task_id_by_title(title: &str) -> i64 {
 async fn find_current_iteration_id_by_title(title: &str) -> i64 {
     let val = gql_ok_simple(r#"{ tasks { iterationId title } }"#).await;
     let tasks = extract_list(&val, "tasks");
-    tasks.iter()
+    tasks
+        .iter()
         .find(|t| extract_str(t, "title") == title)
         .map(|t| extract_i64(t, "iterationId"))
         .unwrap_or_else(|| panic!("current task with title='{title}' not found"))
@@ -706,7 +709,9 @@ async fn test_dependency_types() {
                     .iter()
                     .find(|t| extract_str(t, "title") == pred_title)
                     .map(|t| extract_i64(t, "dbId"))
-                    .unwrap_or_else(|| panic!("current predecessor for dbId={} not found", pred_id));
+                    .unwrap_or_else(|| {
+                        panic!("current predecessor for dbId={} not found", pred_id)
+                    });
                 current_pred_ids.push(current_pred_id);
             }
 
@@ -1227,7 +1232,8 @@ async fn test_query_problem_after_task_modification() {
             priority: 1.0,
             earliestStart: "2025-06-01T00:00:00Z"
         }}) {{ dbId iterationId }} }}"#
-    )).await;
+    ))
+    .await;
     let req_id = extract_i64(&val, "taskSave.dbId");
 
     // Task with dependency on requirement and a resource constraint
@@ -1257,7 +1263,8 @@ async fn test_query_problem_after_task_modification() {
             scheduleTarget: "2025-09-01T00:00:00Z",
             predecessors: [{task_id}]
         }}) {{ dbId }} }}"#
-    )).await;
+    ))
+    .await;
     let _ms_id = extract_i64(&val, "taskSave.dbId");
 
     // First query_problem must succeed (header_id == iteration_id on fresh DB).
@@ -1301,10 +1308,7 @@ async fn test_query_problem_after_task_modification() {
         returned_header, task_header_id,
         "dbId (header) must stay the same after modification"
     );
-    assert_ne!(
-        iter_after, iter_before,
-        "iterationId must change after modification"
-    );
+    assert_ne!(iter_after, iter_before, "iterationId must change after modification");
 
     // query_problem after modification must NOT panic (Bug 2 reproduced here).
     {
@@ -1346,7 +1350,8 @@ async fn test_plan_visible_after_task_modification() {
             priority: 1.0,
             earliestStart: "2025-06-01T00:00:00Z"
         }}) {{ dbId }} }}"#
-    )).await;
+    ))
+    .await;
     let req_id = extract_i64(&val, "taskSave.dbId");
 
     let rc_frag = format!(
@@ -1375,7 +1380,8 @@ async fn test_plan_visible_after_task_modification() {
             scheduleTarget: "2025-09-01T00:00:00Z",
             predecessors: [{task_header_id}]
         }}) {{ dbId }} }}"#
-    )).await;
+    ))
+    .await;
     let _ms_id = extract_i64(&val, "taskSave.dbId");
 
     // Mark the current (latest) revision as AVAILABLE and insert a fake
@@ -1392,15 +1398,11 @@ async fn test_plan_visible_after_task_modification() {
     .await;
 
     // Verify the allocation is visible before modification.
-    let val = gql_ok_simple(
-        r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#,
-    )
-    .await;
+    let val =
+        gql_ok_simple(r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#)
+            .await;
     let allocations = extract_list(&val, "currentPlan.allocations");
-    assert!(
-        !allocations.is_empty(),
-        "allocations should be visible before modification"
-    );
+    assert!(!allocations.is_empty(), "allocations should be visible before modification");
 
     // Modify the task (reduce effort) → new NOT_CALCULATED revision.
     // dbId in the mutation is the header_id (stable identity).
@@ -1430,15 +1432,9 @@ async fn test_plan_visible_after_task_modification() {
 
     // The latest revision is now NOT_CALCULATED. The plan query must still
     // return the allocations from the last AVAILABLE revision (Bug 1).
-    let val = gql_ok_simple(
-        r#"{ currentPlan { allocations { dbId task { dbId } } } }"#,
-    )
-    .await;
+    let val = gql_ok_simple(r#"{ currentPlan { allocations { dbId task { dbId } } } }"#).await;
     let allocations = extract_list(&val, "currentPlan.allocations");
-    assert!(
-        !allocations.is_empty(),
-        "allocations should still be visible after task modification"
-    );
+    assert!(!allocations.is_empty(), "allocations should still be visible after task modification");
 
     // The allocation's task.dbId must be the header_id (stable identity).
     let alloc_task_id = extract_i64(&allocations[0], "task.dbId");
@@ -1474,7 +1470,8 @@ async fn test_allocation_references_header_id_and_revision_fields() {
             priority: 1.0,
             earliestStart: "2025-06-01T00:00:00Z"
         }}) {{ dbId iterationId }} }}"#
-    )).await;
+    ))
+    .await;
     let req_header = extract_i64(&val, "taskSave.dbId");
 
     let rc_frag = format!(
@@ -1503,7 +1500,8 @@ async fn test_allocation_references_header_id_and_revision_fields() {
             scheduleTarget: "2025-09-01T00:00:00Z",
             predecessors: [{task_header}]
         }}) {{ dbId }} }}"#
-    )).await;
+    ))
+    .await;
     let _ms_header = extract_i64(&val, "taskSave.dbId");
 
     // ── Modify the task so header_id ≠ iteration_id ──
@@ -1531,14 +1529,8 @@ async fn test_allocation_references_header_id_and_revision_fields() {
     let val = gql_ok_simple(&mutation).await;
     let returned_header = extract_i64(&val, "taskSave.dbId");
     let iter_after = extract_i64(&val, "taskSave.iterationId");
-    assert_eq!(
-        returned_header, task_header,
-        "dbId (header) must be stable across modifications"
-    );
-    assert_ne!(
-        iter_after, iter_before,
-        "iterationId must differ from the original iteration"
-    );
+    assert_eq!(returned_header, task_header, "dbId (header) must be stable across modifications");
+    assert_ne!(iter_after, iter_before, "iterationId must differ from the original iteration");
     assert_ne!(
         returned_header as i64, iter_after,
         "header_id and iterationId must be different after modification"
@@ -1572,15 +1564,11 @@ async fn test_allocation_references_header_id_and_revision_fields() {
     ))
     .await;
 
-    let val = gql_ok_simple(
-        r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#,
-    )
-    .await;
+    let val =
+        gql_ok_simple(r#"{ currentPlan { allocations { dbId task { dbId iterationId } } } }"#)
+            .await;
     let allocations = extract_list(&val, "currentPlan.allocations");
-    assert!(
-        !allocations.is_empty(),
-        "should have allocations after inserting one"
-    );
+    assert!(!allocations.is_empty(), "should have allocations after inserting one");
     let alloc_task_db_id = extract_i64(&allocations[0], "task.dbId");
     let alloc_task_iter_id = extract_i64(&allocations[0], "task.iterationId");
     assert_eq!(
@@ -1637,7 +1625,8 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
             priority: 1.0,
             earliestStart: "2025-06-01T00:00:00Z"
         }}) {{ dbId iterationId }} }}"#
-    )).await;
+    ))
+    .await;
     let req_header = extract_i64(&val, "taskSave.dbId");
 
     let rc_frag = format!(
@@ -1666,7 +1655,8 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
             scheduleTarget: "2025-09-01T00:00:00Z",
             predecessors: [{task_header}]
         }}) {{ dbId }} }}"#
-    )).await;
+    ))
+    .await;
     let _ms_header = extract_i64(&val, "taskSave.dbId");
 
     let booking_val = gql_ok_simple(&format!(
@@ -1690,7 +1680,8 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
                 }}
             }}
         }}"#
-    )).await;
+    ))
+    .await;
     let booking_id = extract_i64(&booking_val, "bookingSave.dbId");
     assert!(booking_id > 0, "bookingSave should return a booking id");
     assert_eq!(
@@ -1721,8 +1712,7 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
         .expect("booking header test: query booking failed")
         .expect("booking header test: booking not found");
     assert_eq!(
-        stored_booking.task_id as i64,
-        task_header,
+        stored_booking.task_id as i64, task_header,
         "booking.task_id in the database must store the stable task header id"
     );
     txn.commit().await.expect("booking header test: commit failed");
@@ -1752,10 +1742,7 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
         returned_header, task_header,
         "taskSave must keep returning the stable header id after edits"
     );
-    assert_ne!(
-        iter_after, iter_before,
-        "taskSave.iterationId must change after editing the task"
-    );
+    assert_ne!(iter_after, iter_before, "taskSave.iterationId must change after editing the task");
 
     let bookings_val = gql_ok_simple(
         r#"{ bookings { dbId task { dbId iterationId revCreated revDeleted headerRevCreated headerRevDeleted } } }"#,
@@ -1782,6 +1769,808 @@ async fn test_booking_save_uses_header_id_and_resolves_stable_task_identity() {
     );
     assert!(
         value_at_path(booking, "task.headerRevDeleted").is_null(),
-        "bookings.task.headerRevDeleted should be null for a live task"
+        "bookingSave.task.headerRevDeleted should be null for a live task"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Task-history helper
+// ---------------------------------------------------------------------------
+
+fn task_history_query(task_header_id: i64, direction: &str, extra_args: &str) -> String {
+    format!(
+        r#"{{
+            taskHistory(taskHeaderId: {task_header_id}, direction: {direction}{extra_args}) {{
+                changes {{
+                    __typename
+                    ... on TaskIterationChange {{
+                        revisionId
+                        timestamp
+                        changeType
+                        taskIteration {{ dbId title effort }}
+                    }}
+                    ... on BookingChange {{
+                        revisionId
+                        timestamp
+                        changeType
+                        booking {{ dbId start end }}
+                    }}
+                    ... on DependencyChange {{
+                        revisionId
+                        timestamp
+                        changeType
+                        predecessorId
+                        successorId
+                        predecessorTitle
+                        successorTitle
+                    }}
+                    ... on ResourceConstraintChange {{
+                        revisionId
+                        timestamp
+                        changeType
+                        constraintId
+                        optional
+                        speed
+                        resourceIds
+                        resourceNames
+                    }}
+                }}
+                hasMore
+            }}
+        }}"#
+    )
+}
+
+fn extract_bool(val: &juniper::Value<MyScalarValue>, path: &str) -> bool {
+    let cur = value_at_path(val, path);
+    cur.as_scalar()
+        .and_then(|s| s.try_to_bool())
+        .unwrap_or_else(|| panic!("value at '{path}' is not a bool: {cur:?}"))
+}
+
+// ---------------------------------------------------------------------------
+// Task-history tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_basic() {
+    clean_database().await;
+
+    let t = create_task("Hist-Basic", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    assert!(!changes.is_empty(), "expected at least one change for a newly created task");
+
+    let created = changes.iter().find(|c| extract_str(c, "changeType") == "CREATED");
+    assert!(created.is_some(), "expected a CREATED change in task history");
+
+    let created = created.unwrap();
+    assert_eq!(
+        extract_str(created, "__typename"),
+        "TaskIterationChange",
+        "CREATED change should be a TaskIterationChange"
+    );
+    assert_eq!(
+        extract_str(created, "taskIteration.title"),
+        "Hist-Basic",
+        "taskIteration.title should match the created task"
+    );
+
+    let has_more = extract_bool(&val, "taskHistory.hasMore");
+    assert!(!has_more, "hasMore should be false for a single-change history");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_after_modification() {
+    clean_database().await;
+
+    let t = create_task("Hist-Mod", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {t},
+                title: "Hist-Mod-Updated",
+                description: "updated",
+                designation: TASK,
+                priority: 1.0,
+                effort: 8.0
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&mutation).await;
+
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    assert!(
+        changes.len() >= 2,
+        "expected at least 2 changes (CREATED + UPDATED), got {}",
+        changes.len()
+    );
+
+    let change_types: Vec<&str> = changes.iter().map(|c| extract_str(c, "changeType")).collect();
+    assert!(change_types.contains(&"CREATED"), "expected a CREATED change, got {change_types:?}");
+    assert!(change_types.contains(&"UPDATED"), "expected an UPDATED change, got {change_types:?}");
+
+    let updated = changes.iter().find(|c| extract_str(c, "changeType") == "UPDATED").unwrap();
+    assert_eq!(extract_str(updated, "__typename"), "TaskIterationChange");
+    assert_eq!(extract_str(updated, "taskIteration.title"), "Hist-Mod-Updated");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_after_deletion() {
+    clean_database().await;
+
+    let t = create_task("Hist-Del", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+
+    let mutation = format!(r#"mutation {{ taskDelete(taskId: {t}) }}"#);
+    gql_ok_simple(&mutation).await;
+
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let change_types: Vec<&str> = changes.iter().map(|c| extract_str(c, "changeType")).collect();
+
+    assert!(
+        change_types.contains(&"CREATED"),
+        "expected a CREATED change after deletion, got {change_types:?}"
+    );
+    assert!(
+        change_types.contains(&"DELETED"),
+        "expected a DELETED change after deletion, got {change_types:?}"
+    );
+
+    let deleted = changes.iter().find(|c| extract_str(c, "changeType") == "DELETED").unwrap();
+    assert_eq!(extract_str(deleted, "__typename"), "TaskIterationChange");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_with_dependencies() {
+    clean_database().await;
+
+    let pred = create_task("Hist-Pred", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let succ =
+        create_task("Hist-Succ", "TASK", 2.0, Some(4.0), None, Some(&[pred]), None, None, None)
+            .await;
+
+    let query = task_history_query(succ, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let dep_changes: Vec<&juniper::Value<MyScalarValue>> =
+        changes.iter().filter(|c| extract_str(c, "__typename") == "DependencyChange").collect();
+    assert!(!dep_changes.is_empty(), "expected at least one DependencyChange in successor history");
+
+    let dep = dep_changes
+        .iter()
+        .find(|c| extract_str(c, "changeType") == "CREATED")
+        .expect("expected a CREATED DependencyChange");
+    assert_eq!(
+        extract_i64(dep, "predecessorId"),
+        pred,
+        "DependencyChange.predecessorId should match the predecessor task"
+    );
+    assert_eq!(
+        extract_i64(dep, "successorId"),
+        succ,
+        "DependencyChange.successorId should match the successor task"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_save_noop_does_not_create_new_iteration() {
+    clean_database().await;
+
+    let task_id =
+        create_task("Noop-Task", "TASK", 1.5, Some(4.0), None, None, None, None, None).await;
+    let revision_before = latest_revision().await;
+    let iteration_before = find_current_iteration_id_by_title("Noop-Task").await;
+
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_id},
+                title: "Noop-Task",
+                description: "desc for Noop-Task",
+                designation: TASK,
+                priority: 1.5,
+                effort: 4.0,
+                parentId: null,
+                earliestStart: null,
+                scheduleTarget: null
+            }}) {{
+                dbId
+                iterationId
+                title
+            }}
+        }}"#
+    ))
+    .await;
+
+    let revision_after = latest_revision().await;
+    assert_eq!(
+        revision_after, revision_before,
+        "latest revision should not change for identical task save"
+    );
+    assert_eq!(extract_i64(&val, "taskSave.dbId"), task_id);
+    assert_eq!(extract_i64(&val, "taskSave.iterationId"), iteration_before);
+    assert_eq!(extract_str(&val, "taskSave.title"), "Noop-Task");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_save_noop_with_same_predecessors_does_not_create_new_iteration() {
+    clean_database().await;
+
+    let pred = create_task("Noop-Pred", "TASK", 1.0, Some(2.0), None, None, None, None, None).await;
+    let task_id =
+        create_task("Noop-Succ", "TASK", 2.0, Some(4.0), None, Some(&[pred]), None, None, None)
+            .await;
+
+    let revision_before = latest_revision().await;
+    let iteration_before = find_current_iteration_id_by_title("Noop-Succ").await;
+
+    let val = gql_ok_simple(&format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_id},
+                title: "Noop-Succ",
+                description: "desc for Noop-Succ",
+                designation: TASK,
+                priority: 2.0,
+                effort: 4.0,
+                parentId: null,
+                earliestStart: null,
+                scheduleTarget: null,
+                predecessors: [{pred}]
+            }}) {{
+                dbId
+                iterationId
+            }}
+        }}"#
+    ))
+    .await;
+
+    let revision_after = latest_revision().await;
+    assert_eq!(
+        revision_after, revision_before,
+        "latest revision should not change for identical predecessor save"
+    );
+    assert_eq!(extract_i64(&val, "taskSave.dbId"), task_id);
+    assert_eq!(extract_i64(&val, "taskSave.iterationId"), iteration_before);
+}
+
+#[tokio::test]
+#[serial]
+async fn test_dependency_change_includes_titles() {
+    clean_database().await;
+
+    let pred =
+        create_task("Hist-Title-Pred", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let succ = create_task(
+        "Hist-Title-Succ",
+        "TASK",
+        2.0,
+        Some(4.0),
+        None,
+        Some(&[pred]),
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let query = task_history_query(succ, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let dep = changes
+        .iter()
+        .find(|c| {
+            extract_str(c, "__typename") == "DependencyChange"
+                && extract_str(c, "changeType") == "CREATED"
+        })
+        .expect("expected a CREATED DependencyChange");
+
+    assert_eq!(extract_i64(dep, "predecessorId"), pred);
+    assert_eq!(extract_i64(dep, "successorId"), succ);
+    assert_eq!(extract_str(dep, "predecessorTitle"), "Hist-Title-Pred");
+    assert_eq!(extract_str(dep, "successorTitle"), "Hist-Title-Succ");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_with_bookings() {
+    clean_database().await;
+
+    let alice_id = create_resource("Hist-BK-Alice", "Europe/Berlin", true).await;
+    let req =
+        create_task("Hist-BK-Req", "REQUIREMENT", 1.0, None, None, None, None, None, None).await;
+
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let t = create_task(
+        "Hist-BK-Task",
+        "TASK",
+        2.0,
+        Some(8.0),
+        None,
+        Some(&[req]),
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+
+    let booking_mutation = format!(
+        r#"mutation {{
+            bookingSave(
+                dbId: null,
+                taskId: {t},
+                start: "2025-07-01T08:00:00Z",
+                end: "2025-07-01T16:00:00Z",
+                resources: [{alice_id}],
+                final: false
+            ) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&booking_mutation).await;
+
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let booking_changes: Vec<&juniper::Value<MyScalarValue>> =
+        changes.iter().filter(|c| extract_str(c, "__typename") == "BookingChange").collect();
+    assert!(
+        !booking_changes.is_empty(),
+        "expected at least one BookingChange in task history after creating a booking"
+    );
+
+    let created_booking = booking_changes
+        .iter()
+        .find(|c| extract_str(c, "changeType") == "CREATED")
+        .expect("expected a CREATED BookingChange");
+    assert!(
+        !value_at_path(created_booking, "booking").is_null(),
+        "CREATED BookingChange should have a non-null booking"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_with_resource_constraints() {
+    clean_database().await;
+
+    let alice_id = create_resource("Hist-RC-Alice", "Europe/Berlin", true).await;
+
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let t =
+        create_task("Hist-RC-Task", "TASK", 1.0, Some(4.0), None, None, None, None, Some(&rc_frag))
+            .await;
+
+    let rc_frag2 = format!(
+        r#"resourceConstraints: [{{ optional: true, speed: 0.5, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {t},
+                title: "Hist-RC-Task",
+                description: "modified",
+                designation: TASK,
+                priority: 1.0,
+                effort: 8.0,
+                {rc_frag2}
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&mutation).await;
+
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let rc_changes: Vec<&juniper::Value<MyScalarValue>> = changes
+        .iter()
+        .filter(|c| extract_str(c, "__typename") == "ResourceConstraintChange")
+        .collect();
+    assert!(
+        !rc_changes.is_empty(),
+        "expected at least one ResourceConstraintChange in task history"
+    );
+
+    let created_rc = rc_changes
+        .iter()
+        .find(|c| extract_str(c, "changeType") == "CREATED")
+        .expect("expected a CREATED ResourceConstraintChange");
+    let resource_ids = extract_list(created_rc, "resourceIds");
+    assert!(!resource_ids.is_empty(), "ResourceConstraintChange.resourceIds should not be empty");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_direction_forward() {
+    clean_database().await;
+
+    let t = create_task("Hist-Fwd", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let rev_after_create = latest_revision().await;
+
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {t},
+                title: "Hist-Fwd-Updated",
+                description: "updated",
+                designation: TASK,
+                priority: 1.0,
+                effort: 8.0
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&mutation).await;
+
+    let query = task_history_query(t, "FORWARD", &format!(", fromRevision: {rev_after_create}"));
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    assert!(
+        !changes.is_empty(),
+        "FORWARD query from creation revision should return at least one change"
+    );
+
+    let change_types: Vec<&str> = changes.iter().map(|c| extract_str(c, "changeType")).collect();
+    assert!(
+        change_types.contains(&"CREATED"),
+        "FORWARD from creation revision should include the CREATED change, got {change_types:?}"
+    );
+
+    if changes.len() >= 2 {
+        let rev0 = extract_i64(&changes[0], "revisionId");
+        let rev1 = extract_i64(&changes[1], "revisionId");
+        assert!(
+            rev0 <= rev1,
+            "FORWARD direction should return changes in chronological order, got rev {rev0} before {rev1}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_limit() {
+    clean_database().await;
+
+    let t = create_task("Hist-Limit", "TASK", 1.0, Some(1.0), None, None, None, None, None).await;
+
+    for i in 1..=5 {
+        let effort = (i + 1) as f64;
+        let mutation = format!(
+            r#"mutation {{
+                taskSave(task: {{
+                    dbId: {t},
+                    title: "Hist-Limit",
+                    description: "modification {i}",
+                    designation: TASK,
+                    priority: 1.0,
+                    effort: {effort}
+                }}) {{
+                    dbId
+                }}
+            }}"#
+        );
+        gql_ok_simple(&mutation).await;
+    }
+
+    let query = task_history_query(t, "BACKWARD", ", limit: 2");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    assert_eq!(changes.len(), 2, "limit=2 should return exactly 2 changes, got {}", changes.len());
+
+    let has_more = extract_bool(&val, "taskHistory.hasMore");
+    assert!(has_more, "hasMore should be true when there are more changes than the limit");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_modifying_task_does_not_recreate_dependencies() {
+    clean_database().await;
+
+    // 1. Create two tasks A and B
+    let b = create_task("DepStable-B", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let a = create_task("DepStable-A", "TASK", 2.0, Some(4.0), None, Some(&[b]), None, None, None)
+        .await;
+
+    // 3. Record the latest revision (rev1)
+    let rev1 = latest_revision().await;
+
+    // 4. Query task history for A at rev1 — should have DependencyChange entries
+    let query = task_history_query(a, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+    let changes = extract_list(&val, "taskHistory.changes");
+    let dep_created_at_rev1: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "DependencyChange"
+                && extract_str(c, "changeType") == "CREATED"
+        })
+        .collect();
+    assert!(!dep_created_at_rev1.is_empty(), "expected CREATED DependencyChange entries at rev1");
+
+    // 5. Modify task A (change effort, keep same predecessors and title)
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {a},
+                title: "DepStable-A",
+                description: "desc for DepStable-A",
+                designation: TASK,
+                priority: 2.0,
+                effort: 8.0,
+                predecessors: [{b}]
+            }}) {{
+                dbId
+                title
+            }}
+        }}"#
+    );
+    let save_val = gql_ok_simple(&mutation).await;
+    assert_eq!(extract_str(&save_val, "taskSave.title"), "DepStable-A");
+
+    // 6. Record the latest revision (rev2)
+    let rev2 = latest_revision().await;
+    assert!(rev2 > rev1, "rev2 should be greater than rev1");
+
+    // 7. Query task history for A — changes at rev2 should NOT contain DependencyChange
+    let query = task_history_query(a, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+    let changes = extract_list(&val, "taskHistory.changes");
+
+    let dep_changes_at_rev2: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "DependencyChange"
+                && extract_i64(c, "revisionId") == rev2
+        })
+        .collect();
+    assert!(
+        dep_changes_at_rev2.is_empty(),
+        "expected NO DependencyChange entries at rev2 (the modification revision), but got {}: {:?}",
+        dep_changes_at_rev2.len(),
+        dep_changes_at_rev2.iter().map(|c| extract_str(c, "changeType")).collect::<Vec<_>>()
+    );
+
+    // Verify TaskIterationChange UPDATED exists at rev2
+    let task_updated_at_rev2: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "TaskIterationChange"
+                && extract_str(c, "changeType") == "UPDATED"
+                && extract_i64(c, "revisionId") == rev2
+        })
+        .collect();
+    assert!(!task_updated_at_rev2.is_empty(), "expected a TaskIterationChange UPDATED at rev2");
+
+    // 8. Verify that task A still has B as its predecessor
+    let preds = query_task_predecessors(a).await;
+    assert_eq!(preds, vec![b], "task A should still have B as predecessor after modification");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_task_history_from_timestamp() {
+    clean_database().await;
+
+    let t = create_task("Hist-TS", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {t},
+                title: "Hist-TS-Updated",
+                description: "updated",
+                designation: TASK,
+                priority: 1.0,
+                effort: 8.0
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&mutation).await;
+
+    let query = format!(
+        r#"{{
+            taskHistory(taskHeaderId: {t}, direction: BACKWARD, fromTimestamp: "{now}") {{
+                changes {{
+                    __typename
+                    ... on TaskIterationChange {{
+                        revisionId
+                        changeType
+                        taskIteration {{ dbId title }}
+                    }}
+                    ... on BookingChange {{
+                        revisionId
+                        changeType
+                    }}
+                    ... on DependencyChange {{
+                        revisionId
+                        changeType
+                    }}
+                    ... on ResourceConstraintChange {{
+                        revisionId
+                        changeType
+                    }}
+                }}
+                hasMore
+            }}
+        }}"#
+    );
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    assert!(!changes.is_empty(), "fromTimestamp query should return at least one change");
+
+    let has_created = changes.iter().any(|c| extract_str(c, "changeType") == "CREATED");
+    assert!(
+        has_created,
+        "BACKWARD from a timestamp after creation should include the CREATED change"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_modifying_task_does_not_recreate_resource_constraints() {
+    clean_database().await;
+
+    // 1. Create a resource
+    let alice_id = create_resource("RC-Stable-Alice", "Europe/Berlin", true).await;
+
+    // 2. Create a task with a resource constraint pointing to that resource
+    let rc_frag = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let t = create_task(
+        "RC-Stable-Task",
+        "TASK",
+        1.0,
+        Some(4.0),
+        None,
+        None,
+        None,
+        None,
+        Some(&rc_frag),
+    )
+    .await;
+
+    // 3. Record rev1
+    let rev1 = latest_revision().await;
+
+    // 4. Query task history at rev1 — should have ResourceConstraintChange CREATED
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+    let changes = extract_list(&val, "taskHistory.changes");
+    let rc_created_at_rev1: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "ResourceConstraintChange"
+                && extract_str(c, "changeType") == "CREATED"
+        })
+        .collect();
+    assert!(
+        !rc_created_at_rev1.is_empty(),
+        "expected CREATED ResourceConstraintChange entries at rev1"
+    );
+
+    // 5. Modify the task (change effort, keep same resource constraints)
+    let rc_frag2 = format!(
+        r#"resourceConstraints: [{{ optional: false, speed: 1.0, entries: [{{ resourceId: {alice_id} }}] }}]"#
+    );
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {t},
+                title: "RC-Stable-Task",
+                description: "desc for RC-Stable-Task",
+                designation: TASK,
+                priority: 1.0,
+                effort: 8.0,
+                {rc_frag2}
+            }}) {{
+                dbId
+                title
+            }}
+        }}"#
+    );
+    let save_val = gql_ok_simple(&mutation).await;
+    assert_eq!(extract_str(&save_val, "taskSave.title"), "RC-Stable-Task");
+
+    // 6. Record rev2
+    let rev2 = latest_revision().await;
+    assert!(rev2 > rev1, "rev2 should be greater than rev1");
+
+    // 7. Query task history — changes at rev2 should NOT contain ResourceConstraintChange
+    let query = task_history_query(t, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+    let changes = extract_list(&val, "taskHistory.changes");
+
+    let rc_changes_at_rev2: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "ResourceConstraintChange"
+                && extract_i64(c, "revisionId") == rev2
+        })
+        .collect();
+    assert!(
+        rc_changes_at_rev2.is_empty(),
+        "expected NO ResourceConstraintChange entries at rev2 (the modification revision), but got {}: {:?}",
+        rc_changes_at_rev2.len(),
+        rc_changes_at_rev2.iter().map(|c| extract_str(c, "changeType")).collect::<Vec<_>>()
+    );
+
+    // Verify TaskIterationChange UPDATED exists at rev2
+    let task_updated_at_rev2: Vec<_> = changes
+        .iter()
+        .filter(|c| {
+            extract_str(c, "__typename") == "TaskIterationChange"
+                && extract_str(c, "changeType") == "UPDATED"
+                && extract_i64(c, "revisionId") == rev2
+        })
+        .collect();
+    assert!(!task_updated_at_rev2.is_empty(), "expected a TaskIterationChange UPDATED at rev2");
+
+    // 8. Verify the task still has its resource constraint after modification
+    let rc_query = format!(
+        r#"{{
+            tasks {{
+                dbId
+                title
+                resourceConstraints {{
+                    id
+                    optional
+                    speed
+                    entries {{
+                        id
+                        resource {{ dbId name }}
+                    }}
+                }}
+            }}
+        }}"#
+    );
+    let rc_val = gql_ok_simple(&rc_query).await;
+    let tasks = extract_list(&rc_val, "tasks");
+    let our_task = tasks
+        .iter()
+        .find(|t_val| extract_str(t_val, "title") == "RC-Stable-Task")
+        .expect("should find RC-Stable-Task in tasks list");
+    let rcs = extract_list(our_task, "resourceConstraints");
+    assert_eq!(rcs.len(), 1, "task should still have exactly one resource constraint");
+    let entries = extract_list(&rcs[0], "entries");
+    assert!(!entries.is_empty(), "resource constraint should still have entries");
 }

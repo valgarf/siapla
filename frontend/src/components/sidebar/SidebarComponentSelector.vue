@@ -8,9 +8,10 @@
 </template>
 
 <script setup lang="ts">
-import { type SidebarData, NewResourceSidebarData, NewTaskSidebarData, ResourceSidebarData, TaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
+import { type SidebarData, NewResourceSidebarData, NewTaskSidebarData, ResourceSidebarData, TaskSidebarData, TaskHistorySidebarData, useSidebarStore } from 'src/stores/sidebar';
 import { type Component, computed } from 'vue';
 import TaskSidebar from './TaskSidebar.vue';
+import TaskHistorySidebar from './TaskHistorySidebar.vue';
 import ResourceSidebar from './ResourceSidebar.vue';
 import { type TaskInput, useTaskStore } from 'src/stores/task';
 import { useResourceStore } from 'src/stores/resource';
@@ -22,6 +23,9 @@ const resourceStore = useResourceStore();
 
 function mapSidebarDataToComponent(cd: SidebarData): [number, Component, object] | null {
     if (cd == null) return null;
+    if (cd instanceof TaskHistorySidebarData) {
+        return [cd.taskId, TaskHistorySidebar, { taskId: cd.taskId }];
+    }
     if (cd instanceof TaskSidebarData) {
         return [cd.taskId, TaskSidebar, { task: taskStore.task(cd.taskId) }];
     }

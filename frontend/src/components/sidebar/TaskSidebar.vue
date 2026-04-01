@@ -14,6 +14,8 @@
 
             <q-btn v-if="edit && localTask.dbId != null" flat round icon="cancel" aria-label="Cancel" class="q-ma-xs"
                 @click="cancelEdit" :class="{ shake: sidebarStore.shakeButtons }" />
+            <q-btn flat round icon="history" aria-label="History" class="q-ma-xs" @click="openHistory"
+                :disable="localTask.dbId == null" />
             <q-btn flat @click="deleteTask()" :loading="taskStore.deleting" color="negative" icon="delete"
                 :disable="taskStore.saving" class="q-ma-xs" :class="{ shake: sidebarStore.shakeButtons }"></q-btn>
         </template>
@@ -162,10 +164,11 @@
 import { Dialog } from 'quasar';
 import { formatDatetime } from 'src/common/datetime';
 import { TaskDesignation } from 'src/gql/graphql';
-import { TaskSidebarData, NewTaskSidebarData, useSidebarStore } from 'src/stores/sidebar';
+import { TaskSidebarData, NewTaskSidebarData, TaskHistorySidebarData, useSidebarStore } from 'src/stores/sidebar';
 import { useResourceStore } from 'src/stores/resource';
 import { useTaskStore, type Task, type TaskInput } from 'src/stores/task';
 import { computed, ref, watchEffect } from 'vue';
+
 import { type Issue, usePlanIssueStore } from 'src/stores/planIssue';
 import DateTimeInput from '../forms/DateTimeInput.vue';
 import SidebarLayout from './SidebarLayout.vue';
@@ -179,6 +182,7 @@ const taskStore = useTaskStore();
 const sidebarStore = useSidebarStore();
 const resourceStore = useResourceStore();
 const planStore = usePlanStore();
+
 
 const localTaskDefault = { title: "", description: "", designation: TaskDesignation.Task, predecessors: [], successors: [], children: [], parent: null, resourceConstraints: [], priority: 1.0 };
 const localTask = ref<TaskInput>(localTaskDefault)
@@ -506,6 +510,12 @@ function onCreatePredecessor() {
     const parentId = localTask.value.parent?.dbId ?? null;
     const resourceConstraints = localTask.value.resourceConstraints ?? [];
     sidebarStore.createNew(new NewTaskSidebarData({ successorIds, parentId, resourceConstraints }));
+}
+
+function openHistory() {
+    if (localTask.value.dbId != null) {
+        sidebarStore.replaceTop(new TaskHistorySidebarData(localTask.value.dbId));
+    }
 }
 
 // ...existing code...

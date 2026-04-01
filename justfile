@@ -1,5 +1,5 @@
-
 set windows-shell := ["nu", "-c"]
+
 db := 'sqlite:./run-data/test.sqlite'
 
 default:
@@ -10,12 +10,11 @@ default:
 init: install-frontend build-frontend build-backend install-e2e test
     mkdir -p run-data
 
-
-[working-directory(".")]
 [positional-arguments]
+[working-directory(".")]
 backup-db *args='':
     #!/usr/bin/env bash
-    db_file="{{db}}"
+    db_file="{{ db }}"
     if [[ $db_file == *sqlite ]]
     then
         db_file=${db_file#sqlite:}
@@ -24,15 +23,14 @@ backup-db *args='':
         cp "${db_file}" "${db_file_target}"
     fi
 
-
-[working-directory(".")]
 [positional-arguments]
+[working-directory(".")]
 migrate *args='':
-    DATABASE_URL="{{db}}" sea-orm-cli migrate -d ./crates/siapla-migration {{args}}
+    DATABASE_URL="{{ db }}" sea-orm-cli migrate -d ./crates/siapla-migration {{ args }}
 
 [working-directory(".")]
 generate-entity: (migrate "up")
-    DATABASE_URL="{{db}}" sea-orm-cli generate entity \
+    DATABASE_URL="{{ db }}" sea-orm-cli generate entity \
         --with-serde both \
         --enum-extra-derives 'PartialEq','Eq','Hash' \
         --enum-extra-attributes 'WTF' \
@@ -41,22 +39,21 @@ generate-entity: (migrate "up")
     python ./scripts/patch_generated_entities.py
 
 [working-directory(".")]
-serve-backend :
+serve-backend:
     # pass database url to the binary via command line flag --database-url
-    watchexec -d 1s -o restart -w crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
+    watchexec -d 1s -o restart -w crates -- cargo run -p siapla --bin siapla-serve -- --database-url "{{ db }}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory(".")]
 serve-backend-release:
-    watchexec -d 1s -o restart -w crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
+    watchexec -d 1s -o restart -w crates -- cargo run --profile release -p siapla --bin siapla-serve -- --database-url "{{ db }}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory(".")]
 serve-backend-once:
-    cargo run -p siapla --bin siapla-serve -- --database-url "{{db}}" --bind "127.0.0.1:8880" --allow-reset
+    cargo run -p siapla --bin siapla-serve -- --database-url "{{ db }}" --bind "127.0.0.1:8880" --allow-reset
 
 [working-directory("./frontend")]
 serve-frontend:
     GRAPHQL_WS="ws://localhost:8880/subscriptions" GRAPHQL_URI="http://localhost:8880/graphql" quasar dev
-
 
 [working-directory("./frontend")]
 quasar-build:
@@ -112,18 +109,17 @@ generate-holidays-api:
 export-schema:
     cargo run -p siapla --bin siapla-export-schema
 
-
 [working-directory(".")]
 docker-build binary='target/release/siapla-serve' tag='siapla:latest': build-backend
     # build docker image, copying the binary via build-arg
-    docker build --build-arg BINARY="{{binary}}" -t {{tag}} -f image/Dockerfile .
+    docker build --build-arg BINARY="{{ binary }}" -t {{ tag }} -f image/Dockerfile .
 
 [working-directory(".")]
 docker-run tag='siapla:latest' db_path='./run-data/test.sqlite' port='8890':
     # run container with /data mounted to local db path and port exposed
     docker stop siapla
     docker rm siapla
-    docker run -d --name siapla -p {{port}}:80 -v {{db_path}}:/data/default.sqlite {{tag}}
+    docker run -d --name siapla -p {{ port }}:80 -v {{ db_path }}:/data/default.sqlite {{ tag }}
 
 # ---------------------------------------------------------------------------
 # AI-friendly test commands (three levels)
@@ -173,6 +169,10 @@ test-e2e-planning:
 [working-directory("./tests/e2e")]
 test-e2e-revisions:
     npx playwright test tests/revisions.spec.ts
+
+[working-directory("./tests/e2e")]
+test-e2e-task-history:
+    npx playwright test tests/task-history.spec.ts
 
 # Run all tests (unit + integration; E2E requires servers to be running separately)
 [working-directory(".")]

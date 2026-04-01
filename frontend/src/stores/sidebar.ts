@@ -18,6 +18,17 @@ export class TaskSidebarData implements SidebarData {
   }
 }
 
+export class TaskHistorySidebarData implements SidebarData {
+  readonly kind = 'taskHistory';
+  taskId: number;
+  constructor(taskId: number) {
+    this.taskId = taskId;
+  }
+  valid(): boolean {
+    return true; // task might not be in current revision
+  }
+}
+
 export interface NewTaskDefaults {
   parentId?: number | null;
   predecessorIds?: number[];
@@ -54,7 +65,7 @@ export class ResourceSidebarData implements SidebarData {
 }
 
 export class NewResourceSidebarData implements SidebarData {
-  constructor() { }
+  constructor() {}
   valid(): boolean {
     return true;
   }
@@ -80,9 +91,9 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   const activeSidebars = computed(() => stack.value.slice());
   const activeSidebar = computed(() => {
     if (currentEditing.value != null) {
-      return currentEditing.value
+      return currentEditing.value;
     }
-    return stack.value[stack.value.length - 1] ?? null
+    return stack.value[stack.value.length - 1] ?? null;
   });
 
   // NOTE: selection population is moved out of the store (to the caller components).
@@ -93,6 +104,13 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
 
   function isSameSidebar(a: SidebarData | null, b: SidebarData | null): boolean {
     if (a == null || b == null) return false;
+    // task history (must come before generic taskId check)
+    if (a instanceof TaskHistorySidebarData && b instanceof TaskHistorySidebarData) {
+      return a.taskId === b.taskId;
+    }
+    if (a instanceof TaskHistorySidebarData || b instanceof TaskHistorySidebarData) {
+      return false;
+    }
     // task
     if (isObjectWithNumberProp(a, 'taskId') && isObjectWithNumberProp(b, 'taskId')) {
       return a['taskId'] === b['taskId'];
@@ -235,7 +253,11 @@ export const useSidebarStore = defineStore('sidebarStore', () => {
   // discard current editing (abort). If creating a new item, drop it. If editing existing, just clear editing.
   function discard() {
     // if current editing is a new item, just clear it
-    if (currentEditing.value != null && (currentEditing.value.constructor.name === 'NewTaskSidebarData' || currentEditing.value.constructor.name === 'NewResourceSidebarData')) {
+    if (
+      currentEditing.value != null &&
+      (currentEditing.value.constructor.name === 'NewTaskSidebarData' ||
+        currentEditing.value.constructor.name === 'NewResourceSidebarData')
+    ) {
       currentEditing.value = null;
       // do not push anything; keep stack untouched
       isOpen.value = false;

@@ -1,10 +1,13 @@
-use std::{collections::HashSet, str::FromStr};
+use std::{
+    collections::{BTreeSet, HashSet},
+    str::FromStr,
+};
 
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 
 use juniper::{GraphQLEnum, Nullable, graphql_object};
-use sea_orm::{ActiveValue, Condition, QueryOrder as _, prelude::*};
+use sea_orm::{ActiveValue, DatabaseTransaction, QueryOrder as _, prelude::*};
 use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
@@ -20,17 +23,13 @@ use crate::{
     revisioning::{PlanState, active_for_revision, create_revision},
 };
 
-use super::{
-    allocation::GQLAllocation,
-    issue::GQLIssue,
-    resource::GQLResource,
-};
+use super::{allocation::GQLAllocation, issue::GQLIssue, resource::GQLResource};
 
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
 
-#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq)]
+#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Clone)]
 pub enum TaskDesignation {
     Task,
     Group,
@@ -208,8 +207,9 @@ impl GQLTask {
         ctx: &Context,
     ) -> anyhow::Result<Vec<GQLResourceConstraint>> {
         let txn = ctx.txn().await?;
+        let header_id = self.model.header_id.unwrap_or(self.model.id);
         let constraints = resource_constraint::Entity::find()
-            .filter(resource_constraint::Column::TaskId.eq(self.model.id))
+            .filter(resource_constraint::Column::TaskId.eq(header_id))
             .filter(active_for_revision(
                 resource_constraint::Column::RevCreated,
                 resource_constraint::Column::RevDeleted,
@@ -361,6 +361,221 @@ impl TaskSaveInput {
             rev_deleted: ActiveValue::NotSet,
         }
     }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NormalizedResourceConstraint {
+    optional: bool,
+    speed_bits: u32,
+    resource_ids: Vec<i32>,
+}
+
+async fn resolve_task_header_ids(
+    txn: &DatabaseTransaction,
+    ids: &[i32],
+) -> anyhow::Result<Vec<i32>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let active_targets = task::Entity::find()
+        .filter(task::Column::Id.is_in(ids.to_vec()))
+        .filter(task::Column::RevDeleted.is_null())
+        .all(txn)
+        .await?;
+    let mut resolved: BTreeSet<i32> =
+        active_targets.into_iter().filter_map(|task| task.header_id).collect();
+
+    if resolved.len() < ids.len() {
+        let historical_targets = task::Entity::find()
+            .filter(task::Column::HeaderId.is_in(ids.to_vec()))
+            .all(txn)
+            .await?;
+        resolved.extend(historical_targets.into_iter().filter_map(|task| task.header_id));
+    }
+
+    Ok(resolved.into_iter().collect())
+}
+
+async fn normalize_resource_constraints_input(
+    txn: &DatabaseTransaction,
+    constraints: &[ResourceConstraintInput],
+) -> anyhow::Result<Vec<NormalizedResourceConstraint>> {
+    let mut normalized = Vec::with_capacity(constraints.len());
+    for constraint in constraints {
+        let mut resource_ids: Vec<i32> =
+            constraint.entries.iter().map(|entry| entry.resource_id).collect();
+        let resolved = resolve_resource_header_ids(txn, &resource_ids).await?;
+        resource_ids.clear();
+        resource_ids.extend(resolved);
+        resource_ids.sort_unstable();
+        normalized.push(NormalizedResourceConstraint {
+            optional: constraint.optional,
+            speed_bits: (constraint.speed as f32).to_bits(),
+            resource_ids,
+        });
+    }
+    Ok(normalized)
+}
+
+async fn normalize_existing_resource_constraints(
+    txn: &DatabaseTransaction,
+    header_id: i32,
+) -> anyhow::Result<Vec<NormalizedResourceConstraint>> {
+    let constraints = resource_constraint::Entity::find()
+        .filter(resource_constraint::Column::TaskId.eq(header_id))
+        .filter(resource_constraint::Column::RevDeleted.is_null())
+        .order_by(resource_constraint::Column::Id, sea_orm::Order::Asc)
+        .all(txn)
+        .await?;
+
+    let mut normalized = Vec::with_capacity(constraints.len());
+    for constraint in constraints {
+        let mut resource_ids: Vec<i32> = resource_constraint_entry::Entity::find()
+            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(constraint.id))
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|entry| entry.resource_id)
+            .collect();
+        resource_ids.sort_unstable();
+        normalized.push(NormalizedResourceConstraint {
+            optional: constraint.optional,
+            speed_bits: constraint.speed.to_bits(),
+            resource_ids,
+        });
+    }
+
+    Ok(normalized)
+}
+
+async fn resolve_resource_header_ids(
+    txn: &DatabaseTransaction,
+    ids: &[i32],
+) -> anyhow::Result<Vec<i32>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let active_targets = resource::Entity::find()
+        .filter(resource::Column::Id.is_in(ids.to_vec()))
+        .filter(resource::Column::RevDeleted.is_null())
+        .all(txn)
+        .await?;
+    let mut resolved: BTreeSet<i32> =
+        active_targets.into_iter().filter_map(|resource| resource.header_id).collect();
+
+    if resolved.len() < ids.len() {
+        let historical_targets = resource::Entity::find()
+            .filter(resource::Column::HeaderId.is_in(ids.to_vec()))
+            .all(txn)
+            .await?;
+        resolved.extend(historical_targets.into_iter().filter_map(|resource| resource.header_id));
+    }
+
+    Ok(resolved.into_iter().collect())
+}
+
+async fn task_save_is_noop(
+    txn: &DatabaseTransaction,
+    existing: &task::Model,
+    task_input: &TaskSaveInput,
+    predecessors: Option<&Vec<i32>>,
+    successors: Option<&Vec<i32>>,
+    children: Option<&Vec<i32>>,
+    resource_constraints: Option<&Vec<ResourceConstraintInput>>,
+) -> anyhow::Result<bool> {
+    let existing_header_id = existing.header_id.unwrap_or(existing.id);
+
+    let scalar_unchanged = existing.title == task_input.title
+        && existing.description == task_input.description
+        && existing.designation
+            == match task_input.designation {
+                TaskDesignation::Task => "Task".to_string(),
+                TaskDesignation::Group => "Group".to_string(),
+                TaskDesignation::Requirement => "Requirement".to_string(),
+                TaskDesignation::Milestone => "Milestone".to_string(),
+            }
+        && existing.parent_id
+            == match &task_input.parent_id {
+                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
+                Nullable::Some(value) => Some(*value),
+            }
+        && existing.earliest_start
+            == match &task_input.earliest_start {
+                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
+                Nullable::Some(value) => Some(*value),
+            }
+        && existing.schedule_target
+            == match &task_input.schedule_target {
+                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
+                Nullable::Some(value) => Some(*value),
+            }
+        && existing.effort
+            == match &task_input.effort {
+                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
+                Nullable::Some(value) => Some(*value as f32),
+            }
+        && existing.priority.to_bits() == (task_input.priority as f32).to_bits();
+
+    if !scalar_unchanged {
+        return Ok(false);
+    }
+
+    if let Some(predecessors) = predecessors {
+        let target = resolve_task_header_ids(txn, predecessors).await?;
+        let current: BTreeSet<i32> = dependency::Entity::find()
+            .filter(dependency::Column::SuccessorId.eq(existing_header_id))
+            .filter(dependency::Column::RevDeleted.is_null())
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|dep| dep.predecessor_id)
+            .collect();
+        if current.into_iter().collect::<Vec<_>>() != target {
+            return Ok(false);
+        }
+    }
+
+    if let Some(successors) = successors {
+        let target = resolve_task_header_ids(txn, successors).await?;
+        let current: BTreeSet<i32> = dependency::Entity::find()
+            .filter(dependency::Column::PredecessorId.eq(existing_header_id))
+            .filter(dependency::Column::RevDeleted.is_null())
+            .all(txn)
+            .await?
+            .into_iter()
+            .map(|dep| dep.successor_id)
+            .collect();
+        if current.into_iter().collect::<Vec<_>>() != target {
+            return Ok(false);
+        }
+    }
+
+    if let Some(children) = children {
+        let target = resolve_task_header_ids(txn, children).await?;
+        let current: BTreeSet<i32> = task::Entity::find()
+            .filter(task::Column::ParentId.eq(existing_header_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .all(txn)
+            .await?
+            .into_iter()
+            .filter_map(|child| child.header_id)
+            .collect();
+        if current.into_iter().collect::<Vec<_>>() != target {
+            return Ok(false);
+        }
+    }
+
+    if let Some(resource_constraints) = resource_constraints {
+        let current = normalize_existing_resource_constraints(txn, existing_header_id).await?;
+        let target = normalize_resource_constraints_input(txn, resource_constraints).await?;
+        if current != target {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -575,8 +790,9 @@ async fn update_resource_constraints(
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     // Fetch active old constraints (assume order is preserved)
+    let header_id = model.header_id.unwrap_or(model.id);
     let old = resource_constraint::Entity::find()
-        .filter(resource_constraint::Column::TaskId.eq(model.id))
+        .filter(resource_constraint::Column::TaskId.eq(header_id))
         .filter(resource_constraint::Column::RevDeleted.is_null())
         .order_by(resource_constraint::Column::Id, sea_orm::Order::Asc)
         .all(txn)
@@ -622,7 +838,7 @@ async fn update_resource_constraints(
 
             let new_constraint = resource_constraint::ActiveModel {
                 id: ActiveValue::NotSet,
-                task_id: ActiveValue::Set(model.id),
+                task_id: ActiveValue::Set(header_id),
                 r#type: ActiveValue::Set(old_c.r#type.clone()),
                 optional: ActiveValue::Set(c.optional),
                 speed: ActiveValue::Set(c.speed as f32),
@@ -656,7 +872,7 @@ async fn update_resource_constraints(
         for c in constraints.iter().skip(old_len) {
             let rc = resource_constraint::ActiveModel {
                 id: ActiveValue::NotSet,
-                task_id: ActiveValue::Set(model.id),
+                task_id: ActiveValue::Set(header_id),
                 r#type: ActiveValue::Set("any".to_string()),
                 optional: ActiveValue::Set(c.optional),
                 speed: ActiveValue::Set(c.speed as f32),
@@ -707,12 +923,41 @@ async fn update_resource_constraints(
 // ---------------------------------------------------------------------------
 
 pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result<task::Model> {
+    let predecessors = task.predecessors.clone();
+    let successors = task.successors.clone();
+    let children = task.children.clone();
+    let resource_constraints = task.resource_constraints.clone();
+    let input_header_id = task.db_id;
+    let txn = ctx.txn().await?;
+
+    if let Some(header_id) = input_header_id {
+        let existing = task::Entity::find()
+            .filter(task::Column::HeaderId.eq(header_id))
+            .filter(task::Column::RevDeleted.is_null())
+            .one(txn)
+            .await?
+            .ok_or_else(|| anyhow!("No active task iteration found for header {}", header_id))?;
+
+        if task_save_is_noop(
+            txn,
+            &existing,
+            &task,
+            predecessors.as_ref(),
+            successors.as_ref(),
+            children.as_ref(),
+            resource_constraints.as_ref(),
+        )
+        .await?
+        {
+            return Ok(existing);
+        }
+    }
+
     let predecessors = task.predecessors.take();
     let successors = task.successors.take();
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
     let input_header_id = task.db_id.take();
-    let txn = ctx.txn().await?;
     let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
     let mut am = task.into_active_model();
     let model = if let Some(header_id) = input_header_id {
@@ -722,9 +967,7 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
             .filter(task::Column::RevDeleted.is_null())
             .one(txn)
             .await?
-            .ok_or_else(|| {
-                anyhow!("No active task iteration found for header {}", header_id)
-            })?;
+            .ok_or_else(|| anyhow!("No active task iteration found for header {}", header_id))?;
         let old_id = existing.id;
         // Soft-delete the old iteration
         task::Entity::update_many()
@@ -740,106 +983,8 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         let new_model = am.insert(txn).await?;
 
         // ── Migrate relationships from old iteration to new iteration ──
-
-        // 1. Dependencies
-        let old_header_id = existing.header_id.unwrap_or(old_id);
-        let new_header_id = new_model.header_id.unwrap_or(new_model.id);
-        let old_deps = dependency::Entity::find()
-            .filter(
-                Condition::any()
-                    .add(dependency::Column::PredecessorId.eq(old_header_id))
-                    .add(dependency::Column::SuccessorId.eq(old_header_id)),
-            )
-            .filter(dependency::Column::RevDeleted.is_null())
-            .all(txn)
-            .await?;
-        for dep in &old_deps {
-            dependency::Entity::update_many()
-                .col_expr(
-                    dependency::Column::RevDeleted,
-                    Expr::value(Value::BigInt(Some(revision_id))),
-                )
-                .filter(dependency::Column::Id.eq(dep.id))
-                .filter(dependency::Column::RevDeleted.is_null())
-                .exec(txn)
-                .await?;
-
-            let predecessor_header_id = if dep.predecessor_id == old_header_id {
-                new_header_id
-            } else {
-                dep.predecessor_id
-            };
-            let successor_header_id =
-                if dep.successor_id == old_header_id { new_header_id } else { dep.successor_id };
-
-            let replacement_exists = dependency::Entity::find()
-                .filter(dependency::Column::PredecessorId.eq(predecessor_header_id))
-                .filter(dependency::Column::SuccessorId.eq(successor_header_id))
-                .filter(dependency::Column::RevDeleted.is_null())
-                .one(txn)
-                .await?
-                .is_some();
-
-            if !replacement_exists {
-                dependency::ActiveModel {
-                    predecessor_id: sea_orm::ActiveValue::Set(predecessor_header_id),
-                    successor_id: sea_orm::ActiveValue::Set(successor_header_id),
-                    rev_created: sea_orm::ActiveValue::Set(revision_id),
-                    rev_deleted: sea_orm::ActiveValue::Set(None),
-                    ..Default::default()
-                }
-                .insert(txn)
-                .await?;
-            }
-        }
-
-        // 2. Resource constraints
-        let old_constraints = resource_constraint::Entity::find()
-            .filter(resource_constraint::Column::TaskId.eq(old_id))
-            .filter(resource_constraint::Column::RevDeleted.is_null())
-            .all(txn)
-            .await?;
-        for old_c in &old_constraints {
-            resource_constraint::Entity::update_many()
-                .col_expr(
-                    resource_constraint::Column::RevDeleted,
-                    Expr::value(Value::BigInt(Some(revision_id))),
-                )
-                .filter(resource_constraint::Column::Id.eq(old_c.id))
-                .filter(resource_constraint::Column::RevDeleted.is_null())
-                .exec(txn)
-                .await?;
-            let old_entries = resource_constraint_entry::Entity::find()
-                .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(old_c.id))
-                .all(txn)
-                .await?;
-            let new_c = resource_constraint::ActiveModel {
-                id: ActiveValue::NotSet,
-                task_id: ActiveValue::Set(new_model.id),
-                r#type: ActiveValue::Set(old_c.r#type.clone()),
-                optional: ActiveValue::Set(old_c.optional),
-                speed: ActiveValue::Set(old_c.speed),
-                rev_created: ActiveValue::Set(revision_id),
-                rev_deleted: ActiveValue::Set(None),
-            }
-            .insert(txn)
-            .await?;
-            for entry in &old_entries {
-                resource_constraint_entry::ActiveModel {
-                    id: ActiveValue::NotSet,
-                    resource_constraint_id: ActiveValue::Set(new_c.id),
-                    resource_id: ActiveValue::Set(
-                        resource::Entity::find_by_id(entry.resource_id)
-                            .one(txn)
-                            .await?
-                            .and_then(|r| r.header_id)
-                            .unwrap_or(entry.resource_id),
-                    ),
-                }
-                .insert(txn)
-                .await?;
-            }
-        }
+        // Dependencies, bookings, allocations, and resource constraints are all
+        // header-based and don't need migration when a task iteration changes.
 
         new_model
     } else {
