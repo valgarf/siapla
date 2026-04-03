@@ -4,21 +4,12 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use super::dataloader::{
-    AvailabilityBatcher, BatcherLoaderKey, BatcherToKey, ByColBatcher, ByColRevBatcher,
-    LoaderWrapper,
-};
-use crate::SiaplaError;
-use crate::{ColumnIntoUsize, scheduling::Intervals};
-use crate::{RevModeEntity, revisioning::resolve_revision};
-use chrono::NaiveDateTime;
+use super::dataloader::{BatcherLoaderKey, BatcherToKey, LoaderWrapper};
 
 use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use futures::lock::Mutex;
-use sea_orm::{
-    Database, DatabaseTransaction, EntityTrait, TransactionTrait as _, strum::IntoEnumIterator,
-};
+use sea_orm::{Database, DatabaseTransaction, TransactionTrait as _};
 use tokio::sync::{OnceCell, RwLock};
 
 // global database url that can be set from the server's command line
@@ -114,108 +105,6 @@ impl Context {
                     LoaderWrapper::new_non_cached(self.me.clone(), batcher.clone())
                 })
             });
-        }
-    }
-
-    /// Generic dataloader that loads values by column value
-    ///
-    /// Column selection is a little hackish, you have to provide the column as usize.
-    /// Usage:
-    /// ```ignore
-    /// const CIDX: usize = task::Column::Id as usize;
-    /// ctx.load_by_col::<task::Entity, CIDX>(parent_id).await
-    /// ```
-    pub fn load_by_col<ET: EntityTrait>(
-        &self,
-        col: ET::Column,
-        value: impl Into<sea_orm::Value>,
-    ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
-    where
-        ET::Model: Send + Sync,
-        ET::Column: ColumnIntoUsize,
-    {
-        let me = self.me.clone();
-        let value: sea_orm::Value = value.into();
-
-        async move {
-            let ctx =
-                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let _txn = ctx.txn().await?;
-            let loader = ctx.loader(ByColBatcher::<ET> { col }).await;
-            loader.load(value).await
-        }
-    }
-
-    pub fn load_one_by_col<ET: EntityTrait>(
-        &self,
-        col: ET::Column,
-        value: impl Into<sea_orm::Value>,
-    ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
-    where
-        ET::Model: Send + Sync,
-        ET::Column: ColumnIntoUsize,
-    {
-        let me = self.me.clone();
-        let value: sea_orm::Value = value.into();
-
-        async move {
-            let ctx =
-                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let _txn = ctx.txn().await?;
-            let loader = ctx.loader(ByColBatcher::<ET> { col }).await;
-            loader.load_one(value).await
-        }
-    }
-
-    pub fn load_by_col_at_revision<ET: EntityTrait>(
-        &self,
-        col: ET::Column,
-        value: impl Into<sea_orm::Value>,
-        revision: Option<i64>,
-    ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
-    where
-        ET: RevModeEntity,
-        ET::Model: Send + Sync,
-        ET::Column: IntoEnumIterator + ColumnIntoUsize,
-    {
-        let me = self.me.clone();
-        let value: sea_orm::Value = value.into();
-
-        async move {
-            let ctx =
-                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let txn = ctx.txn().await?;
-            let revision = resolve_revision(txn, revision)
-                .await?
-                .ok_or(anyhow::anyhow!("No revision found in database"))?;
-            let loader = ctx.loader(ByColRevBatcher::<ET> { revision, col }).await;
-            loader.load(value).await
-        }
-    }
-
-    pub fn load_one_by_col_at_revision<ET: EntityTrait>(
-        &self,
-        col: ET::Column,
-        value: impl Into<sea_orm::Value>,
-        revision: Option<i64>,
-    ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
-    where
-        ET: RevModeEntity,
-        ET::Model: Send + Sync,
-        ET::Column: IntoEnumIterator + ColumnIntoUsize,
-    {
-        let me = self.me.clone();
-        let value: sea_orm::Value = value.into();
-
-        async move {
-            let ctx =
-                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let txn = ctx.txn().await?;
-            let revision = resolve_revision(txn, revision)
-                .await?
-                .ok_or(anyhow::anyhow!("No revision found in database"))?;
-            let loader = ctx.loader(ByColRevBatcher::<ET> { revision, col }).await;
-            loader.load_one(value).await
         }
     }
 }

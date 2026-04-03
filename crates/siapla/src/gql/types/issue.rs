@@ -1,6 +1,7 @@
 use super::task::GQLTask;
 use crate::entity::task_iteration as task;
 use crate::{entity::issue, gql::context::Context};
+use anyhow::anyhow;
 use juniper::GraphQLEnum;
 use juniper::graphql_object;
 use std::str::FromStr;
@@ -42,17 +43,23 @@ impl GQLIssue {
         let Some(task_id) = self.model.task_id else {
             return Ok(None);
         };
-        if let Some(model) = ctx
-            .load_one_by_col_at_revision::<task::Entity>(
-                task::Column::HeaderId,
-                task_id,
-                self.revision,
-            )
+        let txn = ctx.txn().await?;
+        let revision = crate::revisioning::resolve_revision(txn, self.revision)
             .await?
-        {
+            .ok_or(anyhow!("No revision found in database"))?;
+        let revision_loader = ctx
+            .loader(crate::gql::dataloader::ByColRevBatcher::<task::Entity> {
+                revision,
+                col: task::Column::HeaderId,
+            })
+            .await;
+        if let Some(model) = revision_loader.load_one(task_id.into()).await? {
             return Ok(Some(GQLTask::at_revision(model, self.revision)));
         }
-        let t = ctx.load_one_by_col::<task::Entity>(task::Column::Id, task_id).await?;
+        let loader = ctx
+            .loader(crate::gql::dataloader::ByColBatcher::<task::Entity> { col: task::Column::Id })
+            .await;
+        let t = loader.load_one(task_id.into()).await?;
         Ok(t.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 }

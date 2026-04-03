@@ -53,13 +53,17 @@ impl GQLAvailability {
         &self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let model = ctx
-            .load_one_by_col_at_revision::<resource::Entity>(
-                resource::Column::HeaderId,
-                self.model.resource_id,
-                self.revision,
-            )
-            .await?;
+        let txn = ctx.txn().await?;
+        let revision = crate::revisioning::resolve_revision(txn, self.revision)
+            .await?
+            .ok_or(anyhow!("No revision found in database"))?;
+        let loader = ctx
+            .loader(crate::gql::dataloader::ByColRevBatcher::<resource::Entity> {
+                revision,
+                col: resource::Column::HeaderId,
+            })
+            .await;
+        let model = loader.load_one(self.model.resource_id.into()).await?;
         let model = model.ok_or(anyhow!("Failed to find resource for Availability"))?;
         Ok(GQLResource::at_revision(model, self.revision))
     }

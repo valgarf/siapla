@@ -5,7 +5,7 @@ use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
 use tracing::error;
 
-use crate::gql::dataloader::AvailabilityBatcher;
+use crate::gql::dataloader::{AvailabilityBatcher, ByColBatcher, ByColRevBatcher};
 use crate::revisioning::resolve_revision;
 use crate::{
     entity::{availability, holiday, resource_header, resource_iteration as resource, vacation},
@@ -107,19 +107,25 @@ impl GQLResource {
 
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
         let holiday = ctx
-            .load_one_by_col::<holiday::Entity>(holiday::Column::Id, self.model.holiday_id)
+            .loader(ByColBatcher::<holiday::Entity> { col: holiday::Column::Id })
+            .await
+            .load_one(self.model.holiday_id.into())
             .await?;
         Ok(holiday.map(GQLHoliday::from_model))
     }
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
+        let revision = resolve_revision(ctx.txn().await?, self.revision)
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let availability = ctx
-            .load_by_col_at_revision::<availability::Entity>(
-                availability::Column::ResourceId,
-                resource_id,
-                self.revision,
-            )
+            .loader(ByColRevBatcher::<availability::Entity> {
+                revision,
+                col: availability::Column::ResourceId,
+            })
+            .await
+            .load(resource_id.into())
             .await?;
         Ok(availability
             .into_iter()
@@ -129,12 +135,16 @@ impl GQLResource {
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
+        let revision = resolve_revision(ctx.txn().await?, self.revision)
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let vacation = ctx
-            .load_by_col_at_revision::<vacation::Entity>(
-                vacation::Column::ResourceId,
-                resource_id,
-                self.revision,
-            )
+            .loader(ByColRevBatcher::<vacation::Entity> {
+                revision,
+                col: vacation::Column::ResourceId,
+            })
+            .await
+            .load(resource_id.into())
             .await?;
         Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
     }
@@ -202,8 +212,11 @@ impl resource::Model {
 
     /// Load the holiday associated with this resource (used by the dataloader).
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        let holiday =
-            ctx.load_one_by_col::<holiday::Entity>(holiday::Column::Id, self.holiday_id).await?;
+        let holiday = ctx
+            .loader(ByColBatcher::<holiday::Entity> { col: holiday::Column::Id })
+            .await
+            .load_one(self.holiday_id.into())
+            .await?;
         Ok(holiday.map(GQLHoliday::from_model))
     }
 }

@@ -13,88 +13,111 @@ pub(crate) use nullable_to_av;
 macro_rules! resolve_many_to_many {
     // Original form: dataloader-based, no filtering
     ($ctx: ident, $link_ent: ty,  $link_from_col: expr, $from_id: expr, $target_id_field: expr, $target_ent: ty, $target_col: expr) => {{
-        match $ctx.load_by_col::<$link_ent>($link_from_col, $from_id).await {
-            Err(err) => Err(err),
+        let link_loader = $ctx
+            .loader(crate::gql::dataloader::ByColBatcher::<$link_ent> { col: $link_from_col })
+            .await;
+        match link_loader.load(($from_id).into()).await {
+            Err(err) => Ok(err),
             Ok(links) => {
-                let mut joins = tokio::task::JoinSet::new();
-                for link in links {
-                    joins.spawn(
-                        $ctx.load_one_by_col::<$target_ent>(target_col, $target_id_field(link)),
-                    );
-                }
-                let results = joins.join_all().await;
-                let (values, mut errors): (Vec<_>, Vec<_>) =
-                    results.into_iter().partition_map(|v| match v {
-                        Ok(Some(v)) => ::itertools::Either::Left(v),
-                        Ok(None) => ::itertools::Either::Right(::anyhow::anyhow!(
-                            "Could not resolve link between {} and {}",
-                            ::std::any::type_name::<$link_ent>(),
-                            ::std::any::type_name::<$target_ent>()
-                        )),
-                        Err(e) => ::itertools::Either::Right(e),
-                    });
-                let first_error = errors.drain(..).next();
-                if let Some(err) = first_error { Err(err) } else { Ok(values) }
+                let target_loader = $ctx
+                    .loader(crate::gql::dataloader::ByColBatcher::<$target_ent> {
+                        col: $target_col,
+                    })
+                    .await;
+                let target_ids: ::std::vec::Vec<::sea_orm::Value> =
+                    links.iter().map(|link| $target_id_field(link.clone()).into()).collect();
+                let targets = target_loader.load_many_one(target_ids.clone()).await?;
+                target_ids
+                    .into_iter()
+                    .map(|target_id| {
+                        targets.get(&target_id).cloned().flatten().ok_or_else(|| {
+                            ::anyhow::anyhow!(
+                                "Could not resolve link between {} and {}",
+                                ::std::any::type_name::<$link_ent>(),
+                                ::std::any::type_name::<$target_ent>()
+                            )
+                        })
+                    })
+                    .collect::<::anyhow::Result<::std::vec::Vec<_>>>()
             }
         }
     }};
 
     // Revision-aware dataloader form for revisioned link and target entities
     ($ctx:ident, $revision:expr, $link_ent:ty, $link_from_col:expr, $from_id:expr, $target_id_field:expr, $target_ent:ty, $target_col:expr) => {{
-        match $ctx.load_by_col_at_revision::<$link_ent>($link_from_col, $from_id, $revision).await {
+        let revision = $revision;
+        let txn = $ctx.txn().await?;
+        let revision = crate::revisioning::resolve_revision(txn, revision)
+            .await?
+            .ok_or(::anyhow::anyhow!("No revision found in database"))?;
+        let link_loader = $ctx
+            .loader(crate::gql::dataloader::ByColRevBatcher::<$link_ent> {
+                revision,
+                col: $link_from_col,
+            })
+            .await;
+        match link_loader.load(($from_id).into()).await {
             Err(err) => Err(err),
             Ok(links) => {
-                let mut joins = tokio::task::JoinSet::new();
-                for link in links {
-                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent>(
-                        $target_col,
-                        $target_id_field(link),
-                        $revision,
-                    ));
-                }
-                let results = joins.join_all().await;
-                let (values, mut errors): (Vec<_>, Vec<_>) =
-                    ::itertools::Itertools::partition_map(results.into_iter(), |v| match v {
-                        Ok(Some(v)) => ::itertools::Either::Left(v),
-                        Ok(None) => ::itertools::Either::Right(::anyhow::anyhow!(
-                            "Could not resolve link between {} and {}",
-                            ::std::any::type_name::<$link_ent>(),
-                            ::std::any::type_name::<$target_ent>()
-                        )),
-                        Err(e) => ::itertools::Either::Right(e),
-                    });
-                let first_error = errors.drain(..).next();
-                if let Some(err) = first_error { Err(err) } else { Ok(values) }
+                let target_loader = $ctx
+                    .loader(crate::gql::dataloader::ByColRevBatcher::<$target_ent> {
+                        revision,
+                        col: $target_col,
+                    })
+                    .await;
+                let target_ids: ::std::vec::Vec<::sea_orm::Value> =
+                    links.iter().map(|link| $target_id_field(link.clone()).into()).collect();
+                let targets = target_loader.load_many_one(target_ids.clone()).await?;
+                target_ids
+                    .into_iter()
+                    .map(|target_id| {
+                        targets.get(&target_id).cloned().flatten().ok_or_else(|| {
+                            ::anyhow::anyhow!(
+                                "Could not resolve link between {} and {}",
+                                ::std::any::type_name::<$link_ent>(),
+                                ::std::any::type_name::<$target_ent>()
+                            )
+                        })
+                    })
+                    .collect::<::anyhow::Result<::std::vec::Vec<_>>>()
             }
         }
     }};
 
     // Revision-aware target form for non-revisioned link entities
     ($ctx:ident, target_revision: $revision:expr, $link_ent:ty, $link_from_col:expr, $from_id:expr, $target_id_field:expr, $target_ent:ty, $target_col:expr) => {{
-        match $ctx.load_by_col::<$link_ent>($link_from_col, $from_id).await {
+        let link_loader = $ctx
+            .loader(crate::gql::dataloader::ByColBatcher::<$link_ent> { col: $link_from_col })
+            .await;
+        match link_loader.load(($from_id).into()).await {
             Err(err) => Err(err),
             Ok(links) => {
-                let mut joins = tokio::task::JoinSet::new();
-                for link in links {
-                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent>(
-                        $target_col,
-                        $target_id_field(link),
-                        $revision,
-                    ));
-                }
-                let results = joins.join_all().await;
-                let (values, mut errors): (Vec<_>, Vec<_>) =
-                    ::itertools::Itertools::partition_map(results.into_iter(), |v| match v {
-                        Ok(Some(v)) => ::itertools::Either::Left(v),
-                        Ok(None) => ::itertools::Either::Right(::anyhow::anyhow!(
-                            "Could not resolve link between {} and {}",
-                            ::std::any::type_name::<$link_ent>(),
-                            ::std::any::type_name::<$target_ent>()
-                        )),
-                        Err(e) => ::itertools::Either::Right(e),
-                    });
-                let first_error = errors.drain(..).next();
-                if let Some(err) = first_error { Err(err) } else { Ok(values) }
+                let revision = $revision;
+                let txn = $ctx.txn().await?;
+                let revision = crate::revisioning::resolve_revision(txn, revision)
+                    .await?
+                    .ok_or(::anyhow::anyhow!("No revision found in database"))?;
+                let target_loader = $ctx
+                    .loader(crate::gql::dataloader::ByColRevBatcher::<$target_ent> {
+                        revision,
+                        col: $target_col,
+                    })
+                    .await;
+                let target_ids: ::std::vec::Vec<::sea_orm::Value> =
+                    links.iter().map(|link| $target_id_field(link.clone()).into()).collect();
+                let targets = target_loader.load_many_one(target_ids.clone()).await?;
+                target_ids
+                    .into_iter()
+                    .map(|target_id| {
+                        targets.get(&target_id).cloned().flatten().ok_or_else(|| {
+                            ::anyhow::anyhow!(
+                                "Could not resolve link between {} and {}",
+                                ::std::any::type_name::<$link_ent>(),
+                                ::std::any::type_name::<$target_ent>()
+                            )
+                        })
+                    })
+                    .collect::<::anyhow::Result<::std::vec::Vec<_>>>()
             }
         }
     }};

@@ -1,6 +1,8 @@
 use super::resource::GQLResource;
 use super::task::GQLTask;
 use crate::gql::common::resolve_many_to_many;
+use crate::gql::dataloader::{ByColBatcher, ByColRevBatcher};
+use crate::revisioning::resolve_revision;
 use crate::{
     entity::{
         allocated_resource, allocation, resource_iteration as resource, task_iteration as task,
@@ -74,18 +76,22 @@ impl GQLAllocation {
         Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
+        let txn = ctx.txn().await?;
+        let revision = resolve_revision(txn, self.revision)
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let current = ctx
-            .load_one_by_col_at_revision::<task::Entity>(
-                task::Column::HeaderId,
-                self.model.task_id,
-                self.revision,
-            )
+            .loader(ByColRevBatcher::<task::Entity> { revision, col: task::Column::HeaderId })
+            .await
+            .load_one(self.model.task_id.into())
             .await?;
         if let Some(model) = current {
             return Ok(GQLTask::at_revision(model, self.revision));
         }
         let model = ctx
-            .load_one_by_col::<task::Entity>(task::Column::Id, self.model.task_id)
+            .loader(ByColBatcher::<task::Entity> { col: task::Column::Id })
+            .await
+            .load_one(self.model.task_id.into())
             .await?
             .expect("Task must exist.");
         Ok(GQLTask::at_revision(model, self.revision))

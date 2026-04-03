@@ -179,11 +179,12 @@ impl GQLTask {
         };
         let header_id = self.model.header_id.unwrap_or(self.model.id);
         let issues = ctx
-            .load_by_col_at_revision::<crate::entity::issue::Entity>(
-                crate::entity::issue::Column::TaskId,
-                header_id,
-                Some(revision),
-            )
+            .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::issue::Entity> {
+                revision,
+                col: crate::entity::issue::Column::TaskId,
+            })
+            .await
+            .load(header_id.into())
             .await?;
         Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
     }
@@ -235,11 +236,12 @@ impl GQLTask {
             return Ok(Vec::new());
         };
         let mut res = ctx
-            .load_by_col_at_revision::<crate::entity::allocation::Entity>(
-                allocation::Column::TaskId,
-                header_id,
-                Some(revision),
-            )
+            .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::allocation::Entity> {
+                revision,
+                col: allocation::Column::TaskId,
+            })
+            .await
+            .load(header_id.into())
             .await?;
         res.sort_by_key(|a| a.end);
         Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, Some(revision))).collect())
@@ -308,12 +310,17 @@ impl GQLResourceConstraintEntry {
         self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
+        let txn = ctx.txn().await?;
+        let revision = crate::revisioning::resolve_revision(txn, self.revision)
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let model = ctx
-            .load_one_by_col_at_revision::<resource::Entity>(
-                resource::Column::HeaderId,
-                self.model.resource_id,
-                self.revision,
-            )
+            .loader(crate::gql::dataloader::ByColRevBatcher::<resource::Entity> {
+                revision,
+                col: resource::Column::HeaderId,
+            })
+            .await
+            .load_one(self.model.resource_id.into())
             .await?;
         let model = model.ok_or(anyhow!("Resource not found at revision"))?;
         Ok(GQLResource::at_revision(model, self.revision))
