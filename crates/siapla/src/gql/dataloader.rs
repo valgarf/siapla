@@ -8,7 +8,7 @@ use std::{
 
 use tokio::sync::RwLock;
 
-use dataloader::cached::Loader;
+use dataloader::cached::{Cache, Loader};
 use itertools::Itertools as _;
 use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, Order, QueryFilter, QueryOrder};
 
@@ -32,6 +32,18 @@ pub trait Batcher: Clone + Send + Sync + 'static {
         ctx: &Context,
         keys: &[Self::Key],
     ) -> impl Future<Output = Result<HashMap<Self::Key, Self::Value>, anyhow::Error>> + Send;
+
+    fn yield_count() -> usize {
+        100
+    }
+
+    fn max_batch_size() -> usize {
+        200
+    }
+
+    fn cached() -> bool {
+        true
+    }
 }
 
 pub trait BatcherToKey: Batcher {

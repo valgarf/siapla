@@ -178,8 +178,13 @@ impl GQLTask {
             return Ok(Vec::new());
         };
         let header_id = self.model.header_id.unwrap_or(self.model.id);
-        const CIDX: usize = crate::entity::issue::Column::TaskId as usize;
-        let issues = ctx.load_issues_by_task_at_revision::<CIDX>(header_id, revision).await?;
+        let issues = ctx
+            .load_by_col_at_revision::<crate::entity::issue::Entity>(
+                crate::entity::issue::Column::TaskId,
+                header_id,
+                Some(revision),
+            )
+            .await?;
         Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
     }
 
@@ -229,8 +234,13 @@ impl GQLTask {
         let Some(revision) = self.revision else {
             return Ok(Vec::new());
         };
-        const CIDX: usize = allocation::Column::TaskId as usize;
-        let mut res = ctx.load_allocations_by_task_at_revision::<CIDX>(header_id, revision).await?;
+        let mut res = ctx
+            .load_by_col_at_revision::<crate::entity::allocation::Entity>(
+                allocation::Column::TaskId,
+                header_id,
+                Some(revision),
+            )
+            .await?;
         res.sort_by_key(|a| a.end);
         Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, Some(revision))).collect())
     }
@@ -298,9 +308,9 @@ impl GQLResourceConstraintEntry {
         self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        const CIDX: usize = resource::Column::HeaderId as usize;
         let model = ctx
-            .load_one_by_col_at_revision::<resource::Entity, CIDX>(
+            .load_one_by_col_at_revision::<resource::Entity>(
+                resource::Column::HeaderId,
                 self.model.resource_id,
                 self.revision,
             )

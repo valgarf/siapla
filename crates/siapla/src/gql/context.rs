@@ -120,7 +120,8 @@ impl Context {
                         self.me.clone(),
                         batcher.clone(),
                     ))
-                    .with_yield_count(100),
+                    .with_yield_count(B::yield_count())
+                    .with_max_batch_size(B::max_batch_size()),
                 )
             });
         }
@@ -134,8 +135,9 @@ impl Context {
     /// const CIDX: usize = task::Column::Id as usize;
     /// ctx.load_by_col::<task::Entity, CIDX>(parent_id).await
     /// ```
-    pub fn load_by_col<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_by_col<ET: EntityTrait>(
         &self,
+        col: ET::Column,
         value: impl Into<sea_orm::Value>,
     ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
     where
@@ -149,9 +151,6 @@ impl Context {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let _txn = ctx.txn().await?;
-            let col = <ET::Column as IntoEnumIterator>::iter()
-                .nth(CIDX)
-                .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
             let loader = ctx.loader(ByColBatcher::<ET> { col }).await;
             let res = loader.try_load(value).await;
             match res {
@@ -161,15 +160,16 @@ impl Context {
         }
     }
 
-    pub fn load_one_by_col<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_one_by_col<ET: EntityTrait>(
         &self,
+        col: ET::Column,
         value: impl Into<sea_orm::Value>,
     ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
     where
         ET::Model: Send + Sync,
         ET::Column: ColumnIntoUsize,
     {
-        let fut = self.load_by_col::<ET, CIDX>(value);
+        let fut = self.load_by_col::<ET>(col, value);
 
         fut.and_then(|mut res: Vec<ET::Model>| async move {
             if res.is_empty() {
@@ -182,8 +182,9 @@ impl Context {
         })
     }
 
-    pub fn load_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_by_col_at_revision<ET: EntityTrait>(
         &self,
+        col: ET::Column,
         value: impl Into<sea_orm::Value>,
         revision: Option<i64>,
     ) -> impl Future<Output = anyhow::Result<Vec<ET::Model>>> + 'static
@@ -202,9 +203,6 @@ impl Context {
             let revision = resolve_revision(txn, revision)
                 .await?
                 .ok_or(anyhow::anyhow!("No revision found in database"))?;
-            let col = <ET::Column as IntoEnumIterator>::iter()
-                .nth(CIDX)
-                .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
             let loader = ctx.loader(ByColRevBatcher::<ET> { revision, col }).await;
             let res = loader.try_load(value).await;
             match res {
@@ -214,8 +212,9 @@ impl Context {
         }
     }
 
-    pub fn load_one_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
+    pub fn load_one_by_col_at_revision<ET: EntityTrait>(
         &self,
+        col: ET::Column,
         value: impl Into<sea_orm::Value>,
         revision: Option<i64>,
     ) -> impl Future<Output = anyhow::Result<Option<ET::Model>>> + 'static
@@ -224,7 +223,7 @@ impl Context {
         ET::Model: Send + Sync,
         ET::Column: IntoEnumIterator + ColumnIntoUsize,
     {
-        let fut = self.load_by_col_at_revision::<ET, CIDX>(value, revision);
+        let fut = self.load_by_col_at_revision::<ET>(col, value, revision);
 
         fut.and_then(|mut res: Vec<ET::Model>| async move {
             if res.is_empty() {
@@ -237,28 +236,6 @@ impl Context {
         })
     }
 
-    pub fn load_allocations_by_task_at_revision<const KEY_CIDX: usize>(
-        &self,
-        value: impl Into<sea_orm::Value>,
-        revision: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<crate::entity::allocation::Model>>> + 'static {
-        self.load_by_col_at_revision::<crate::entity::allocation::Entity, KEY_CIDX>(
-            value,
-            Some(revision),
-        )
-    }
-
-    pub fn load_issues_by_task_at_revision<const KEY_CIDX: usize>(
-        &self,
-        value: impl Into<sea_orm::Value>,
-        revision: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<crate::entity::issue::Model>>> + 'static {
-        self.load_by_col_at_revision::<crate::entity::issue::Entity, KEY_CIDX>(
-            value,
-            Some(revision),
-        )
-    }
-
     pub fn load_combined_availability(
         &self,
         resource_id: i32,
@@ -268,8 +245,7 @@ impl Context {
     ) -> impl Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
         // let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
-
-        async move {
+        let fut = async move {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let txn = ctx.txn().await?;
@@ -283,7 +259,8 @@ impl Context {
                 Err(_) => Ok(Intervals::new()), // id cannot be found
                 Ok(v) => v.map_err(|err| anyhow::anyhow!("{err}")),
             }
-        }
+        };
+        fut
     }
 }
 

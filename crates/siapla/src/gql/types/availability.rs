@@ -53,9 +53,9 @@ impl GQLAvailability {
         &self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        const CIDX: usize = resource::Column::HeaderId as usize;
         let model = ctx
-            .load_one_by_col_at_revision::<resource::Entity, CIDX>(
+            .load_one_by_col_at_revision::<resource::Entity>(
+                resource::Column::HeaderId,
                 self.model.resource_id,
                 self.revision,
             )

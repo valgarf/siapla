@@ -13,14 +13,14 @@ pub(crate) use nullable_to_av;
 macro_rules! resolve_many_to_many {
     // Original form: dataloader-based, no filtering
     ($ctx: ident, $link_ent: ty,  $link_from_col: expr, $from_id: expr, $target_id_field: expr, $target_ent: ty, $target_col: expr) => {{
-        const CIDX: usize = $link_from_col as usize;
-        match $ctx.load_by_col::<$link_ent, CIDX>($from_id).await {
+        match $ctx.load_by_col::<$link_ent>($link_from_col, $from_id).await {
             Err(err) => Err(err),
             Ok(links) => {
                 let mut joins = tokio::task::JoinSet::new();
                 for link in links {
-                    const CIDX: usize = $target_col as usize;
-                    joins.spawn($ctx.load_one_by_col::<$target_ent, CIDX>($target_id_field(link)));
+                    joins.spawn(
+                        $ctx.load_one_by_col::<$target_ent>(target_col, $target_id_field(link)),
+                    );
                 }
                 let results = joins.join_all().await;
                 let (values, mut errors): (Vec<_>, Vec<_>) =
@@ -41,14 +41,13 @@ macro_rules! resolve_many_to_many {
 
     // Revision-aware dataloader form for revisioned link and target entities
     ($ctx:ident, $revision:expr, $link_ent:ty, $link_from_col:expr, $from_id:expr, $target_id_field:expr, $target_ent:ty, $target_col:expr) => {{
-        const CIDX: usize = $link_from_col as usize;
-        match $ctx.load_by_col_at_revision::<$link_ent, CIDX>($from_id, $revision).await {
+        match $ctx.load_by_col_at_revision::<$link_ent>($link_from_col, $from_id, $revision).await {
             Err(err) => Err(err),
             Ok(links) => {
                 let mut joins = tokio::task::JoinSet::new();
                 for link in links {
-                    const CIDX: usize = $target_col as usize;
-                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent, CIDX>(
+                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent>(
+                        $target_col,
                         $target_id_field(link),
                         $revision,
                     ));
@@ -72,14 +71,13 @@ macro_rules! resolve_many_to_many {
 
     // Revision-aware target form for non-revisioned link entities
     ($ctx:ident, target_revision: $revision:expr, $link_ent:ty, $link_from_col:expr, $from_id:expr, $target_id_field:expr, $target_ent:ty, $target_col:expr) => {{
-        const CIDX: usize = $link_from_col as usize;
-        match $ctx.load_by_col::<$link_ent, CIDX>($from_id).await {
+        match $ctx.load_by_col::<$link_ent>($link_from_col, $from_id).await {
             Err(err) => Err(err),
             Ok(links) => {
                 let mut joins = tokio::task::JoinSet::new();
                 for link in links {
-                    const CIDX: usize = $target_col as usize;
-                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent, CIDX>(
+                    joins.spawn($ctx.load_one_by_col_at_revision::<$target_ent>(
+                        $target_col,
                         $target_id_field(link),
                         $revision,
                     ));

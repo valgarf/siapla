@@ -42,15 +42,17 @@ impl GQLIssue {
         let Some(task_id) = self.model.task_id else {
             return Ok(None);
         };
-        const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
         if let Some(model) = ctx
-            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(task_id, self.revision)
+            .load_one_by_col_at_revision::<task::Entity>(
+                task::Column::HeaderId,
+                task_id,
+                self.revision,
+            )
             .await?
         {
             return Ok(Some(GQLTask::at_revision(model, self.revision)));
         }
-        const TASK_ID_CIDX: usize = task::Column::Id as usize;
-        let t = ctx.load_one_by_col::<task::Entity, TASK_ID_CIDX>(task_id).await?;
+        let t = ctx.load_one_by_col::<task::Entity>(task::Column::Id, task_id).await?;
         Ok(t.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 }

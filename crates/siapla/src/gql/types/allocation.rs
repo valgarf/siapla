@@ -74,9 +74,9 @@ impl GQLAllocation {
         Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
         let current = ctx
-            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(
+            .load_one_by_col_at_revision::<task::Entity>(
+                task::Column::HeaderId,
                 self.model.task_id,
                 self.revision,
             )
@@ -84,9 +84,8 @@ impl GQLAllocation {
         if let Some(model) = current {
             return Ok(GQLTask::at_revision(model, self.revision));
         }
-        const TASK_ID_CIDX: usize = task::Column::Id as usize;
         let model = ctx
-            .load_one_by_col::<task::Entity, TASK_ID_CIDX>(self.model.task_id)
+            .load_one_by_col::<task::Entity>(task::Column::Id, self.model.task_id)
             .await?
             .expect("Task must exist.");
         Ok(GQLTask::at_revision(model, self.revision))

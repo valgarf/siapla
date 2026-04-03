@@ -104,16 +104,20 @@ impl GQLResource {
     }
 
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        const CIDX: usize = holiday::Column::Id as usize;
-        let holiday = ctx.load_one_by_col::<holiday::Entity, CIDX>(self.model.holiday_id).await?;
+        let holiday = ctx
+            .load_one_by_col::<holiday::Entity>(holiday::Column::Id, self.model.holiday_id)
+            .await?;
         Ok(holiday.map(GQLHoliday::from_model))
     }
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
-        const CIDX: usize = availability::Column::ResourceId as usize;
         let availability = ctx
-            .load_by_col_at_revision::<availability::Entity, CIDX>(resource_id, self.revision)
+            .load_by_col_at_revision::<availability::Entity>(
+                availability::Column::ResourceId,
+                resource_id,
+                self.revision,
+            )
             .await?;
         Ok(availability
             .into_iter()
@@ -123,9 +127,12 @@ impl GQLResource {
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
-        const CIDX: usize = vacation::Column::ResourceId as usize;
         let vacation = ctx
-            .load_by_col_at_revision::<vacation::Entity, CIDX>(resource_id, self.revision)
+            .load_by_col_at_revision::<vacation::Entity>(
+                vacation::Column::ResourceId,
+                resource_id,
+                self.revision,
+            )
             .await?;
         Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
     }
@@ -188,8 +195,8 @@ impl resource::Model {
 
     /// Load the holiday associated with this resource (used by the dataloader).
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        const CIDX: usize = holiday::Column::Id as usize;
-        let holiday = ctx.load_one_by_col::<holiday::Entity, CIDX>(self.holiday_id).await?;
+        let holiday =
+            ctx.load_one_by_col::<holiday::Entity>(holiday::Column::Id, self.holiday_id).await?;
         Ok(holiday.map(GQLHoliday::from_model))
     }
 }

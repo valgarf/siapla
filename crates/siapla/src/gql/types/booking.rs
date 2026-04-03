@@ -60,9 +60,9 @@ impl GQLBooking {
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
         if let Some(model) = ctx
-            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(
+            .load_one_by_col_at_revision::<task::Entity>(
+                task::Column::HeaderId,
                 self.model.task_id,
                 self.revision,
             )
@@ -71,8 +71,7 @@ impl GQLBooking {
             return Ok(GQLTask::at_revision(model, self.revision));
         }
 
-        const TASK_ID_CIDX: usize = task::Column::Id as usize;
-        ctx.load_one_by_col::<task::Entity, TASK_ID_CIDX>(self.model.task_id)
+        ctx.load_one_by_col::<task::Entity>(task::Column::Id, self.model.task_id)
             .await
             .map(|opt_t| GQLTask::at_revision(opt_t.expect("Task must exist."), self.revision))
     }

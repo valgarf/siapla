@@ -128,17 +128,17 @@ docker-run tag='siapla:latest' db_path='./run-data/test.sqlite' port='8890':
 # Level 1: Rust unit tests (no database needed)
 [working-directory(".")]
 test-unit:
-    cargo test -p siapla scheduling::tests -- --nocapture
+    cargo test -p siapla scheduling::tests -- --nocapture --color always
 
 # Level 2: Backend integration tests (uses a temporary SQLite database)
 [working-directory(".")]
 test-integration:
-    cargo test -p siapla --test graphql_integration -- --nocapture
+    cargo test -p siapla --test graphql_integration -- --nocapture --color always
 
 # Level 1 + 2 combined
 [working-directory(".")]
 test-rust:
-    cargo test -- --nocapture
+    cargo test -- --nocapture --color always
 
 # Level 3: Playwright E2E tests (requires running backend + frontend)
 [working-directory("./tests/e2e")]
