@@ -86,7 +86,12 @@ fn make_requirement(
     title: &str,
     earliest_start: NaiveDateTime,
 ) -> Rc<RefCell<Requirement>> {
-    Rc::new(RefCell::new(Requirement { db_id, header_id: db_id, title: title.to_string(), earliest_start }))
+    Rc::new(RefCell::new(Requirement {
+        db_id,
+        header_id: db_id,
+        title: title.to_string(),
+        earliest_start,
+    }))
 }
 
 /// Create a `Milestone`.

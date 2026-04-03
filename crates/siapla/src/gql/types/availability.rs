@@ -55,7 +55,10 @@ impl GQLAvailability {
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
         const CIDX: usize = resource::Column::HeaderId as usize;
         let model = ctx
-            .load_one_by_col_at_revision::<resource::Entity, CIDX>(self.model.resource_id, self.revision)
+            .load_one_by_col_at_revision::<resource::Entity, CIDX>(
+                self.model.resource_id,
+                self.revision,
+            )
             .await?;
         let model = model.ok_or(anyhow!("Failed to find resource for Availability"))?;
         Ok(GQLResource::at_revision(model, self.revision))
@@ -162,7 +165,6 @@ pub async fn update_availability(
         let update_models: Vec<(&availability::Model, &AvailabilityInput)> =
             zip(existing_models, update_models)
                 .filter(|(e, u)| e.duration != Decimal::from(u.duration) / Decimal::from(3600))
-                .map(|(e, u)| (e, u))
                 .collect();
         for (existing, input) in update_models {
             availability::Entity::update_many()

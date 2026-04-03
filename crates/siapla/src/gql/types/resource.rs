@@ -6,18 +6,13 @@ use sea_orm::prelude::*;
 use tracing::error;
 
 use crate::{
-    entity::{
-        availability, holiday, resource_header, resource_iteration as resource, vacation,
-    },
+    entity::{availability, holiday, resource_header, resource_iteration as resource, vacation},
     gql::{
-        availability::GQLAvailability,
-        common::nullable_to_av,
-        context::Context,
+        availability::GQLAvailability, common::nullable_to_av, context::Context,
         vacation::GQLVacation,
     },
     revisioning::{PlanState, create_revision},
 };
-
 
 use super::{
     availability::{AvailabilityInput, update_availability},
@@ -117,9 +112,9 @@ impl GQLResource {
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
         const CIDX: usize = availability::Column::ResourceId as usize;
-        let availability =
-            ctx.load_by_col_at_revision::<availability::Entity, CIDX>(resource_id, self.revision)
-                .await?;
+        let availability = ctx
+            .load_by_col_at_revision::<availability::Entity, CIDX>(resource_id, self.revision)
+            .await?;
         Ok(availability
             .into_iter()
             .map(|m| GQLAvailability::at_revision(m, self.revision))
@@ -129,13 +124,10 @@ impl GQLResource {
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
         let resource_id = self.model.header_id.unwrap_or(self.model.id);
         const CIDX: usize = vacation::Column::ResourceId as usize;
-        let vacation =
-            ctx.load_by_col_at_revision::<vacation::Entity, CIDX>(resource_id, self.revision)
-                .await?;
-        Ok(vacation
-            .into_iter()
-            .map(|m| GQLVacation::at_revision(m, self.revision))
-            .collect())
+        let vacation = ctx
+            .load_by_col_at_revision::<vacation::Entity, CIDX>(resource_id, self.revision)
+            .await?;
+        Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
     }
 
     pub async fn combined_availability(
@@ -255,7 +247,9 @@ pub async fn resource_save(
             .filter(resource::Column::RevDeleted.is_null())
             .one(txn)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No active resource iteration found for header {}", header_id))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("No active resource iteration found for header {}", header_id)
+            })?;
         let old_id = existing.id;
         // Soft-delete the old iteration
         resource::Entity::update_many()

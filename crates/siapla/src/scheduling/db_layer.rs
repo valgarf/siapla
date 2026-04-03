@@ -161,7 +161,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                 earliest_start: t.earliest_start.map(|dt| dt.naive_utc()).unwrap_or_default(),
             }));
             project_objects.requirements.push(Rc::clone(&new_ref));
-            Node::Requirement(new_ref.into())
+            Node::Requirement(new_ref)
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Milestone) {
             let new_ref = Rc::new(RefCell::new(Milestone {
                 db_id: t.id,
@@ -171,7 +171,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                 priority: t.priority as f64,
             }));
             project_objects.milestones.push(Rc::clone(&new_ref));
-            Node::Milestone(new_ref.into())
+            Node::Milestone(new_ref)
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Task) {
             let base_effort = t.effort.unwrap_or(0.0) as f64;
             let new_ref = Rc::new(RefCell::new(Task {
@@ -191,7 +191,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                 booked_final: false,                  // adjusted later
             }));
             project_objects.tasks.push(Rc::clone(&new_ref));
-            Node::Task(new_ref.into())
+            Node::Task(new_ref)
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Group) {
             let new_ref = Rc::new(RefCell::new(Group {
                 db_id: t.id,
@@ -200,7 +200,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                 constraints: Vec::new(), // filled later
             }));
             project_objects.groups.push(Rc::clone(&new_ref));
-            Node::Group(new_ref.into())
+            Node::Group(new_ref)
         } else {
             panic!("Unknown task designation: {:?}", t);
         };
@@ -360,7 +360,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let mut task = task.borrow_mut();
         let mut parent = task.parent.clone();
         while task.constraints.is_empty() && parent.is_some() {
-            let group_rc = Weak::upgrade(&parent.as_ref().unwrap()).unwrap();
+            let group_rc = Weak::upgrade(parent.as_ref().unwrap()).unwrap();
             let group = group_rc.borrow_mut();
             if !group.constraints.is_empty() {
                 task.constraints = group.constraints.clone();
@@ -399,11 +399,11 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                         let mut speed_for_r = 1.0f64;
                         'find_constraint: for c in task.constraints.iter() {
                             for entry in c.constraints.iter() {
-                                if let Some(r_rc) = entry.resource.upgrade() {
-                                    if r_rc.borrow().db_id == *r {
-                                        speed_for_r = c.speed;
-                                        break 'find_constraint;
-                                    }
+                                if let Some(r_rc) = entry.resource.upgrade()
+                                    && r_rc.borrow().db_id == *r
+                                {
+                                    speed_for_r = c.speed;
+                                    break 'find_constraint;
                                 }
                             }
                         }
@@ -418,7 +418,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
                 if *final_flag {
                     booked_final = true;
                 }
-                if booked_until.map_or(true, |bt| bt < *e) {
+                if booked_until.is_none_or(|bt| bt < *e) {
                     booked_until = Some(*e);
                 }
             }
@@ -457,7 +457,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         start,
         calculation_end: estimated_end,
         objs: project_objects,
-        g: g,
+        g,
         issues: vec![],
     };
     project.issues = detect_project_issues(&project);
@@ -537,14 +537,14 @@ pub fn detect_project_issues(
         if !has_requirement_ancestor.contains(&tid) {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::RequirementMissing,
-                description: format!("Task has no requirement ancestor"),
+                description: "Task has no requirement ancestor".to_string(),
                 task_id: Some(tid),
             });
         }
         if !is_required_by_milestone.contains(&tid) {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::MilestoneMissing,
-                description: format!("Task is not a predecessor of any milestone"),
+                description: "Task is not a predecessor of any milestone".to_string(),
                 task_id: Some(tid),
             });
         }
@@ -553,7 +553,7 @@ pub fn detect_project_issues(
         if t.borrow().constraints.is_empty() {
             issues.push(crate::scheduling::datastructures::PlanningIssue {
                 code: crate::gql::issue::IssueCode::ResourceMissing,
-                description: format!("Task has no resource constraints"),
+                description: "Task has no resource constraints".to_string(),
                 task_id: Some(tid),
             });
         }
@@ -695,7 +695,7 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             revision: ActiveValue::Set(revision_id),
         };
         let db_alloc = am.insert(txn).await?;
-        for (res_id, _) in assignment {
+        for res_id in assignment.keys() {
             let stored_resource_id = project
                 .objs
                 .resources

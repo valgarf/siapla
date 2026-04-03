@@ -111,8 +111,8 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
             println!("Error querying problem: {}", err);
             return Err(err);
         }
-        Ok(mut problem) => {
-            let individual = run_ga(&mut problem, &settings);
+        Ok(problem) => {
+            let individual = run_ga(&problem, &settings);
             let task_order =
                 individual.tasks.iter().map(|t| t.task.borrow().title.clone()).collect::<Vec<_>>();
             println!("Problem recalculated successfully. Task order: {:?}", &task_order);
@@ -126,7 +126,7 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
             println!("Plan:");
             for (tid, assignments) in &plan.assignments {
                 let resources: Vec<i32> = assignments.keys().cloned().collect();
-                let task = tasks[&tid].borrow();
+                let task = tasks[tid].borrow();
                 println!(" {} ({}): {:?}", task.title, tid, resources);
                 println!("    {}", assignments.values().last().unwrap().range);
             }
@@ -159,16 +159,14 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
         }
     }
 
-    match Arc::into_inner(ctx)
+    if let Err(err) = Arc::into_inner(ctx)
         .expect("This function is the only one with a strong reference.")
         .commit()
         .await
     {
-        Err(err) => println!("Error committing: {}", err),
-        Ok(_) => {}
+        println!("Error committing: {}", err)
     }
-    app_state.set_state(crate::app_state::CalculationState::Finished {
-        revision: calculated_revision,
-    });
+    app_state
+        .set_state(crate::app_state::CalculationState::Finished { revision: calculated_revision });
     Ok(())
 }

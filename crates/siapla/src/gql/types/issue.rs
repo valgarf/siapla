@@ -44,10 +44,7 @@ impl GQLIssue {
         };
         const TASK_HEADER_CIDX: usize = task::Column::HeaderId as usize;
         if let Some(model) = ctx
-            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(
-                task_id,
-                self.revision,
-            )
+            .load_one_by_col_at_revision::<task::Entity, TASK_HEADER_CIDX>(task_id, self.revision)
             .await?
         {
             return Ok(Some(GQLTask::at_revision(model, self.revision)));

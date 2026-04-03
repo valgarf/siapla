@@ -45,8 +45,8 @@ pub async fn graphql(
     if !gql_res.is_ok() {
         context.failed().await;
     }
-    let jun_res = JuniperResponse(gql_res);
-    jun_res
+
+    JuniperResponse(gql_res)
 }
 
 async fn custom_subscriptions(
@@ -91,7 +91,7 @@ struct Args {
 
 fn file_response_from_dir(mut path: String) -> Response {
     // normalize the path, try index.html for directories
-    if path == "" || path.ends_with('/') {
+    if path.is_empty() || path.ends_with('/') {
         path = format!("{}/index.html", path.trim_end_matches('/'))
     }
     match BUNDLED_FRONTEND_DIR.get_file(path.trim_start_matches('/')) {
@@ -116,10 +116,8 @@ async fn serve_frontend(path: Option<String>) -> impl IntoResponse {
 }
 
 async fn init_db(db_url: &str) -> anyhow::Result<()> {
-    if db_url.starts_with("sqlite:") {
-        if !sqlx::Sqlite::database_exists(&db_url).await? {
-            sqlx::Sqlite::create_database(&db_url).await?;
-        }
+    if db_url.starts_with("sqlite:") && !sqlx::Sqlite::database_exists(db_url).await? {
+        sqlx::Sqlite::create_database(db_url).await?;
     }
     // Initialize database connection
     let connect_opts = sea_orm::ConnectOptions::new(db_url).to_owned();
@@ -191,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             .unwrap_or_else(|e| panic!("failed to run `axum::serve`: {e}"));
     });
-    local_set.spawn_local(async move { jh.await });
+    local_set.spawn_local(jh);
     local_set.await;
     Ok(())
 }

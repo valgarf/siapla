@@ -1,7 +1,5 @@
 use std::{
-    any::TypeId,
     env,
-    marker::PhantomData,
     sync::{Arc, Weak},
 };
 
@@ -146,10 +144,11 @@ impl Context {
     {
         let me = self.me.clone();
         let value: sea_orm::Value = value.into();
-        let fut = async move {
+
+        async move {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-            let txn = ctx.txn().await?;
+            let _txn = ctx.txn().await?;
             let col = <ET::Column as IntoEnumIterator>::iter()
                 .nth(CIDX)
                 .ok_or(anyhow::anyhow!("Column index does not exist!"))?;
@@ -159,8 +158,7 @@ impl Context {
                 Err(_) => Ok(vec![]), // id cannot be found
                 Ok(value) => Ok(value.map_err(|err| anyhow::anyhow!("{err}"))?),
             }
-        };
-        fut
+        }
     }
 
     pub fn load_one_by_col<ET: EntityTrait, const CIDX: usize>(
@@ -172,7 +170,8 @@ impl Context {
         ET::Column: ColumnIntoUsize,
     {
         let fut = self.load_by_col::<ET, CIDX>(value);
-        let new_fut = fut.and_then(|mut res: Vec<ET::Model>| async move {
+
+        fut.and_then(|mut res: Vec<ET::Model>| async move {
             if res.is_empty() {
                 Ok(None)
             } else if res.len() == 1 {
@@ -180,8 +179,7 @@ impl Context {
             } else {
                 Err(anyhow::anyhow!("More than one entry found"))
             }
-        });
-        new_fut
+        })
     }
 
     pub fn load_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
@@ -196,7 +194,8 @@ impl Context {
     {
         let me = self.me.clone();
         let value: sea_orm::Value = value.into();
-        let fut = async move {
+
+        async move {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let txn = ctx.txn().await?;
@@ -212,8 +211,7 @@ impl Context {
                 Err(_) => Ok(vec![]), // id cannot be found
                 Ok(value) => Ok(value.map_err(|err| anyhow::anyhow!("{err}"))?),
             }
-        };
-        fut
+        }
     }
 
     pub fn load_one_by_col_at_revision<ET: EntityTrait, const CIDX: usize>(
@@ -227,7 +225,8 @@ impl Context {
         ET::Column: IntoEnumIterator + ColumnIntoUsize,
     {
         let fut = self.load_by_col_at_revision::<ET, CIDX>(value, revision);
-        let new_fut = fut.and_then(|mut res: Vec<ET::Model>| async move {
+
+        fut.and_then(|mut res: Vec<ET::Model>| async move {
             if res.is_empty() {
                 Ok(None)
             } else if res.len() == 1 {
@@ -235,8 +234,7 @@ impl Context {
             } else {
                 Err(anyhow::anyhow!("More than one entry found"))
             }
-        });
-        new_fut
+        })
     }
 
     pub fn load_allocations_by_task_at_revision<const KEY_CIDX: usize>(
@@ -270,7 +268,8 @@ impl Context {
     ) -> impl Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
         // let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
-        let fut = async move {
+
+        async move {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let txn = ctx.txn().await?;
@@ -281,11 +280,10 @@ impl Context {
             let loader = ctx.loader(AvailabilityBatcher { start, end, revision }).await;
             let res = loader.try_load(resource_id).await;
             match res {
-                Err(_) => return Ok(Intervals::new()), // id cannot be found
-                Ok(v) => return Ok(v.map_err(|err| anyhow::anyhow!("{err}"))?),
+                Err(_) => Ok(Intervals::new()), // id cannot be found
+                Ok(v) => v.map_err(|err| anyhow::anyhow!("{err}")),
             }
-        };
-        fut
+        }
     }
 }
 

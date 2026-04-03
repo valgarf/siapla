@@ -1,6 +1,6 @@
 pub mod allocation;
-pub mod booking;
 pub mod availability;
+pub mod booking;
 pub mod history;
 pub mod holiday;
 pub mod issue;

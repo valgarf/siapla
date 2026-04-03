@@ -7,7 +7,9 @@ pub mod scalars;
 pub mod subscription;
 mod types;
 
-pub use types::{allocation, availability, booking, history, holiday, issue, plan, resource, task, vacation};
+pub use types::{
+    allocation, availability, booking, history, holiday, issue, plan, resource, task, vacation,
+};
 
 use juniper::*;
 

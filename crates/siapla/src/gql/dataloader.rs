@@ -228,7 +228,7 @@ impl Iterator for _AvailabilityIterator {
                         NaiveTime::from_num_seconds_from_midnight_opt(12 * 3600 - secs as u32, 0)
                             .unwrap(),
                     )
-                    .and_local_timezone(self.timezone.clone())
+                    .and_local_timezone(self.timezone)
                     .latest()
                     .expect("Cannot determine availability start"),
                     self.start,
@@ -239,7 +239,7 @@ impl Iterator for _AvailabilityIterator {
                         NaiveTime::from_num_seconds_from_midnight_opt(12 * 3600 + secs as u32, 0)
                             .unwrap(),
                     )
-                    .and_local_timezone(self.timezone.clone())
+                    .and_local_timezone(self.timezone)
                     .earliest()
                     .expect("Cannot determine availability end"),
                     self.end,
@@ -367,7 +367,7 @@ impl Batcher for AvailabilityBatcher {
         values: &[Self::Key],
     ) -> Result<HashMap<Self::Key, Self::Value>, anyhow::Error> {
         let ids = values.to_vec();
-        match query_combined_availability(&ctx, &ids, self.start, self.end, self.revision).await {
+        match query_combined_availability(ctx, &ids, self.start, self.end, self.revision).await {
             Ok(vec) => Ok(ids.into_iter().zip(vec.into_iter()).collect()),
             Err(err) => Err(err),
         }

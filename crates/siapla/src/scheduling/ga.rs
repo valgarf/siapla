@@ -106,7 +106,7 @@ pub fn generate_random_individual(project: &Project) -> Individual {
         let nidx = possible.swap_remove(chosen_idx);
         handled.insert(nidx);
         if let Node::Task(task) = project.g.node_weight(nidx).expect("node must exist") {
-            task_genes.push(create_random_task_gene(project, Rc::clone(&task), nidx))
+            task_genes.push(create_random_task_gene(project, Rc::clone(task), nidx))
         }
         for candidate in project.g.neighbors_directed(nidx, Direction::Outgoing) {
             let requirements = project
@@ -133,7 +133,7 @@ pub fn generate_random_individual(project: &Project) -> Individual {
             other_tasks.push(tg);
         }
     }
-    booked_tasks.sort_by_key(|tg| tg.booking_start.clone());
+    booked_tasks.sort_by_key(|tg| tg.booking_start);
     Individual { booked_tasks, tasks: other_tasks, finished_tasks }
 }
 
@@ -262,11 +262,11 @@ pub fn run_ga(project: &Project, settings: &GASettings) -> Individual {
                     let mut next_point_iter = points.into_iter();
                     let mut next_point = next_point_iter.next();
                     for pos in 0..len {
-                        if let Some(np) = next_point {
-                            if pos >= np {
-                                use_first = !use_first;
-                                next_point = next_point_iter.next();
-                            }
+                        if let Some(np) = next_point
+                            && pos >= np
+                        {
+                            use_first = !use_first;
+                            next_point = next_point_iter.next();
                         }
                         let source = if use_first { &p1.tasks } else { &p2.tasks };
                         // take next task from source skipping duplicates
@@ -551,10 +551,10 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
             let tg = remaining.remove(pos);
             // append and decrease indegree of successors within selected set
             for succ in project.g.neighbors_directed(tg.task_nidx, Outgoing) {
-                if indegree.contains_key(&succ) {
-                    if let Some(v) = indegree.get_mut(&succ) {
-                        *v = v.saturating_sub(1);
-                    }
+                if indegree.contains_key(&succ)
+                    && let Some(v) = indegree.get_mut(&succ)
+                {
+                    *v = v.saturating_sub(1);
                 }
             }
             ordered_vec.push(tg);
@@ -637,16 +637,14 @@ pub fn plan_individual(project: &Project, individual: &Individual) -> Plan {
                 }
             }
 
-            if all_assigned {
-                if let Some(date) = max_end {
-                    plan.fulfilled_milestones.insert(
-                        milestone.header_id,
-                        crate::scheduling::datastructures::FulfilledMilestone {
-                            task_id: milestone.header_id,
-                            date,
-                        },
-                    );
-                }
+            if all_assigned && let Some(date) = max_end {
+                plan.fulfilled_milestones.insert(
+                    milestone.header_id,
+                    crate::scheduling::datastructures::FulfilledMilestone {
+                        task_id: milestone.header_id,
+                        date,
+                    },
+                );
             }
         }
     }
@@ -714,8 +712,7 @@ fn _advance_earliest_slot(slot_iterators: &mut Vec<_SlotIterator>) -> anyhow::Re
         .iter_mut()
         .map(|si| (si.current().map(|s| s.range.end().value().expect("No unbound intervals")), si))
         .min_by_key(|(e, _)| *e)
-        .map(|(e, si)| if e.is_none() { None } else { Some(si) })
-        .flatten();
+        .and_then(|(e, si)| if e.is_none() { None } else { Some(si) });
     if let Some(si) = si {
         si.advance();
         _ensure_overlapping_slots(slot_iterators)?;
@@ -807,9 +804,8 @@ pub fn plan_task(
     if task_selectable.is_empty() && primary_iterators.is_empty() {
         return Err(Some(PlanningIssue {
             code: crate::gql::issue::IssueCode::NoSlotFound,
-            description: format!(
-                "Could not find any resource slot - resource constraints likely missing"
-            ),
+            description: "Could not find any resource slot - resource constraints likely missing"
+                .to_string(),
             task_id: Some(task.header_id),
         }));
     }
@@ -828,16 +824,15 @@ pub fn plan_task(
     // Main loop: advance primary iterators until we find a candidate or run out
     loop {
         // Ensure primary iterators overlap
-        if !primary_iterators.is_empty() {
-            if let Err(_) = _ensure_overlapping_slots(&mut primary_iterators) {
-                return Err(Some(PlanningIssue {
-                    code: crate::gql::issue::IssueCode::NoSlotFound,
-                    description:
-                        "Failed to find overlapping slots for the given resource constraints."
-                            .to_string(),
-                    task_id: Some(task.header_id),
-                }));
-            }
+        if !primary_iterators.is_empty()
+            && let Err(_) = _ensure_overlapping_slots(&mut primary_iterators)
+        {
+            return Err(Some(PlanningIssue {
+                code: crate::gql::issue::IssueCode::NoSlotFound,
+                description: "Failed to find overlapping slots for the given resource constraints."
+                    .to_string(),
+                task_id: Some(task.header_id),
+            }));
         }
 
         // Compute primary_intervals (either full span or intersection of primary slots)
@@ -963,7 +958,7 @@ pub fn plan_task(
                 remove_slot(
                     resource_slots.get_mut(res_id).expect("Resource must exist"),
                     *idx,
-                    &result_map.get(res_id).expect("slot must exist"),
+                    result_map.get(res_id).expect("slot must exist"),
                 );
             }
             let nw = g_finished.node_weight_mut(task_gene.task_nidx).expect("Node must exist");

@@ -120,12 +120,12 @@ macro_rules! ord_standard_impls {
 impl<T: IntervalValue> Ord for StartBound<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.0, &other.0) {
-            (Bound::Open(lhs), Bound::Open(rhs)) => lhs.cmp(&rhs),
+            (Bound::Open(lhs), Bound::Open(rhs)) => lhs.cmp(rhs),
             (Bound::Open(lhs), Bound::Closed(rhs)) => {
                 if lhs == rhs {
                     Ordering::Greater
                 } else {
-                    lhs.cmp(&rhs)
+                    lhs.cmp(rhs)
                 }
             }
             (Bound::Open(_), Bound::Unbounded()) => Ordering::Less,
@@ -133,10 +133,10 @@ impl<T: IntervalValue> Ord for StartBound<T> {
                 if lhs == rhs {
                     Ordering::Less
                 } else {
-                    lhs.cmp(&rhs)
+                    lhs.cmp(rhs)
                 }
             }
-            (Bound::Closed(lhs), Bound::Closed(rhs)) => lhs.cmp(&rhs),
+            (Bound::Closed(lhs), Bound::Closed(rhs)) => lhs.cmp(rhs),
             (Bound::Closed(_), Bound::Unbounded()) => Ordering::Less,
             (Bound::Unbounded(), Bound::Open(_)) => Ordering::Greater,
             (Bound::Unbounded(), Bound::Closed(_)) => Ordering::Greater,
@@ -149,12 +149,12 @@ ord_standard_impls!(StartBound);
 impl<T: IntervalValue> Ord for EndBound<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.0, &other.0) {
-            (Bound::Open(start), Bound::Open(end)) => start.cmp(&end),
+            (Bound::Open(start), Bound::Open(end)) => start.cmp(end),
             (Bound::Open(start), Bound::Closed(end)) => {
                 if start == end {
                     Ordering::Less
                 } else {
-                    start.cmp(&end)
+                    start.cmp(end)
                 }
             }
             (Bound::Open(_), Bound::Unbounded()) => Ordering::Less,
@@ -162,10 +162,10 @@ impl<T: IntervalValue> Ord for EndBound<T> {
                 if start == end {
                     Ordering::Greater
                 } else {
-                    start.cmp(&end)
+                    start.cmp(end)
                 }
             }
-            (Bound::Closed(start), Bound::Closed(end)) => start.cmp(&end),
+            (Bound::Closed(start), Bound::Closed(end)) => start.cmp(end),
             (Bound::Closed(_), Bound::Unbounded()) => Ordering::Less,
             (Bound::Unbounded(), Bound::Open(_)) => Ordering::Greater,
             (Bound::Unbounded(), Bound::Closed(_)) => Ordering::Greater,
@@ -249,14 +249,14 @@ impl<T: IntervalValue> PartialOrd<StartBound<T>> for EndBound<T> {
                 if lhs == rhs {
                     Some(Ordering::Less)
                 } else {
-                    lhs.partial_cmp(&rhs)
+                    lhs.partial_cmp(rhs)
                 }
             }
             (Bound::Open(lhs), Bound::Closed(rhs)) => {
                 if lhs == rhs {
                     Some(Ordering::Less)
                 } else {
-                    lhs.partial_cmp(&rhs)
+                    lhs.partial_cmp(rhs)
                 }
             }
             (Bound::Open(_), Bound::Unbounded()) => Some(Ordering::Greater),
@@ -264,10 +264,10 @@ impl<T: IntervalValue> PartialOrd<StartBound<T>> for EndBound<T> {
                 if lhs == rhs {
                     Some(Ordering::Less)
                 } else {
-                    lhs.partial_cmp(&rhs)
+                    lhs.partial_cmp(rhs)
                 }
             }
-            (Bound::Closed(lhs), Bound::Closed(rhs)) => lhs.partial_cmp(&rhs),
+            (Bound::Closed(lhs), Bound::Closed(rhs)) => lhs.partial_cmp(rhs),
             (Bound::Closed(_), Bound::Unbounded()) => Some(Ordering::Greater),
             (Bound::Unbounded(), Bound::Open(_)) => Some(Ordering::Greater),
             (Bound::Unbounded(), Bound::Closed(_)) => Some(Ordering::Greater),
@@ -284,14 +284,11 @@ impl<T: IntervalValue> PartialEq<StartBound<T>> for EndBound<T> {
 
 impl<T: IntervalValue> PartialOrd<EndBound<T>> for StartBound<T> {
     fn partial_cmp(&self, other: &EndBound<T>) -> Option<Ordering> {
-        match other.partial_cmp(self) {
-            Some(res) => Some(match res {
-                Ordering::Less => Ordering::Greater,
-                Ordering::Equal => Ordering::Equal,
-                Ordering::Greater => Ordering::Less,
-            }),
-            None => None,
-        }
+        other.partial_cmp(self).map(|res| match res {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        })
     }
 }
 
@@ -374,7 +371,7 @@ impl<T: IntervalValue> Interval<T> {
 
     pub fn difference(&self, other: &Interval<T>) -> Vec<Interval<T>> {
         if self.is_disjoint(other) {
-            return vec![self.clone()];
+            return vec![*self];
         }
         let mut result = Vec::new();
         if self.start < other.start {
@@ -415,6 +412,12 @@ impl<T: IntervalValue + Display> Display for Interval<T> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Intervals<T: IntervalValue> {
     intervals: Vec<Interval<T>>,
+}
+
+impl<T: IntervalValue> Default for Intervals<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: IntervalValue> Intervals<T> {
@@ -521,27 +524,27 @@ impl<T: IntervalValue> Intervals<T> {
                         c
                     } else if a.start < b.start {
                         i += 1;
-                        a.clone()
+                        *a
                     } else {
                         j += 1;
-                        b.clone()
+                        *b
                     }
                 }
                 (Some(a), None) => {
                     i += 1;
-                    a.clone()
+                    *a
                 }
                 (None, Some(b)) => {
                     j += 1;
-                    b.clone()
+                    *b
                 }
                 (None, None) => break,
             };
-            if let Some(last) = merged.last_mut() {
-                if let Some(u) = last.union(&next) {
-                    *last = u;
-                    continue;
-                }
+            if let Some(last) = merged.last_mut()
+                && let Some(u) = last.union(&next)
+            {
+                *last = u;
+                continue;
             }
             merged.push(next);
         }
@@ -584,12 +587,12 @@ impl<T: IntervalValue> Intervals<T> {
         let mut i = 0;
         let mut j = 0;
         while i < self.intervals.len() {
-            let a = self.intervals[i].clone();
+            let a = self.intervals[i];
             while j < other.intervals.len() && other.intervals[j].end < a.start {
                 j += 1;
             }
             let mut k = j;
-            let mut diffs = vec![a.clone()];
+            let mut diffs = vec![a];
             while k < other.intervals.len() && other.intervals[k].start <= a.end {
                 diffs =
                     diffs.into_iter().flat_map(|iv| iv.difference(&other.intervals[k])).collect();
@@ -648,15 +651,15 @@ impl<T: IntervalValue> Intervals<T> {
         let mut rhs = vec![];
         for iv in &self.intervals {
             if iv.end < interval.start {
-                lhs.push(iv.clone())
+                lhs.push(*iv)
             } else if iv.start > interval.end {
-                rhs.push(iv.clone());
+                rhs.push(*iv);
             } else {
                 for iv in iv.difference(&interval) {
                     if iv.start < interval.start {
-                        lhs.push(iv.clone())
+                        lhs.push(iv)
                     } else if iv.end > interval.end {
-                        rhs.push(iv.clone());
+                        rhs.push(iv);
                     }
                 }
             }
@@ -714,7 +717,7 @@ impl<'a, T: IntervalValue> IntoIterator for &'a Intervals<T> {
     type IntoIter = <&'a Vec<Interval<T>> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.intervals).into_iter()
+        self.intervals.iter()
     }
 }
 
@@ -724,7 +727,7 @@ impl<'a, T: IntervalValue> IntoIterator for &'a mut Intervals<T> {
     type IntoIter = <&'a mut Vec<Interval<T>> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&mut self.intervals).into_iter()
+        self.intervals.iter_mut()
     }
 }
 

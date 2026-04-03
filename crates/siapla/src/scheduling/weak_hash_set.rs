@@ -36,29 +36,27 @@ impl<T: ?Sized> Hash for WeakKey<T> {
     }
 }
 
+impl<T: ?Sized> Default for WeakHashSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: ?Sized> WeakHashSet<T> {
     pub fn new() -> Self {
-        Self {
-            set: HashSet::new(),
-        }
+        Self { set: HashSet::new() }
     }
 
     pub fn insert(&mut self, value: &Arc<T>) -> bool {
-        self.set.insert(WeakKey {
-            weak: Arc::downgrade(value),
-        })
+        self.set.insert(WeakKey { weak: Arc::downgrade(value) })
     }
 
     pub fn remove(&mut self, value: &Arc<T>) -> bool {
-        self.set.remove(&WeakKey {
-            weak: Arc::downgrade(value),
-        })
+        self.set.remove(&WeakKey { weak: Arc::downgrade(value) })
     }
 
     pub fn contains(&self, value: &Arc<T>) -> bool {
-        self.set.contains(&WeakKey {
-            weak: Arc::downgrade(value),
-        })
+        self.set.contains(&WeakKey { weak: Arc::downgrade(value) })
     }
 
     /// Returns an iterator over all live Arc<T> in the set, cleaning up dead entries.

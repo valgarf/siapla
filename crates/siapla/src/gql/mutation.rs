@@ -11,8 +11,8 @@ use crate::entity::{resource_iteration as resource, task_iteration as task};
 use crate::revisioning::{PlanState, create_revision};
 
 use super::{
-    context::Context,
     booking::GQLBooking,
+    context::Context,
     resource::{GQLResource, ResourceSaveInput, resource_save},
     task::{GQLTask, TaskSaveInput, task_save},
 };
@@ -159,11 +159,12 @@ impl Mutation {
         .await?;
 
         for rid in resources {
-            let resolved_resource_header_id = if let Some(active_resource) = resource::Entity::find()
-                .filter(resource::Column::HeaderId.eq(rid))
-                .filter(resource::Column::RevDeleted.is_null())
-                .one(txn)
-                .await?
+            let resolved_resource_header_id = if let Some(active_resource) =
+                resource::Entity::find()
+                    .filter(resource::Column::HeaderId.eq(rid))
+                    .filter(resource::Column::RevDeleted.is_null())
+                    .one(txn)
+                    .await?
             {
                 active_resource.header_id.unwrap_or(active_resource.id)
             } else if let Some(active_resource) = resource::Entity::find_by_id(rid)

@@ -599,7 +599,7 @@ async fn update_predecessors(
         .await?;
     let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.predecessor_id).collect();
 
-    let predecessor_ids: Vec<i32> = predecessors.drain(..).collect();
+    let predecessor_ids: Vec<i32> = std::mem::take(&mut predecessors);
     let current_targets = task::Entity::find()
         .filter(task::Column::Id.is_in(predecessor_ids.clone()))
         .filter(task::Column::RevDeleted.is_null())
@@ -665,7 +665,7 @@ async fn update_successors(
         .await?;
     let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.successor_id).collect();
 
-    let successor_ids: Vec<i32> = successors.drain(..).collect();
+    let successor_ids: Vec<i32> = std::mem::take(&mut successors);
     let current_targets = task::Entity::find()
         .filter(task::Column::Id.is_in(successor_ids.clone()))
         .filter(task::Column::RevDeleted.is_null())
@@ -732,7 +732,7 @@ async fn update_children(
     let existing: HashSet<i32> =
         existing_children.into_iter().filter_map(|child| child.header_id).collect();
 
-    let child_ids: Vec<i32> = children.drain(..).collect();
+    let child_ids: Vec<i32> = std::mem::take(&mut children);
     let target_children = task::Entity::find()
         .filter(task::Column::HeaderId.is_in(child_ids.clone()))
         .filter(active_for_revision(
@@ -980,13 +980,12 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
         am.header_id = ActiveValue::Set(existing.header_id);
         am.rev_created = ActiveValue::Set(revision_id);
         am.rev_deleted = ActiveValue::Set(None);
-        let new_model = am.insert(txn).await?;
 
         // ── Migrate relationships from old iteration to new iteration ──
         // Dependencies, bookings, allocations, and resource constraints are all
         // header-based and don't need migration when a task iteration changes.
 
-        new_model
+        am.insert(txn).await?
     } else {
         let header = crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
