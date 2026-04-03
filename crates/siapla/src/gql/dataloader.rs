@@ -8,7 +8,7 @@ use std::{
 
 use tokio::sync::RwLock;
 
-use dataloader::cached::{Cache, Loader};
+use dataloader::{cached::Loader as CachedLoader, non_cached::Loader as NonCachedLoader};
 use itertools::Itertools as _;
 use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, Order, QueryFilter, QueryOrder};
 
@@ -49,27 +49,6 @@ pub trait Batcher: Clone + Send + Sync + 'static {
 pub trait BatcherToKey: Batcher {
     type MapKey: Eq + Hash + Clone + Debug + Send + Sync;
     fn loader_map_key(&self) -> Self::MapKey;
-
-    fn loader(
-        &self,
-        ctx: &Weak<Context>,
-    ) -> impl Future<
-        Output = Result<
-            Arc<Loader<Self::Key, Result<Self::Value, Arc<anyhow::Error>>, BatcherWrapper<Self>>>,
-            anyhow::Error,
-        >,
-    > + Send {
-        let ctx = ctx.clone();
-        let batcher = self.clone();
-        async move {
-            match ctx.upgrade() {
-                None => {
-                    Err(anyhow::anyhow!("Weak ref not upgradable in dataloader loader creation"))
-                }
-                Some(ctx) => Ok(ctx.loader(batcher).await),
-            }
-        }
-    }
 }
 
 impl<B: Batcher> BatcherToKey for B
@@ -150,24 +129,106 @@ impl<B: Batcher> BatcherWrapper<B> {
     }
 }
 
-impl<B: Batcher> dataloader::BatchFn<B::Key, Result<B::Value, Arc<anyhow::Error>>>
-    for BatcherWrapper<B>
+pub trait VecBatcher: Batcher<Value = Vec<Self::Item>> {
+    type Item: Clone + Send + Sync;
+}
+
+impl<B, T> VecBatcher for B
+where
+    B: Batcher<Value = Vec<T>>,
+    T: Clone + Send + Sync,
 {
-    async fn load(
-        &mut self,
-        values: &[B::Key],
-    ) -> HashMap<B::Key, Result<B::Value, Arc<anyhow::Error>>> {
+    type Item = T;
+}
+
+#[derive(Clone)]
+pub enum LoaderWrapper<B: Batcher> {
+    Cached(Arc<CachedLoader<B::Key, B::Value, BatcherWrapper<B>>>),
+    NonCached(Arc<NonCachedLoader<B::Key, B::Value, BatcherWrapper<B>>>),
+}
+
+
+impl<B: Batcher> LoaderWrapper<B> {
+    pub fn new_cached(ctx: Weak<Context>, batcher: B) -> Self {
+        Self::Cached(Arc::new(
+            CachedLoader::new(BatcherWrapper::new(ctx, batcher))
+                .with_yield_count(B::yield_count())
+                .with_max_batch_size(B::max_batch_size()),
+        ))
+    }
+
+    pub fn new_non_cached(ctx: Weak<Context>, batcher: B) -> Self {
+        Self::NonCached(Arc::new(
+            NonCachedLoader::new(BatcherWrapper::new(ctx, batcher))
+                .with_yield_count(B::yield_count())
+                .with_max_batch_size(B::max_batch_size()),
+        ))
+    }
+
+    pub async fn load(&self, key: B::Key) -> anyhow::Result<B::Value> {
+        match self {
+            Self::Cached(loader) => {
+                loader.try_load(key).await.map_err(|_| anyhow::anyhow!("Key not found"))
+            }
+            Self::NonCached(loader) => {
+                loader.try_load(key).await.map_err(|_| anyhow::anyhow!("Key not found"))
+            }
+        }
+    }
+
+    pub async fn load_many(&self, keys: Vec<B::Key>) -> anyhow::Result<HashMap<B::Key, B::Value>> {
+        match self {
+            Self::Cached(loader) => {
+                loader.try_load_many(keys).await.map_err(|_| anyhow::anyhow!("Key not found"))
+            }
+            Self::NonCached(loader) => {
+                loader.try_load_many(keys).await.map_err(|_| anyhow::anyhow!("Key not found"))
+            }
+        }
+    }
+}
+
+impl<B: VecBatcher> LoaderWrapper<B> {
+    pub async fn load_one(&self, key: B::Key) -> anyhow::Result<Option<B::Item>> {
+        let mut values = self.load(key).await?;
+        if values.is_empty() {
+            Ok(None)
+        } else if values.len() == 1 {
+            Ok(values.drain(..).next())
+        } else {
+            Err(anyhow::anyhow!("More than one entry found"))
+        }
+    }
+
+    pub async fn load_many_one(
+        &self,
+        keys: Vec<B::Key>,
+    ) -> anyhow::Result<HashMap<B::Key, Option<B::Item>>> {
+        self.load_many(keys)
+            .await?
+            .into_iter()
+            .map(|(key, mut values)| {
+                if values.len() > 1 {
+                    Err(anyhow::anyhow!("More than one entry found"))
+                } else {
+                    Ok((key, values.pop()))
+                }
+            })
+            .collect()
+    }
+}
+
+impl<B: Batcher> dataloader::BatchFn<B::Key, B::Value> for BatcherWrapper<B> {
+    async fn load(&mut self, values: &[B::Key]) -> HashMap<B::Key, B::Value> {
         let ctx = self.ctx.upgrade();
         match ctx {
             None => {
-                let a = Arc::new(anyhow::anyhow!("Weak ref not upgradable in dataloader."));
-                values.iter().map(|k| (k.clone(), Err(a.clone()))).collect()
+                return Default::default(); // missing keys will raise an error in the dataloader
             }
             Some(ctx) => match self.batcher.load(&ctx, values).await {
-                Ok(data) => data.into_iter().map(|(k, v)| (k, Ok(v))).collect(),
-                Err(err) => {
-                    let clonable_err = Arc::new(err);
-                    values.iter().map(|k| (k.clone(), Err(clonable_err.clone()))).collect()
+                Ok(data) => data,
+                Err(_) => {
+                    return Default::default(); // missing keys will raise an error in the dataloader
                 }
             },
         }
@@ -410,12 +471,16 @@ where
         let query = ET::find().filter(self.col.is_in(values.to_vec()));
 
         let models: Vec<ET::Model> = query.order_by_asc(self.col).all(txn).await?;
-        Ok(models
+        let mut res: HashMap<Self::Key, Self::Value> = models
             .into_iter()
             .chunk_by(|model| model.get(self.col))
             .into_iter()
             .map(|(key, models)| (key, models.collect()))
-            .collect())
+            .collect();
+        for v in values {
+            res.entry(v.clone()).or_insert_with(Vec::new);
+        }
+        Ok(res)
     }
 }
 
@@ -458,12 +523,17 @@ where
             .filter(ET::rev_condition(self.revision));
 
         let models: Vec<ET::Model> = query.order_by_asc(self.col).all(txn).await?;
-        Ok(models
+
+        let mut res: HashMap<Self::Key, Self::Value> = models
             .into_iter()
             .chunk_by(|model| model.get(self.col))
             .into_iter()
             .map(|(key, models)| (key, models.collect()))
-            .collect())
+            .collect();
+        for v in values {
+            res.entry(v.clone()).or_insert_with(Vec::new);
+        }
+        Ok(res)
     }
 }
 

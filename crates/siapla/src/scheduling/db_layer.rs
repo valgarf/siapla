@@ -6,9 +6,10 @@ use std::rc::{Rc, Weak};
 use std::str::FromStr;
 
 use crate::gql::context::Context;
+use crate::gql::dataloader::AvailabilityBatcher;
 use crate::gql::issue::IssueType;
 use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
-// availability now loaded via Context::load_combined_availability
+
 use crate::entity::{
     booking, booking_resource, resource_iteration as resource, task_iteration as task,
 };
@@ -622,8 +623,8 @@ pub async fn query_slots(
         let rid = r.borrow().header_id;
         // start availability query at resource.last_booking_end if present so earlier slots are excluded
         let resource_start = cmp::max(start, r.borrow().last_booking_end.unwrap_or(start));
-        let fut = ctx.load_combined_availability(rid, resource_start, end, Some(revision));
-        set.spawn(async move { (idx, fut.await) });
+        let loader = ctx.loader(AvailabilityBatcher { start: resource_start, end, revision }).await;
+        set.spawn(async move { (idx, loader.load(rid).await) });
     }
 
     while let Some(join_res) = set.join_next().await {

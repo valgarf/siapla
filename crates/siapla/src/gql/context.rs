@@ -1,21 +1,24 @@
 use std::{
+    collections::HashMap,
     env,
     sync::{Arc, Weak},
 };
 
-use super::dataloader::{AvailabilityBatcher, BatcherLoaderKey, BatcherWrapper, ByColBatcher};
-use crate::{ColumnIntoUsize, gql::dataloader::BatcherToKey, scheduling::Intervals};
+use super::dataloader::{
+    AvailabilityBatcher, BatcherLoaderKey, BatcherToKey, ByColBatcher, ByColRevBatcher,
+    LoaderWrapper,
+};
+use crate::SiaplaError;
+use crate::{ColumnIntoUsize, scheduling::Intervals};
 use crate::{RevModeEntity, revisioning::resolve_revision};
-use crate::{SiaplaError, gql::dataloader::ByColRevBatcher};
 use chrono::NaiveDateTime;
 
 use crate::app_state::AppState;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
-use futures::{TryFutureExt, lock::Mutex};
+use futures::lock::Mutex;
 use sea_orm::{
     Database, DatabaseTransaction, EntityTrait, TransactionTrait as _, strum::IntoEnumIterator,
 };
-use std::collections::HashMap;
 use tokio::sync::{OnceCell, RwLock};
 
 // global database url that can be set from the server's command line
@@ -91,38 +94,25 @@ impl Context {
         Ok(())
     }
 
-    pub async fn loader<B: BatcherToKey>(
-        &self,
-        batcher: B,
-    ) -> Arc<
-        dataloader::cached::Loader<B::Key, Result<B::Value, Arc<anyhow::Error>>, BatcherWrapper<B>>,
-    > {
+    pub async fn loader<B: BatcherToKey>(&self, batcher: B) -> LoaderWrapper<B> {
         let key = BatcherLoaderKey::new::<B>(batcher.loader_map_key());
         loop {
             let read_loaders = self.generic_batch_loaders.read().await;
-            if let Some(loader) = read_loaders.get(&key).and_then(|loader| {
-                Arc::clone(loader)
-                    .downcast::<dataloader::cached::Loader<
-                        B::Key,
-                        Result<B::Value, Arc<anyhow::Error>>,
-                        BatcherWrapper<B>,
-                    >>()
-                    .ok()
-            }) {
-                return loader;
+            if let Some(loader) = read_loaders
+                .get(&key)
+                .and_then(|loader| Arc::clone(loader).downcast::<LoaderWrapper<B>>().ok())
+            {
+                return (*loader).clone();
             }
             drop(read_loaders);
 
             let mut write_loaders = self.generic_batch_loaders.write().await;
             write_loaders.entry(key.clone()).or_insert_with(|| {
-                Arc::new(
-                    dataloader::cached::Loader::new(BatcherWrapper::new(
-                        self.me.clone(),
-                        batcher.clone(),
-                    ))
-                    .with_yield_count(B::yield_count())
-                    .with_max_batch_size(B::max_batch_size()),
-                )
+                Arc::new(if B::cached() {
+                    LoaderWrapper::new_cached(self.me.clone(), batcher.clone())
+                } else {
+                    LoaderWrapper::new_non_cached(self.me.clone(), batcher.clone())
+                })
             });
         }
     }
@@ -152,11 +142,7 @@ impl Context {
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let _txn = ctx.txn().await?;
             let loader = ctx.loader(ByColBatcher::<ET> { col }).await;
-            let res = loader.try_load(value).await;
-            match res {
-                Err(_) => Ok(vec![]), // id cannot be found
-                Ok(value) => Ok(value.map_err(|err| anyhow::anyhow!("{err}"))?),
-            }
+            loader.load(value).await
         }
     }
 
@@ -169,17 +155,16 @@ impl Context {
         ET::Model: Send + Sync,
         ET::Column: ColumnIntoUsize,
     {
-        let fut = self.load_by_col::<ET>(col, value);
+        let me = self.me.clone();
+        let value: sea_orm::Value = value.into();
 
-        fut.and_then(|mut res: Vec<ET::Model>| async move {
-            if res.is_empty() {
-                Ok(None)
-            } else if res.len() == 1 {
-                Ok(res.drain(..).next())
-            } else {
-                Err(anyhow::anyhow!("More than one entry found"))
-            }
-        })
+        async move {
+            let ctx =
+                me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
+            let _txn = ctx.txn().await?;
+            let loader = ctx.loader(ByColBatcher::<ET> { col }).await;
+            loader.load_one(value).await
+        }
     }
 
     pub fn load_by_col_at_revision<ET: EntityTrait>(
@@ -204,11 +189,7 @@ impl Context {
                 .await?
                 .ok_or(anyhow::anyhow!("No revision found in database"))?;
             let loader = ctx.loader(ByColRevBatcher::<ET> { revision, col }).await;
-            let res = loader.try_load(value).await;
-            match res {
-                Err(_) => Ok(vec![]), // id cannot be found
-                Ok(value) => Ok(value.map_err(|err| anyhow::anyhow!("{err}"))?),
-            }
+            loader.load(value).await
         }
     }
 
@@ -223,44 +204,19 @@ impl Context {
         ET::Model: Send + Sync,
         ET::Column: IntoEnumIterator + ColumnIntoUsize,
     {
-        let fut = self.load_by_col_at_revision::<ET>(col, value, revision);
-
-        fut.and_then(|mut res: Vec<ET::Model>| async move {
-            if res.is_empty() {
-                Ok(None)
-            } else if res.len() == 1 {
-                Ok(res.drain(..).next())
-            } else {
-                Err(anyhow::anyhow!("More than one entry found"))
-            }
-        })
-    }
-
-    pub fn load_combined_availability(
-        &self,
-        resource_id: i32,
-        start: NaiveDateTime,
-        end: NaiveDateTime,
-        revision: Option<i64>,
-    ) -> impl Future<Output = anyhow::Result<Intervals<NaiveDateTime>>> + 'static {
-        // let loaders = Arc::clone(&self.availability_loaders);
         let me = self.me.clone();
-        let fut = async move {
+        let value: sea_orm::Value = value.into();
+
+        async move {
             let ctx =
                 me.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
             let txn = ctx.txn().await?;
             let revision = resolve_revision(txn, revision)
                 .await?
                 .ok_or(anyhow::anyhow!("No revision found in database"))?;
-
-            let loader = ctx.loader(AvailabilityBatcher { start, end, revision }).await;
-            let res = loader.try_load(resource_id).await;
-            match res {
-                Err(_) => Ok(Intervals::new()), // id cannot be found
-                Ok(v) => v.map_err(|err| anyhow::anyhow!("{err}")),
-            }
-        };
-        fut
+            let loader = ctx.loader(ByColRevBatcher::<ET> { revision, col }).await;
+            loader.load_one(value).await
+        }
     }
 }
 

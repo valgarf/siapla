@@ -5,6 +5,8 @@ use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
 use tracing::error;
 
+use crate::gql::dataloader::AvailabilityBatcher;
+use crate::revisioning::resolve_revision;
 use crate::{
     entity::{availability, holiday, resource_header, resource_iteration as resource, vacation},
     gql::{
@@ -143,12 +145,17 @@ impl GQLResource {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> anyhow::Result<Vec<GQLInterval>> {
-        let s = start.naive_utc();
-        let e = end.naive_utc();
-        let ivs =
-            ctx.load_combined_availability(self.model.id, s, e, self.revision).await.inspect_err(
-                |e| error!("Failed to load combined availability from dataloader: {:?}", e),
-            )?;
+        let start = start.naive_utc();
+        let end = end.naive_utc();
+        let txn = ctx.txn().await?;
+        let revision = resolve_revision(txn, self.revision)
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
+        let loader = ctx.loader(AvailabilityBatcher { start, end, revision }).await;
+
+        let ivs = loader.load(self.model.id).await.inspect_err(|e| {
+            error!("Failed to load combined availability from dataloader: {:?}", e)
+        })?;
         Ok(ivs
             .into_iter()
             .map(|iv| GQLInterval {
