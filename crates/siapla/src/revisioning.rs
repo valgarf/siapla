@@ -84,11 +84,11 @@ pub fn active_for_revision<C: ColumnTrait>(
     rev_created_column: C,
     rev_deleted_column: C,
     revision: Option<i64>,
-) -> anyhow::Result<Condition> {
+) -> Condition {
     match revision {
-        Some(rev) => Ok(Condition::all().add(rev_created_column.lte(rev)).add(
+        Some(rev) => Condition::all().add(rev_created_column.lte(rev)).add(
             Condition::any().add(rev_deleted_column.is_null()).add(rev_deleted_column.gt(rev)),
-        )),
-        None => Ok(Condition::all().add(rev_deleted_column.is_null())),
+        ),
+        None => Condition::all().add(rev_deleted_column.is_null()),
     }
 }

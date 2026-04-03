@@ -166,7 +166,7 @@ impl GQLTask {
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
                 self.revision,
-            )?)
+            ))
             .order_by_asc(task::Column::Title)
             .all(txn)
             .await?;
@@ -195,7 +195,7 @@ impl GQLTask {
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
                 self.revision,
-            )?)
+            ))
             .one(txn)
             .await?;
         Ok(active.map(|m| GQLTask::at_revision(m, self.revision)))
@@ -214,7 +214,7 @@ impl GQLTask {
                 resource_constraint::Column::RevCreated,
                 resource_constraint::Column::RevDeleted,
                 self.revision,
-            )?)
+            ))
             .order_by_asc(resource_constraint::Column::Id)
             .all(txn)
             .await?;
@@ -739,7 +739,7 @@ async fn update_children(
             task::Column::RevCreated,
             task::Column::RevDeleted,
             Some(revision_id),
-        )?)
+        ))
         .all(txn)
         .await?;
     let mut target: HashSet<i32> =

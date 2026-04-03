@@ -1,24 +1,166 @@
 use std::{
+    any::{Any, TypeId},
     cmp::{max, min},
     collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
     sync::{Arc, Weak},
 };
 
+use tokio::sync::RwLock;
+
 use dataloader::cached::Loader;
 use itertools::Itertools as _;
-use sea_orm::{
-    ColumnTrait, EntityTrait, ModelTrait, Order, QueryFilter, QueryOrder, strum::IntoEnumIterator,
-};
+use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, Order, QueryFilter, QueryOrder};
 
 use super::context::Context;
-use crate::SiaplaError;
-use crate::revisioning::{active_for_revision, resolve_revision};
+use crate::{ColumnIntoUsize, RevModeEntity};
 
 use crate::entity::{availability, resource_iteration as resource, vacation};
 use crate::scheduling::{Interval, Intervals};
 use chrono::{DateTime, Datelike, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
 use chrono_tz::Tz;
 use sea_orm::prelude::Decimal;
+
+use std::fmt::Debug;
+
+pub trait Batcher: Clone + Send + Sync + 'static {
+    type Key: Eq + Hash + Clone + Debug + Send + Sync;
+    type Value: Clone + Send + Sync;
+
+    fn load(
+        &self,
+        ctx: &Context,
+        keys: &[Self::Key],
+    ) -> impl Future<Output = Result<HashMap<Self::Key, Self::Value>, anyhow::Error>> + Send;
+}
+
+pub trait BatcherToKey: Batcher {
+    type MapKey: Eq + Hash + Clone + Debug + Send + Sync;
+    fn loader_map_key(&self) -> Self::MapKey;
+
+    fn loader(
+        &self,
+        ctx: &Weak<Context>,
+    ) -> impl Future<
+        Output = Result<
+            Arc<Loader<Self::Key, Result<Self::Value, Arc<anyhow::Error>>, BatcherWrapper<Self>>>,
+            anyhow::Error,
+        >,
+    > + Send {
+        let ctx = ctx.clone();
+        let batcher = self.clone();
+        async move {
+            match ctx.upgrade() {
+                None => {
+                    Err(anyhow::anyhow!("Weak ref not upgradable in dataloader loader creation"))
+                }
+                Some(ctx) => Ok(ctx.loader(batcher).await),
+            }
+        }
+    }
+}
+
+impl<B: Batcher> BatcherToKey for B
+where
+    B: Hash + Eq + Debug,
+{
+    type MapKey = Self;
+    fn loader_map_key(&self) -> Self::MapKey {
+        self.clone()
+    }
+}
+
+pub struct BatcherLoaderKey {
+    type_id: TypeId,
+    batcher_key: Arc<dyn Any + Send + Sync>,
+    eq_fn: fn(&(dyn Any + Send + Sync), &(dyn Any + Send + Sync)) -> bool,
+    hash_fn: fn(&(dyn Any + Send + Sync), &mut dyn Hasher),
+}
+
+impl BatcherLoaderKey {
+    pub(crate) fn new<B: BatcherToKey>(batcher_key: B::MapKey) -> Self {
+        Self {
+            type_id: TypeId::of::<B>(),
+            batcher_key: Arc::new(batcher_key),
+            eq_fn: |left, right| {
+                right
+                    .downcast_ref::<B::MapKey>()
+                    .is_some_and(|right| left.downcast_ref::<B::MapKey>() == Some(right))
+            },
+            hash_fn: |batcher_key, state| {
+                if let Some(batcher_key) = batcher_key.downcast_ref::<B::MapKey>() {
+                    let mut inner = std::collections::hash_map::DefaultHasher::new();
+                    batcher_key.hash(&mut inner);
+                    state.write_u64(inner.finish());
+                }
+            },
+        }
+    }
+}
+
+impl Clone for BatcherLoaderKey {
+    fn clone(&self) -> Self {
+        Self {
+            type_id: self.type_id,
+            batcher_key: Arc::clone(&self.batcher_key),
+            eq_fn: self.eq_fn,
+            hash_fn: self.hash_fn,
+        }
+    }
+}
+
+impl PartialEq for BatcherLoaderKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id
+            && (self.eq_fn)(self.batcher_key.as_ref(), other.batcher_key.as_ref())
+    }
+}
+
+impl Eq for BatcherLoaderKey {}
+
+impl std::hash::Hash for BatcherLoaderKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.type_id.hash(state);
+        (self.hash_fn)(self.batcher_key.as_ref(), state);
+    }
+}
+
+pub type GenericBatchLoaderMap = RwLock<HashMap<BatcherLoaderKey, Arc<dyn Any + Send + Sync>>>;
+
+pub struct BatcherWrapper<B: Batcher> {
+    ctx: Weak<Context>,
+    batcher: B,
+}
+
+impl<B: Batcher> BatcherWrapper<B> {
+    pub(crate) fn new(ctx: Weak<Context>, batcher: B) -> Self {
+        Self { ctx, batcher }
+    }
+}
+
+impl<B: Batcher> dataloader::BatchFn<B::Key, Result<B::Value, Arc<anyhow::Error>>>
+    for BatcherWrapper<B>
+{
+    async fn load(
+        &mut self,
+        values: &[B::Key],
+    ) -> HashMap<B::Key, Result<B::Value, Arc<anyhow::Error>>> {
+        let ctx = self.ctx.upgrade();
+        match ctx {
+            None => {
+                let a = Arc::new(anyhow::anyhow!("Weak ref not upgradable in dataloader."));
+                values.iter().map(|k| (k.clone(), Err(a.clone()))).collect()
+            }
+            Some(ctx) => match self.batcher.load(&ctx, values).await {
+                Ok(data) => data.into_iter().map(|(k, v)| (k, Ok(v))).collect(),
+                Err(err) => {
+                    let clonable_err = Arc::new(err);
+                    values.iter().map(|k| (k.clone(), Err(clonable_err.clone()))).collect()
+                }
+            },
+        }
+    }
+}
 
 pub fn string_to_weekday(s: &str) -> anyhow::Result<Weekday> {
     match s {
@@ -132,32 +274,22 @@ pub async fn query_combined_availability(
 
     let db_resources = resource::Entity::find()
         .filter(resource::Column::HeaderId.is_in(resource_ids.clone()))
-        .filter(active_for_revision(
-            resource::Column::RevCreated,
-            resource::Column::RevDeleted,
-            Some(revision),
-        )?)
+        .filter(resource::Entity::rev_condition(revision))
         .all(db)
         .await?;
-    let res_map =
-        db_resources.into_iter().filter_map(|r| r.header_id.map(|hid| (hid, r))).collect::<HashMap<i32, _>>();
+    let res_map = db_resources
+        .into_iter()
+        .filter_map(|r| r.header_id.map(|hid| (hid, r)))
+        .collect::<HashMap<i32, _>>();
 
     let db_availabilities = availability::Entity::find()
         .filter(availability::Column::ResourceId.is_in(id_set.clone()))
-        .filter(active_for_revision(
-            availability::Column::RevCreated,
-            availability::Column::RevDeleted,
-            Some(revision),
-        )?)
+        .filter(availability::Entity::rev_condition(revision))
         .all(db)
         .await?;
     let db_vacations = vacation::Entity::find()
         .filter(vacation::Column::ResourceId.is_in(id_set.clone()))
-        .filter(active_for_revision(
-            vacation::Column::RevCreated,
-            vacation::Column::RevDeleted,
-            Some(revision),
-        )?)
+        .filter(vacation::Entity::rev_condition(revision))
         .filter(vacation::Column::From.lt(end))
         .filter(vacation::Column::Until.gt(start))
         .order_by(vacation::Column::From, Order::Asc)
@@ -219,187 +351,118 @@ pub async fn query_combined_availability(
     Ok(results)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AvailabilityBatcher {
-    pub ctx: Weak<Context>,
     pub start: NaiveDateTime,
     pub end: NaiveDateTime,
     pub revision: i64,
 }
 
-impl dataloader::BatchFn<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>>
-    for AvailabilityBatcher
-{
+impl Batcher for AvailabilityBatcher {
+    type Key = i32;
+    type Value = Intervals<NaiveDateTime>;
     async fn load(
-        &mut self,
-        values: &[i32],
-    ) -> HashMap<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>> {
+        &self,
+        ctx: &Context,
+        values: &[Self::Key],
+    ) -> Result<HashMap<Self::Key, Self::Value>, anyhow::Error> {
         let ids = values.to_vec();
-        let ctx = self.ctx.upgrade();
-        if ctx.is_none() {
-            let a = Arc::new(anyhow::anyhow!("Weak ref not upgradable in dataloader."));
-            return values.iter().map(|&k| (k, Err(a.clone()))).collect();
-        }
-        let ctx = ctx.unwrap();
         match query_combined_availability(&ctx, &ids, self.start, self.end, self.revision).await {
-            Ok(vec) => {
-                let mut map = HashMap::new();
-                for (id, iv) in ids.into_iter().zip(vec.into_iter()) {
-                    map.insert(id, Ok(iv));
-                }
-                map
-            }
-            Err(err) => {
-                let a = Arc::new(err);
-                values.iter().map(|&k| (k, Err(a.clone()))).collect()
-            }
+            Ok(vec) => Ok(ids.into_iter().zip(vec.into_iter()).collect()),
+            Err(err) => Err(err),
         }
     }
 }
 
-pub type AvailabilityLoader =
-    Loader<i32, Result<Intervals<NaiveDateTime>, Arc<anyhow::Error>>, AvailabilityBatcher>;
-
-pub struct ByFixedRevisionColBatcher<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>
+#[derive(Debug, Clone)]
+pub struct ByColBatcher<ET: EntityTrait>
 where
-    ET::Column: IntoEnumIterator,
+    ET::Model: Send + Sync,
 {
-    pub ctx: Weak<Context>,
+    pub col: ET::Column,
+}
+
+impl<ET: EntityTrait> Batcher for ByColBatcher<ET>
+where
+    ET::Model: Send + Sync,
+{
+    type Key = sea_orm::Value;
+    type Value = Vec<ET::Model>;
+
+    async fn load(
+        &self,
+        ctx: &Context,
+        values: &[Self::Key],
+    ) -> Result<HashMap<Self::Key, Self::Value>, anyhow::Error> {
+        let txn = ctx.txn().await?;
+        let query = ET::find().filter(self.col.is_in(values.to_vec()));
+
+        let models: Vec<ET::Model> = query.order_by_asc(self.col).all(txn).await?;
+        Ok(models
+            .into_iter()
+            .chunk_by(|model| model.get(self.col))
+            .into_iter()
+            .map(|(key, models)| (key, models.collect()))
+            .collect())
+    }
+}
+
+impl<ET: EntityTrait> BatcherToKey for ByColBatcher<ET>
+where
+    ET::Column: ColumnIntoUsize,
+    ET::Model: Send + Sync,
+{
+    type MapKey = usize;
+    fn loader_map_key(&self) -> Self::MapKey {
+        self.col.to_column_index()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ByColRevBatcher<ET: EntityTrait>
+where
+    ET::Model: Send + Sync,
+{
     pub revision: i64,
-    pub pd: std::marker::PhantomData<ET>,
+    pub col: ET::Column,
 }
 
-async fn fallible_load_fixed_revision<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>(
-    ctx: &Weak<Context>,
-    values: &[sea_orm::Value],
-    revision: i64,
-) -> Result<HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>, anyhow::Error>
+impl<ET> Batcher for ByColRevBatcher<ET>
 where
-    ET::Column: IntoEnumIterator,
+    ET: RevModeEntity,
+    ET::Model: Send + Sync,
 {
-    let key_col: ET::Column =
-        ET::Column::iter().nth(KEY_CIDX).expect("Loader with invalid key column index");
-    let rev_col: ET::Column =
-        ET::Column::iter().nth(REV_CIDX).expect("Loader with invalid revision column index");
-    let ctx = ctx.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-    let txn = ctx.txn().await?;
-    let rows: Vec<ET::Model> = ET::find()
-        .filter(key_col.is_in(values.to_vec()))
-        .filter(rev_col.eq(revision))
-        .order_by_asc(key_col)
-        .all(txn)
-        .await?;
-    Ok(rows
-        .into_iter()
-        .chunk_by(|row| row.get(key_col))
-        .into_iter()
-        .map(|(key, rows)| (key, Ok(rows.collect())))
-        .collect())
-}
+    type Key = sea_orm::Value;
+    type Value = Vec<ET::Model>;
 
-impl<ET: EntityTrait, const KEY_CIDX: usize, const REV_CIDX: usize>
-    dataloader::BatchFn<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>
-    for ByFixedRevisionColBatcher<ET, KEY_CIDX, REV_CIDX>
-where
-    ET::Column: IntoEnumIterator,
-{
     async fn load(
-        &mut self,
-        values: &[sea_orm::Value],
-    ) -> HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>> {
-        match fallible_load_fixed_revision::<ET, KEY_CIDX, REV_CIDX>(&self.ctx, values, self.revision)
-            .await
-        {
-            Ok(data) => data,
-            Err(err) => {
-                let clonable_err = Arc::new(err);
-                values.iter().map(|k| (k.clone(), Err(clonable_err.clone()))).collect()
-            }
-        }
+        &self,
+        ctx: &Context,
+        values: &[Self::Key],
+    ) -> Result<HashMap<Self::Key, Self::Value>, anyhow::Error> {
+        let txn = ctx.txn().await?;
+        let query = ET::find()
+            .filter(self.col.is_in(values.to_vec()))
+            .filter(ET::rev_condition(self.revision));
+
+        let models: Vec<ET::Model> = query.order_by_asc(self.col).all(txn).await?;
+        Ok(models
+            .into_iter()
+            .chunk_by(|model| model.get(self.col))
+            .into_iter()
+            .map(|(key, models)| (key, models.collect()))
+            .collect())
     }
 }
 
-pub type ByFixedRevisionColLoader<ET, const KEY_CIDX: usize, const REV_CIDX: usize> = Loader<
-    sea_orm::Value,
-    Result<Vec<<ET as EntityTrait>::Model>, Arc<anyhow::Error>>,
-    ByFixedRevisionColBatcher<ET, KEY_CIDX, REV_CIDX>,
->;
-
-pub struct ByColBatcher<ET: EntityTrait, const CIDX: usize>
+impl<ET> BatcherToKey for ByColRevBatcher<ET>
 where
-    ET::Column: IntoEnumIterator,
+    ET: RevModeEntity,
+    ET::Column: ColumnIntoUsize,
+    ET::Model: Send + Sync,
 {
-    pub ctx: Weak<Context>,
-    pub revision: Option<i64>,
-    pub rev_created_idx: Option<usize>,
-    pub rev_deleted_idx: Option<usize>,
-    pub pd: std::marker::PhantomData<ET>,
-}
-
-async fn fallible_load<ET: EntityTrait, const CIDX: usize>(
-    ctx: &Weak<Context>,
-    values: &[sea_orm::Value],
-    revision: Option<i64>,
-    rev_created_idx: Option<usize>,
-    rev_deleted_idx: Option<usize>,
-) -> Result<HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>, anyhow::Error>
-where
-    ET::Column: IntoEnumIterator,
-{
-    let col: ET::Column = ET::Column::iter().nth(CIDX).expect("Loader with invalid column index");
-    let ctx = ctx.upgrade().ok_or(SiaplaError::new("Weak ref not upgradable in dataloader."))?;
-    let txn = ctx.txn().await?;
-    let resolved_revision = resolve_revision(txn, revision).await?;
-    let mut query = ET::find().filter(col.is_in(values.to_vec()));
-    if let (Some(revision), Some(rev_created_idx), Some(rev_deleted_idx)) =
-        (resolved_revision, rev_created_idx, rev_deleted_idx)
-    {
-        let rev_created_col: ET::Column = ET::Column::iter()
-            .nth(rev_created_idx)
-            .expect("Loader with invalid rev_created column index");
-        let rev_deleted_col: ET::Column = ET::Column::iter()
-            .nth(rev_deleted_idx)
-            .expect("Loader with invalid rev_deleted column index");
-        query = query.filter(active_for_revision(rev_created_col, rev_deleted_col, Some(revision))?);
-    }
-    let tasks: Vec<ET::Model> = query.order_by_asc(col).all(txn).await?;
-    Ok(tasks
-        .into_iter()
-        .chunk_by(|task| task.get(col))
-        .into_iter()
-        .map(|(key, tasks)| (key, Ok(tasks.collect())))
-        .collect())
-}
-
-impl<ET: EntityTrait, const CIDX: usize>
-    dataloader::BatchFn<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>>
-    for ByColBatcher<ET, CIDX>
-where
-    ET::Column: IntoEnumIterator,
-{
-    async fn load(
-        &mut self,
-        values: &[sea_orm::Value],
-    ) -> HashMap<sea_orm::Value, Result<Vec<ET::Model>, Arc<anyhow::Error>>> {
-        match fallible_load::<ET, CIDX>(
-            &self.ctx,
-            values,
-            self.revision,
-            self.rev_created_idx,
-            self.rev_deleted_idx,
-        )
-        .await
-        {
-            Ok(data) => data,
-            Err(err) => {
-                let clonable_err = Arc::new(err);
-                values.iter().map(|k| (k.clone(), Err(clonable_err.clone()))).collect()
-            }
-        }
+    type MapKey = (i64, usize);
+    fn loader_map_key(&self) -> Self::MapKey {
+        (self.revision, self.col.to_column_index())
     }
 }
-
-pub type ByColLoader<ET, const CIDX: usize> = Loader<
-    sea_orm::Value,
-    Result<Vec<<ET as EntityTrait>::Model>, Arc<anyhow::Error>>,
-    ByColBatcher<ET, CIDX>,
->;

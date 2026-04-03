@@ -44,7 +44,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             task::Column::RevCreated,
             task::Column::RevDeleted,
             Some(revision),
-        )?)
+        ))
         .all(db)
         .await?;
     let db_resource_vec = resource::Entity::find()
@@ -52,7 +52,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             resource::Column::RevCreated,
             resource::Column::RevDeleted,
             Some(revision),
-        )?)
+        ))
         .all(db)
         .await?;
     let resource_header_to_iter = db_resource_vec
@@ -64,7 +64,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             dependency::Column::RevCreated,
             dependency::Column::RevDeleted,
             Some(revision),
-        )?)
+        ))
         .all(db)
         .await?;
     let task_header_ids: Vec<i32> = db_task_vec.iter().filter_map(|t| t.header_id).collect();
@@ -74,7 +74,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             resource_constraint::Column::RevCreated,
             resource_constraint::Column::RevDeleted,
             Some(revision),
-        )?)
+        ))
         .all(db)
         .await?;
     let constraint_ids = db_constraints_vec.iter().map(|t| t.id).collect::<Vec<_>>();
@@ -91,7 +91,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             booking::Column::RevCreated,
             booking::Column::RevDeleted,
             Some(revision),
-        )?)
+        ))
         .all(db)
         .await?;
     let alloc_ids: Vec<i32> = booking_allocs.iter().map(|a| a.id).collect();

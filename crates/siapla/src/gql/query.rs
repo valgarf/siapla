@@ -42,7 +42,7 @@ impl Query {
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
                 revision,
-            )?)
+            ))
             .order_by_asc(task::Column::Title)
             .all(txn)
             .await?;
@@ -57,7 +57,7 @@ impl Query {
                 resource::Column::RevCreated,
                 resource::Column::RevDeleted,
                 revision,
-            )?)
+            ))
             .order_by_asc(resource::Column::Name)
             .all(txn)
             .await?;
@@ -104,10 +104,7 @@ impl Query {
         Ok(Plan { revision })
     }
 
-    async fn bookings(
-        ctx: &Context,
-        revision: Option<Int64>,
-    ) -> anyhow::Result<Vec<GQLBooking>> {
+    async fn bookings(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLBooking>> {
         let txn = ctx.txn().await?;
         let revision = resolve_revision(txn, revision.map(i64::from)).await?;
         let res = crate::entity::booking::Entity::find()
@@ -115,7 +112,7 @@ impl Query {
                 crate::entity::booking::Column::RevCreated,
                 crate::entity::booking::Column::RevDeleted,
                 revision,
-            )?)
+            ))
             .order_by_asc(crate::entity::booking::Column::TaskId)
             .order_by_asc(crate::entity::booking::Column::Start)
             .all(txn)
