@@ -1,6 +1,9 @@
 use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
-use sea_orm::{ActiveValue, ConnectionTrait as _, EntityTrait as _, QueryFilter as _, prelude::*};
+use sea_orm::{
+    ActiveValue, ColumnTrait as _, Condition, ConnectionTrait as _, EntityTrait as _,
+    QueryFilter as _, prelude::*,
+};
 
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
@@ -43,8 +46,6 @@ impl Mutation {
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-        // task_id is now the header_id; soft-delete the active iteration that
-        // belongs to this header.
         let res = task::Entity::update_many()
             .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
             .filter(task::Column::HeaderId.eq(task_id))
@@ -53,6 +54,28 @@ impl Mutation {
             .await?;
         let ok = res.rows_affected > 0;
         if ok {
+            dependency::Entity::update_many()
+                .col_expr(
+                    dependency::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(
+                    Condition::any()
+                        .add(dependency::Column::PredecessorId.eq(task_id))
+                        .add(dependency::Column::SuccessorId.eq(task_id)),
+                )
+                .filter(dependency::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+            resource_constraint::Entity::update_many()
+                .col_expr(
+                    resource_constraint::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(resource_constraint::Column::TaskId.eq(task_id))
+                .filter(resource_constraint::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
             ctx.app_state().notify_modified("graphql".to_string());
         }
         Ok(ok)
@@ -84,6 +107,24 @@ impl Mutation {
             .await?;
         let ok = res.rows_affected > 0;
         if ok {
+            availability::Entity::update_many()
+                .col_expr(
+                    availability::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(availability::Column::ResourceId.eq(resource_id))
+                .filter(availability::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
+            vacation::Entity::update_many()
+                .col_expr(
+                    vacation::Column::RevDeleted,
+                    Expr::value(Value::BigInt(Some(revision_id))),
+                )
+                .filter(vacation::Column::ResourceId.eq(resource_id))
+                .filter(vacation::Column::RevDeleted.is_null())
+                .exec(txn)
+                .await?;
             ctx.app_state().notify_modified("graphql".to_string());
         }
         Ok(ok)
