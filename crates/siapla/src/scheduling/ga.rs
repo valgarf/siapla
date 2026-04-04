@@ -858,71 +858,68 @@ pub fn plan_task(
         let mut best_candidate: Option<(HashMap<i32, Slot>, HashMap<i32, usize>, NaiveDateTime)> =
             None;
         for sel_iter in selectable_iterators.iter_mut() {
-            loop {
-                if let Some(sel_slot) = sel_iter.current() {
-                    let inter = primary_intervals.intersection(&sel_slot.intervals);
-                    if inter.length().unwrap_or_default() >= effort {
-                        // feasible candidate: build result map and removals
-                        let mut result_map: HashMap<i32, Slot> = HashMap::new();
-                        let mut removals: HashMap<i32, usize> = HashMap::new();
-                        for pi in primary_iterators.iter() {
-                            let idx = pi.current_idx;
-                            let slot = pi.current().expect("slot must exist").clone();
-                            result_map.insert(pi.resource_id, slot.clone());
-                            removals.insert(pi.resource_id, idx);
-                        }
-                        let sidx = sel_iter.current_idx;
-                        let sslot = sel_iter.current().expect("slot must exist").clone();
-                        result_map.insert(sel_iter.resource_id, sslot.clone());
-                        removals.insert(sel_iter.resource_id, sidx);
+            while let Some(sel_slot) = sel_iter.current() {
+                let inter = primary_intervals.intersection(&sel_slot.intervals);
+                if inter.length().unwrap_or_default() >= effort {
+                    // feasible candidate: build result map and removals
+                    let mut result_map: HashMap<i32, Slot> = HashMap::new();
+                    let mut removals: HashMap<i32, usize> = HashMap::new();
+                    for pi in primary_iterators.iter() {
+                        let idx = pi.current_idx;
+                        let slot = pi.current().expect("slot must exist").clone();
+                        result_map.insert(pi.resource_id, slot.clone());
+                        removals.insert(pi.resource_id, idx);
+                    }
+                    let sidx = sel_iter.current_idx;
+                    let sslot = sel_iter.current().expect("slot must exist").clone();
+                    result_map.insert(sel_iter.resource_id, sslot.clone());
+                    removals.insert(sel_iter.resource_id, sidx);
 
-                        let assigned_intervals = _reduce_intervals(
-                            primary_intervals.intersection(&sslot.intervals),
-                            effort,
-                        );
-                        let hull = assigned_intervals.hull().expect("Cannot be empty");
-                        let end_ts = hull.end().value().expect("no unbounded intervals");
-                        let assigned_slot = Slot {
-                            range: hull,
-                            extensible: false,
-                            duration: effort,
-                            intervals: assigned_intervals,
-                        };
-                        for rid in result_map.keys().cloned().collect::<Vec<_>>() {
-                            result_map.insert(rid, assigned_slot.clone());
-                        }
+                    let assigned_intervals = _reduce_intervals(
+                        primary_intervals.intersection(&sslot.intervals),
+                        effort,
+                    );
+                    let hull = assigned_intervals.hull().expect("Cannot be empty");
+                    let end_ts = hull.end().value().expect("no unbounded intervals");
+                    let assigned_slot = Slot {
+                        range: hull,
+                        extensible: false,
+                        duration: effort,
+                        intervals: assigned_intervals,
+                    };
+                    for rid in result_map.keys().cloned().collect::<Vec<_>>() {
+                        result_map.insert(rid, assigned_slot.clone());
+                    }
 
-                        if let Some((_, _, best_end)) = &best_candidate {
-                            if end_ts < *best_end {
-                                best_candidate = Some((result_map, removals, end_ts));
-                            }
-                        } else {
+                    if let Some((_, _, best_end)) = &best_candidate {
+                        if end_ts < *best_end {
                             best_candidate = Some((result_map, removals, end_ts));
                         }
-                        break;
                     } else {
-                        // not enough overlap: advance selectable iterator and try again
-                        sel_iter.advance();
-                        // stop if selectable no longer overlaps the primary interval
-                        let primary_max_end = primary_intervals
-                            .clone()
-                            .into_iter()
-                            .map(|iv| iv.end().value().expect("no unbound intervals"))
-                            .max()
-                            .unwrap_or(project.calculation_end);
-                        if let Some(curr) = sel_iter.current() {
-                            let sel_start =
-                                curr.range.start().value().expect("no unbound intervals");
-                            if sel_start >= primary_max_end {
-                                break;
-                            }
-                        } else {
+                        best_candidate = Some((result_map, removals, end_ts));
+                    }
+                    break;
+                } else {
+                    // not enough overlap: advance selectable iterator and try again
+                    sel_iter.advance();
+                    // stop if selectable no longer overlaps the primary interval
+                    let primary_max_end = primary_intervals
+                        .clone()
+                        .into_iter()
+                        .map(|iv| iv.end().value().expect("no unbound intervals"))
+                        .max()
+                        .unwrap_or(project.calculation_end);
+                    if let Some(curr) = sel_iter.current() {
+                        let sel_start =
+                            curr.range.start().value().expect("no unbound intervals");
+                        if sel_start >= primary_max_end {
                             break;
                         }
+                    } else {
+                        break;
                     }
-                } else {
-                    break;
                 }
+
             }
         }
 
@@ -967,7 +964,7 @@ pub fn plan_task(
         }
 
         // no candidate found for current primary positions -> advance earliest primary slot
-        if let Err(_) = _advance_earliest_slot(&mut primary_iterators) {
+        if _advance_earliest_slot(&mut primary_iterators).is_err() {
             return Err(Some(PlanningIssue {
                 code: crate::gql::issue::IssueCode::NoSlotFound,
                 description: "Failed to find overlapping slots for the given resource constraints."

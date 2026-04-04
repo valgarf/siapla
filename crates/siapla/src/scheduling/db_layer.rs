@@ -608,7 +608,7 @@ pub fn add_slot_availability(
 
 pub async fn query_slots(
     ctx: &Context,
-    resources: &Vec<Rc<RefCell<Resource>>>,
+    resources: &[Rc<RefCell<Resource>>],
     start: NaiveDateTime,
     end: NaiveDateTime,
     revision: i64,

@@ -286,7 +286,7 @@ pub async fn query_task_history(
     limit: Option<i32>,
 ) -> anyhow::Result<TaskHistoryResult> {
     let txn = ctx.txn().await?;
-    let limit = (limit.unwrap_or(30).min(50).max(1)) as usize;
+    let limit = (limit.unwrap_or(30).clamp(1,50)) as usize;
 
     let from_rev: Option<i64> = match (from_revision, from_timestamp) {
         (Some(rev), _) => Some(rev.0),

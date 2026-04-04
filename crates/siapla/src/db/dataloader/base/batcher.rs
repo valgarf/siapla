@@ -60,10 +60,7 @@ impl<B: Batcher> dataloader::BatchFn<B::Key, B::Value> for BatcherWrapper<B> {
         let ctx = self.ctx.upgrade();
         match ctx {
             None => Default::default(),
-            Some(ctx) => match self.batcher.load(&ctx, values).await {
-                Ok(data) => data,
-                Err(_) => Default::default(),
-            },
+            Some(ctx) => self.batcher.load(&ctx, values).await.unwrap_or_default(),
         }
     }
 }

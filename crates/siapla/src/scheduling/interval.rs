@@ -39,10 +39,7 @@ impl<T: IntervalValue> Bound<T> {
     }
 
     pub fn is_closed(&self) -> bool {
-        match self {
-            Bound::Closed(_) => true,
-            _ => false,
-        }
+        matches!(self, Bound::Closed(_))
     }
 
     pub fn switch(&self) -> Self {
