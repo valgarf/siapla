@@ -5,18 +5,19 @@ use sea_orm::ActiveValue;
 
 pub struct GQLVacation {
     pub model: vacation::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 impl GQLVacation {
-    pub fn at_revision(model: vacation::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: vacation::Model, revision: i64) -> Self {
         Self { model, revision }
     }
 }
 
 impl From<vacation::Model> for GQLVacation {
     fn from(model: vacation::Model) -> Self {
-        Self { model, revision: None }
+        let revision = model.rev_created;
+        Self { model, revision }
     }
 }
 

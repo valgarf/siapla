@@ -5,7 +5,6 @@ use crate::{
     entity::{availability, resource_iteration as resource},
     gql::context::Context,
 };
-use anyhow::anyhow;
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
 use strum::{EnumString, IntoStaticStr};
@@ -31,18 +30,19 @@ impl From<Weekday> for String {
 
 pub struct GQLAvailability {
     pub model: availability::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 impl GQLAvailability {
-    pub fn at_revision(model: availability::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: availability::Model, revision: i64) -> Self {
         Self { model, revision }
     }
 }
 
 impl From<availability::Model> for GQLAvailability {
     fn from(model: availability::Model) -> Self {
-        Self { model, revision: None }
+        let revision = model.rev_created;
+        Self { model, revision }
     }
 }
 
@@ -53,18 +53,14 @@ impl GQLAvailability {
         &self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let txn = ctx.txn().await?;
-        let revision = crate::revisioning::resolve_revision(txn, self.revision)
-            .await?
-            .ok_or(anyhow!("No revision found in database"))?;
         let loader = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<resource::Entity> {
-                revision,
+                revision: self.revision,
                 col: resource::Column::HeaderId,
             })
             .await;
         let model = loader.load_one(self.model.resource_id.into()).await?;
-        let model = model.ok_or(anyhow!("Failed to find resource for Availability"))?;
+        let model = model.ok_or(anyhow::anyhow!("Failed to find resource for Availability"))?;
         Ok(GQLResource::at_revision(model, self.revision))
     }
     fn duration(&self) -> anyhow::Result<i32> {
@@ -164,7 +160,7 @@ pub async fn update_availability(
         let update_models: Vec<&AvailabilityInput> =
             availability.iter().filter(|a| update.contains(&a.weekday)).collect();
         if existing_models.len() != update_models.len() {
-            return Err(anyhow!("Internal error trying to update the availability."));
+            return Err(anyhow::anyhow!("Internal error trying to update the availability."));
         }
         let update_models: Vec<(&availability::Model, &AvailabilityInput)> =
             zip(existing_models, update_models)

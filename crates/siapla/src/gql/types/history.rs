@@ -48,7 +48,7 @@ pub struct TaskIterationChange {
     ts: DateTime<Utc>,
     ct: ChangeType,
     task_model: task::Model,
-    revision: Option<i64>,
+    revision: i64,
 }
 
 #[graphql_object]
@@ -76,7 +76,7 @@ pub struct BookingChange {
     ts: DateTime<Utc>,
     ct: ChangeType,
     booking_model: Option<booking::Model>,
-    revision: Option<i64>,
+    revision: i64,
 }
 
 #[graphql_object]
@@ -446,7 +446,7 @@ pub async fn query_task_history(
                     ts,
                     ct,
                     task_model: (*t).clone(),
-                    revision: Some(rev_id),
+                    revision: rev_id,
                 }
                 .into(),
             );
@@ -461,7 +461,7 @@ pub async fn query_task_history(
                         ts,
                         ct: ChangeType::Deleted,
                         task_model: (*t).clone(),
-                        revision: Some(rev_id),
+                        revision: rev_id,
                     }
                     .into(),
                 );
@@ -529,7 +529,7 @@ pub async fn query_task_history(
                         ts,
                         ct: ChangeType::Created,
                         booking_model: Some(b.clone()),
-                        revision: Some(rev_id),
+                        revision: rev_id,
                     }
                     .into(),
                 );
@@ -541,7 +541,7 @@ pub async fn query_task_history(
                         ts,
                         ct: ChangeType::Deleted,
                         booking_model: None,
-                        revision: Some(rev_id),
+                        revision: rev_id,
                     }
                     .into(),
                 );

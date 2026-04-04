@@ -29,7 +29,7 @@ impl Plan {
             .all(txn)
             .await?
             .into_iter()
-            .map(|m| GQLAllocation::at_revision(m, Some(revision)))
+            .map(|m| GQLAllocation::at_revision(m, revision))
             .collect())
     }
 }

@@ -13,7 +13,7 @@ use itertools::Itertools as _;
 use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, Order, QueryFilter, QueryOrder};
 
 use super::context::Context;
-use crate::{ColumnIntoUsize, RevModeEntity};
+use crate::{ColumnIntoUsize, Link, RangeRevColumns};
 
 use crate::entity::{availability, resource_iteration as resource, vacation};
 use crate::scheduling::{Interval, Intervals};
@@ -347,7 +347,7 @@ pub async fn query_combined_availability(
 
     let db_resources = resource::Entity::find()
         .filter(resource::Column::HeaderId.is_in(resource_ids.clone()))
-        .filter(resource::Entity::rev_condition(revision))
+        .filter(resource::Entity::condition(revision))
         .all(db)
         .await?;
     let res_map = db_resources
@@ -357,12 +357,12 @@ pub async fn query_combined_availability(
 
     let db_availabilities = availability::Entity::find()
         .filter(availability::Column::ResourceId.is_in(id_set.clone()))
-        .filter(availability::Entity::rev_condition(revision))
+        .filter(availability::Entity::condition(revision))
         .all(db)
         .await?;
     let db_vacations = vacation::Entity::find()
         .filter(vacation::Column::ResourceId.is_in(id_set.clone()))
-        .filter(vacation::Entity::rev_condition(revision))
+        .filter(vacation::Entity::condition(revision))
         .filter(vacation::Column::From.lt(end))
         .filter(vacation::Column::Until.gt(start))
         .order_by(vacation::Column::From, Order::Asc)
@@ -506,7 +506,7 @@ where
 
 impl<ET> Batcher for ByColRevBatcher<ET>
 where
-    ET: RevModeEntity,
+    ET: RangeRevColumns,
     ET::Model: Send + Sync,
 {
     type Key = sea_orm::Value;
@@ -520,7 +520,7 @@ where
         let txn = ctx.txn().await?;
         let query = ET::find()
             .filter(self.col.is_in(values.to_vec()))
-            .filter(ET::rev_condition(self.revision));
+            .filter(ET::condition(self.revision));
 
         let models: Vec<ET::Model> = query.order_by_asc(self.col).all(txn).await?;
 
@@ -539,12 +539,112 @@ where
 
 impl<ET> BatcherToKey for ByColRevBatcher<ET>
 where
-    ET: RevModeEntity,
+    ET: RangeRevColumns,
     ET::Column: ColumnIntoUsize,
     ET::Model: Send + Sync,
 {
     type MapKey = (i64, usize);
     fn loader_map_key(&self) -> Self::MapKey {
         (self.revision, self.col.to_column_index())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LinkBatcher – batch-loads targets through a link table
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct LinkBatcher<L: Link> {
+    pub revision: i64,
+    _phantom: std::marker::PhantomData<L>,
+}
+
+impl<L: Link> LinkBatcher<L> {
+    pub fn new(revision: i64) -> Self {
+        Self { revision, _phantom: std::marker::PhantomData }
+    }
+}
+
+impl<L: Link> Batcher for LinkBatcher<L>
+where
+    <L::LinkEntity as EntityTrait>::Model: Send + Sync + Clone,
+    <L::TargetEntity as EntityTrait>::Model: Send + Sync + Clone,
+    L::TargetEntity: RangeRevColumns,
+{
+    type Key = sea_orm::Value;
+    type Value = Vec<<L::TargetEntity as EntityTrait>::Model>;
+
+    async fn load(
+        &self,
+        ctx: &Context,
+        keys: &[Self::Key],
+    ) -> Result<HashMap<Self::Key, Self::Value>, anyhow::Error> {
+        let txn = ctx.txn().await?;
+
+        // 1. Query link table, optionally filtered by revision
+        let mut link_query =
+            L::LinkEntity::find().filter(L::link_filter_col().is_in(keys.to_vec()));
+        if let Some(cond) = L::link_revision_condition(self.revision) {
+            link_query = link_query.filter(cond);
+        }
+        let links: Vec<<L::LinkEntity as EntityTrait>::Model> = link_query.all(txn).await?;
+
+        // 2. Group by source key → target ids
+        let mut source_to_target_ids: HashMap<sea_orm::Value, Vec<sea_orm::Value>> =
+            HashMap::new();
+        for link in &links {
+            let source_key = link.get(L::link_filter_col());
+            let target_id = L::extract_target_id(link);
+            source_to_target_ids.entry(source_key).or_default().push(target_id);
+        }
+
+        let all_target_ids: Vec<sea_orm::Value> =
+            source_to_target_ids.values().flat_map(|ids| ids.iter().cloned()).collect();
+
+        if all_target_ids.is_empty() {
+            let mut res = HashMap::new();
+            for k in keys {
+                res.insert(k.clone(), Vec::new());
+            }
+            return Ok(res);
+        }
+
+        // 3. Query target table with revision filter
+        let targets: Vec<<L::TargetEntity as EntityTrait>::Model> = L::TargetEntity::find()
+            .filter(L::target_match_col().is_in(all_target_ids))
+            .filter(L::TargetEntity::condition(self.revision))
+            .all(txn)
+            .await?;
+
+        let mut target_map: HashMap<sea_orm::Value, <L::TargetEntity as EntityTrait>::Model> =
+            HashMap::new();
+        for m in targets {
+            target_map.insert(m.get(L::target_match_col()), m);
+        }
+
+        // 4. Assemble results grouped by source key
+        let mut res: HashMap<sea_orm::Value, Self::Value> = HashMap::new();
+        for (source_key, target_ids) in &source_to_target_ids {
+            let models: Vec<_> =
+                target_ids.iter().filter_map(|tid| target_map.get(tid).cloned()).collect();
+            res.insert(source_key.clone(), models);
+        }
+        for k in keys {
+            res.entry(k.clone()).or_default();
+        }
+
+        Ok(res)
+    }
+}
+
+impl<L: Link> BatcherToKey for LinkBatcher<L>
+where
+    <L::LinkEntity as EntityTrait>::Model: Send + Sync + Clone,
+    <L::TargetEntity as EntityTrait>::Model: Send + Sync + Clone,
+    L::TargetEntity: RangeRevColumns,
+{
+    type MapKey = i64;
+    fn loader_map_key(&self) -> Self::MapKey {
+        self.revision
     }
 }

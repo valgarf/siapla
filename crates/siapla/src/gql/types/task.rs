@@ -17,8 +17,9 @@ use crate::{
         resource_iteration as resource, task_header, task_iteration as task,
     },
     gql::{
-        common::{nullable_to_av, resolve_many_to_many},
+        common::nullable_to_av,
         context::Context,
+        dataloader::LinkBatcher,
     },
     revisioning::{PlanState, active_for_revision, create_revision},
 };
@@ -50,23 +51,25 @@ impl From<TaskDesignation> for String {
 
 pub struct GQLTask {
     pub model: task::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
     pub header_model: Option<task_header::Model>,
 }
 
 impl GQLTask {
-    pub fn at_revision(model: task::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: task::Model, revision: i64) -> Self {
         Self { model, revision, header_model: None }
     }
 
     pub fn with_header(model: task::Model, header_model: task_header::Model) -> Self {
-        Self { model, revision: None, header_model: Some(header_model) }
+        let revision = model.rev_created;
+        Self { model, revision, header_model: Some(header_model) }
     }
 }
 
 impl From<task::Model> for GQLTask {
     fn from(model: task::Model) -> Self {
-        Self { model, revision: None, header_model: None }
+        let revision = model.rev_created;
+        Self { model, revision, header_model: None }
     }
 }
 
@@ -119,36 +122,22 @@ impl GQLTask {
 
     // -- Predecessors (revision-aware via revision-aware dataloader) ---------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let rev = self.revision;
-        let header_id = self.model.header_id;
-        let models: Vec<task::Model> = resolve_many_to_many!(
-            ctx,
-            rev,
-            dependency::Entity,
-            dependency::Column::SuccessorId,
-            header_id,
-            |d: dependency::Model| d.predecessor_id,
-            task::Entity,
-            task::Column::HeaderId
-        )?;
-        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, rev)).collect())
+        let models = ctx
+            .loader(LinkBatcher::<crate::PredecessorTaskIterations>::new(self.revision))
+            .await
+            .load(self.model.header_id.into())
+            .await?;
+        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     // -- Successors (revision-aware via revision-aware dataloader) -----------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let rev = self.revision;
-        let header_id = self.model.header_id;
-        let models: Vec<task::Model> = resolve_many_to_many!(
-            ctx,
-            rev,
-            dependency::Entity,
-            dependency::Column::PredecessorId,
-            header_id,
-            |d: dependency::Model| d.successor_id,
-            task::Entity,
-            task::Column::HeaderId
-        )?;
-        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, rev)).collect())
+        let models = ctx
+            .loader(LinkBatcher::<crate::SuccessorTaskIterations>::new(self.revision))
+            .await
+            .load(self.model.header_id.into())
+            .await?;
+        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
@@ -159,7 +148,7 @@ impl GQLTask {
             .filter(active_for_revision(
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
-                self.revision,
+                Some(self.revision),
             ))
             .order_by_asc(task::Column::Title)
             .all(txn)
@@ -168,19 +157,16 @@ impl GQLTask {
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
-        let Some(revision) = self.revision else {
-            return Ok(Vec::new());
-        };
         let header_id = self.model.header_id;
         let issues = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::issue::Entity> {
-                revision,
+                revision: self.revision,
                 col: crate::entity::issue::Column::TaskId,
             })
             .await
             .load(header_id.into())
             .await?;
-        Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
+        Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, self.revision)).collect())
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
@@ -194,7 +180,7 @@ impl GQLTask {
             .filter(active_for_revision(
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
-                self.revision,
+                Some(self.revision),
             ))
             .one(txn)
             .await?;
@@ -213,7 +199,7 @@ impl GQLTask {
             .filter(active_for_revision(
                 resource_constraint::Column::RevCreated,
                 resource_constraint::Column::RevDeleted,
-                self.revision,
+                Some(self.revision),
             ))
             .order_by_asc(resource_constraint::Column::Id)
             .all(txn)
@@ -226,19 +212,16 @@ impl GQLTask {
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
         let header_id = self.model.header_id;
-        let Some(revision) = self.revision else {
-            return Ok(Vec::new());
-        };
         let mut res = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::allocation::Entity> {
-                revision,
+                revision: self.revision,
                 col: allocation::Column::TaskId,
             })
             .await
             .load(header_id.into())
             .await?;
         res.sort_by_key(|a| a.end);
-        Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, Some(revision))).collect())
+        Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, self.revision)).collect())
     }
 }
 
@@ -259,7 +242,7 @@ impl GQLTask {
 
 pub struct GQLResourceConstraint {
     pub model: resource_constraint::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 #[graphql_object]
@@ -292,7 +275,7 @@ impl GQLResourceConstraint {
 
 pub struct GQLResourceConstraintEntry {
     pub model: resource_constraint_entry::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 #[graphql_object]
@@ -302,13 +285,9 @@ impl GQLResourceConstraintEntry {
         self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let txn = ctx.txn().await?;
-        let revision = crate::revisioning::resolve_revision(txn, self.revision)
-            .await?
-            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let model = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<resource::Entity> {
-                revision,
+                revision: self.revision,
                 col: resource::Column::HeaderId,
             })
             .await

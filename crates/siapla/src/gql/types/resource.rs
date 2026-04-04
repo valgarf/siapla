@@ -6,7 +6,6 @@ use sea_orm::prelude::*;
 use tracing::error;
 
 use crate::gql::dataloader::{AvailabilityBatcher, ByColBatcher, ByColRevBatcher};
-use crate::revisioning::resolve_revision;
 use crate::{
     entity::{availability, holiday, resource_header, resource_iteration as resource, vacation},
     gql::{
@@ -49,23 +48,25 @@ impl GQLInterval {
 
 pub struct GQLResource {
     pub model: resource::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
     pub header_model: Option<resource_header::Model>,
 }
 
 impl GQLResource {
-    pub fn at_revision(model: resource::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: resource::Model, revision: i64) -> Self {
         Self { model, revision, header_model: None }
     }
 
     pub fn with_header(model: resource::Model, header_model: resource_header::Model) -> Self {
-        Self { model, revision: None, header_model: Some(header_model) }
+        let revision = model.rev_created;
+        Self { model, revision, header_model: Some(header_model) }
     }
 }
 
 impl From<resource::Model> for GQLResource {
     fn from(model: resource::Model) -> Self {
-        Self { model, revision: None, header_model: None }
+        let revision = model.rev_created;
+        Self { model, revision, header_model: None }
     }
 }
 
@@ -116,12 +117,9 @@ impl GQLResource {
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
         let resource_id = self.model.header_id;
-        let revision = resolve_revision(ctx.txn().await?, self.revision)
-            .await?
-            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let availability = ctx
             .loader(ByColRevBatcher::<availability::Entity> {
-                revision,
+                revision: self.revision,
                 col: availability::Column::ResourceId,
             })
             .await
@@ -135,12 +133,9 @@ impl GQLResource {
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
         let resource_id = self.model.header_id;
-        let revision = resolve_revision(ctx.txn().await?, self.revision)
-            .await?
-            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let vacation = ctx
             .loader(ByColRevBatcher::<vacation::Entity> {
-                revision,
+                revision: self.revision,
                 col: vacation::Column::ResourceId,
             })
             .await
@@ -157,10 +152,7 @@ impl GQLResource {
     ) -> anyhow::Result<Vec<GQLInterval>> {
         let start = start.naive_utc();
         let end = end.naive_utc();
-        let txn = ctx.txn().await?;
-        let revision = resolve_revision(txn, self.revision)
-            .await?
-            .ok_or(anyhow::anyhow!("No revision found in database"))?;
+        let revision = self.revision;
         let loader = ctx.loader(AvailabilityBatcher { start, end, revision }).await;
 
         let ivs = loader.load(self.model.id).await.inspect_err(|e| {

@@ -1,8 +1,6 @@
-use crate::gql::common::resolve_many_to_many;
 use crate::gql::dataloader::{ByColBatcher, ByColRevBatcher};
-use crate::revisioning::resolve_revision;
 use crate::{
-    entity::{booking, booking_resource, resource_iteration as resource, task_iteration as task},
+    entity::{booking, resource_iteration as resource, task_iteration as task},
     gql::context::Context,
 };
 use chrono::{DateTime, Utc};
@@ -13,18 +11,19 @@ use super::task::GQLTask;
 
 pub struct GQLBooking {
     pub model: booking::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 impl GQLBooking {
-    pub fn at_revision(model: booking::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: booking::Model, revision: i64) -> Self {
         Self { model, revision }
     }
 }
 
 impl From<booking::Model> for GQLBooking {
     fn from(model: booking::Model) -> Self {
-        Self { model, revision: None }
+        let revision = model.rev_created;
+        Self { model, revision }
     }
 }
 
@@ -48,35 +47,39 @@ impl GQLBooking {
     }
 
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models: Vec<resource::Model> = resolve_many_to_many!(
-            ctx,
-            target_revision: self.revision,
-            booking_resource::Entity,
-            booking_resource::Column::BookingId,
-            self.model.id,
-            |l: booking_resource::Model| l.resource_id,
-            resource::Entity,
-            resource::Column::HeaderId
-        )?;
-        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
+        let models: Vec<resource::Model> = ctx
+            .loader(
+                crate::gql::dataloader::LinkBatcher::<crate::ResourceIterationsFromBooking>::new(
+                    self.revision,
+                ),
+            )
+            .await
+            .load(self.model.id.into())
+            .await?;
+        Ok(models
+            .into_iter()
+            .map(|m| GQLResource::at_revision(m, self.revision))
+            .collect())
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        let txn = ctx.txn().await?;
-        let revision = resolve_revision(txn, self.revision)
-            .await?
-            .ok_or(anyhow::anyhow!("No revision found in database"))?;
-        let loader = ctx
-            .loader(ByColRevBatcher::<task::Entity> { revision, col: task::Column::HeaderId })
-            .await;
-        if let Some(model) = loader.load_one(self.model.task_id.into()).await? {
+        let current = ctx
+            .loader(ByColRevBatcher::<task::Entity> {
+                revision: self.revision,
+                col: task::Column::HeaderId,
+            })
+            .await
+            .load_one(self.model.task_id.into())
+            .await?;
+        if let Some(model) = current {
             return Ok(GQLTask::at_revision(model, self.revision));
         }
-
-        let loader = ctx.loader(ByColBatcher::<task::Entity> { col: task::Column::Id }).await;
-        loader
-            .load_one(self.model.task_id.into())
+        let model = ctx
+            .loader(ByColBatcher::<task::Entity> { col: task::Column::Id })
             .await
-            .map(|opt_t| GQLTask::at_revision(opt_t.expect("Task must exist."), self.revision))
+            .load_one(self.model.task_id.into())
+            .await?
+            .expect("Task must exist.");
+        Ok(GQLTask::at_revision(model, self.revision))
     }
 }

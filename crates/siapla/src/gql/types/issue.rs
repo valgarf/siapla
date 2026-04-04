@@ -1,7 +1,6 @@
 use super::task::GQLTask;
 use crate::entity::task_iteration as task;
 use crate::{entity::issue, gql::context::Context};
-use anyhow::anyhow;
 use juniper::GraphQLEnum;
 use juniper::graphql_object;
 use std::str::FromStr;
@@ -9,18 +8,19 @@ use strum::{EnumString, FromRepr, IntoStaticStr};
 
 pub struct GQLIssue {
     pub model: issue::Model,
-    pub revision: Option<i64>,
+    pub revision: i64,
 }
 
 impl GQLIssue {
-    pub fn at_revision(model: issue::Model, revision: Option<i64>) -> Self {
+    pub fn at_revision(model: issue::Model, revision: i64) -> Self {
         Self { model, revision }
     }
 }
 
 impl From<issue::Model> for GQLIssue {
     fn from(model: issue::Model) -> Self {
-        Self { model, revision: None }
+        let revision = model.rev_created;
+        Self { model, revision }
     }
 }
 
@@ -43,13 +43,9 @@ impl GQLIssue {
         let Some(task_id) = self.model.task_id else {
             return Ok(None);
         };
-        let txn = ctx.txn().await?;
-        let revision = crate::revisioning::resolve_revision(txn, self.revision)
-            .await?
-            .ok_or(anyhow!("No revision found in database"))?;
         let revision_loader = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<task::Entity> {
-                revision,
+                revision: self.revision,
                 col: task::Column::HeaderId,
             })
             .await;

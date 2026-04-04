@@ -36,12 +36,14 @@ impl Query {
 
     async fn tasks(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLTask>> {
         let txn = ctx.txn().await?;
-        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
+        let revision = resolve_revision(txn, revision.map(i64::from))
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let res = task::Entity::find()
             .filter(active_for_revision(
                 task::Column::RevCreated,
                 task::Column::RevDeleted,
-                revision,
+                Some(revision),
             ))
             .order_by_asc(task::Column::Title)
             .all(txn)
@@ -51,12 +53,14 @@ impl Query {
 
     async fn resources(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLResource>> {
         let txn = ctx.txn().await?;
-        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
+        let revision = resolve_revision(txn, revision.map(i64::from))
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let res = resource::Entity::find()
             .filter(active_for_revision(
                 resource::Column::RevCreated,
                 resource::Column::RevDeleted,
-                revision,
+                Some(revision),
             ))
             .order_by_asc(resource::Column::Name)
             .all(txn)
@@ -106,12 +110,14 @@ impl Query {
 
     async fn bookings(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLBooking>> {
         let txn = ctx.txn().await?;
-        let revision = resolve_revision(txn, revision.map(i64::from)).await?;
+        let revision = resolve_revision(txn, revision.map(i64::from))
+            .await?
+            .ok_or(anyhow::anyhow!("No revision found in database"))?;
         let res = crate::entity::booking::Entity::find()
             .filter(active_for_revision(
                 crate::entity::booking::Column::RevCreated,
                 crate::entity::booking::Column::RevDeleted,
-                revision,
+                Some(revision),
             ))
             .order_by_asc(crate::entity::booking::Column::TaskId)
             .order_by_asc(crate::entity::booking::Column::Start)
@@ -135,7 +141,7 @@ impl Query {
             .order_by_asc(crate::entity::issue::Column::Id)
             .all(tx)
             .await?;
-        Ok(res.into_iter().map(|m| GQLIssue::at_revision(m, Some(revision))).collect())
+        Ok(res.into_iter().map(|m| GQLIssue::at_revision(m, revision)).collect())
     }
 
     async fn latest_revision(ctx: &Context) -> anyhow::Result<Option<Int64>> {
