@@ -65,7 +65,7 @@ impl GQLAllocation {
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
         let models: Vec<resource::Model> = resolve_many_to_many!(
             ctx,
-            target_revision: self.revision,
+            self.revision,
             allocated_resource::Entity,
             allocated_resource::Column::AllocationId,
             self.model.id,

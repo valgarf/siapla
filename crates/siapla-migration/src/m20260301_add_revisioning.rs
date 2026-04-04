@@ -95,7 +95,6 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-
         manager
             .alter_table(
                 Table::alter()
@@ -237,8 +236,16 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Allocation::Table)
                     .add_column(
-                        ColumnDef::new(Allocation::Revision).big_unsigned().not_null().default(1),
+                        ColumnDef::new(Allocation::RevCreated).big_unsigned().not_null().default(1),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Allocation::Table)
+                    .add_column(ColumnDef::new(Allocation::RevDeleted).big_unsigned().null())
                     .to_owned(),
             )
             .await?;
@@ -316,11 +323,19 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(AllocatedResource::Table)
                     .add_column(
-                        ColumnDef::new(AllocatedResource::Revision)
+                        ColumnDef::new(AllocatedResource::RevCreated)
                             .big_unsigned()
                             .not_null()
                             .default(1),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AllocatedResource::Table)
+                    .add_column(ColumnDef::new(AllocatedResource::RevDeleted).big_unsigned().null())
                     .to_owned(),
             )
             .await?;
@@ -330,8 +345,16 @@ impl MigrationTrait for Migration {
                 Table::alter()
                     .table(Issue::Table)
                     .add_column(
-                        ColumnDef::new(Issue::Revision).big_unsigned().not_null().default(1),
+                        ColumnDef::new(Issue::RevCreated).big_unsigned().not_null().default(1),
                     )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Issue::Table)
+                    .add_column(ColumnDef::new(Issue::RevDeleted).big_unsigned().null())
                     .to_owned(),
             )
             .await?;
@@ -400,8 +423,6 @@ impl MigrationTrait for Migration {
             .to_owned();
 
         db.execute(backend.build(&rewrite_task_parent_ids_to_headers)).await?;
-
-
 
         let fill_resource_header_ids = Query::update()
             .table(ResourceIteration::Table)
@@ -483,14 +504,11 @@ impl MigrationTrait for Migration {
 
         // Delete remaining (PLAN) allocated_resources and allocations to avoid
         // duplication when the backend recalculates on startup.
-        let delete_plan_allocated_resources = Query::delete()
-            .from_table(AllocatedResource::Table)
-            .to_owned();
+        let delete_plan_allocated_resources =
+            Query::delete().from_table(AllocatedResource::Table).to_owned();
         db.execute(backend.build(&delete_plan_allocated_resources)).await?;
 
-        let delete_plan_allocations = Query::delete()
-            .from_table(Allocation::Table)
-            .to_owned();
+        let delete_plan_allocations = Query::delete().from_table(Allocation::Table).to_owned();
         db.execute(backend.build(&delete_plan_allocations)).await?;
 
         manager
@@ -562,6 +580,24 @@ impl MigrationTrait for Migration {
             .and_where(Expr::col(ResourceHeader::RevDeleted).is_not_null())
             .to_owned();
         db.execute(backend.build(&delete_resource_header)).await?;
+
+        let delete_allocation = Query::delete()
+            .from_table(Allocation::Table)
+            .and_where(Expr::col(Allocation::RevDeleted).is_not_null())
+            .to_owned();
+        db.execute(backend.build(&delete_allocation)).await?;
+
+        let delete_allocated_resource = Query::delete()
+            .from_table(AllocatedResource::Table)
+            .and_where(Expr::col(AllocatedResource::RevDeleted).is_not_null())
+            .to_owned();
+        db.execute(backend.build(&delete_allocated_resource)).await?;
+
+        let delete_issue = Query::delete()
+            .from_table(Issue::Table)
+            .and_where(Expr::col(Issue::RevDeleted).is_not_null())
+            .to_owned();
+        db.execute(backend.build(&delete_issue)).await?;
         Ok(())
     }
 }
@@ -656,7 +692,8 @@ enum Allocation {
     End,
     AllocationType,
     Final,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(DeriveIden)]
@@ -684,11 +721,13 @@ enum AllocatedResource {
     Table,
     AllocationId,
     ResourceId,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(DeriveIden)]
 enum Issue {
     Table,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }

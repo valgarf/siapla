@@ -122,12 +122,16 @@ impl Query {
 
     async fn issues(ctx: &Context, revision: Option<Int64>) -> anyhow::Result<Vec<GQLIssue>> {
         let tx = ctx.txn().await?;
-        let revision = resolve_revision(tx, revision.map(i64::from)).await?;
+        let revision = resolve_plan_revision(tx, revision.map(i64::from)).await?;
         let Some(revision) = revision else {
             return Ok(Vec::new());
         };
         let res = crate::entity::issue::Entity::find()
-            .filter(crate::entity::issue::Column::Revision.eq(revision))
+            .filter(active_for_revision(
+                crate::entity::issue::Column::RevCreated,
+                crate::entity::issue::Column::RevDeleted,
+                Some(revision),
+            ))
             .order_by_asc(crate::entity::issue::Column::Id)
             .all(tx)
             .await?;

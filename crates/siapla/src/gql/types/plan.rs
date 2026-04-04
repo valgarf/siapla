@@ -1,9 +1,10 @@
 use crate::{
     entity::allocation,
     gql::{allocation::GQLAllocation, context::Context},
+    revisioning::active_for_revision,
 };
 use juniper::graphql_object;
-use sea_orm::{ColumnTrait as _, EntityTrait as _, QueryFilter as _, QueryOrder as _};
+use sea_orm::{EntityTrait as _, QueryFilter as _, QueryOrder as _};
 
 pub struct Plan {
     pub revision: Option<i64>,
@@ -19,7 +20,11 @@ impl Plan {
             return Ok(Vec::new());
         };
         Ok(allocation::Entity::find()
-            .filter(allocation::Column::Revision.eq(revision))
+            .filter(active_for_revision(
+                allocation::Column::RevCreated,
+                allocation::Column::RevDeleted,
+                Some(revision),
+            ))
             .order_by_asc(allocation::Column::TaskId)
             .all(txn)
             .await?

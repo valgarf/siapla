@@ -320,7 +320,7 @@ test.describe("Task History", () => {
         });
 
         // It should contain task data like designation
-        await expect(detail.getByText("Designation")).toBeVisible({
+        await expect(detail.getByText("TASK")).toBeVisible({
             timeout: 10_000,
         });
     });
@@ -406,7 +406,7 @@ test.describe("Task History", () => {
         const sidebar = await openHistorySidebar(page, "Breadcrumb Task");
 
         // The breadcrumb should show the task title as a clickable link
-        const breadcrumbEl = sidebar.locator(".q-breadcrumbs-el", {
+        const breadcrumbEl = sidebar.locator(".clickable", {
             hasText: "Breadcrumb Task",
         });
         await expect(breadcrumbEl).toBeVisible({ timeout: 10_000 });
@@ -415,12 +415,11 @@ test.describe("Task History", () => {
         // Should go back to the task sidebar (no longer history)
         // The history change list should disappear and the task title should
         // be shown in the normal sidebar heading
-        await expect(
-            sidebar.locator(".task-history-change-list"),
-        ).not.toBeVisible({ timeout: 10_000 });
-        await expect(sidebar.getByText("Breadcrumb Task")).toBeVisible({
-            timeout: 10_000,
-        });
+        // After going back, the sidebar should no longer show the history UI
+        // The sidebar auto-collapses when leaving history, so just verify
+        // the history change list is no longer in the DOM
+        const historyPanel = page.locator(".task-history-change-list");
+        await expect(historyPanel).toHaveCount(0, { timeout: 10_000 });
     });
 
     test("latest button loads most recent revisions", async ({ page }) => {
@@ -501,12 +500,12 @@ test.describe("Task History", () => {
         );
         await expect(revisionEntries.first()).toBeVisible({ timeout: 10_000 });
 
-        // Click on the last entry (oldest = creation) and verify it shows V1
+        // After jumpToStart with FORWARD direction, entries are oldest-first.
+        // The first entry should be the oldest (creation with V1 title).
         const entryCount = await revisionEntries.count();
         expect(entryCount).toBeGreaterThanOrEqual(1);
 
-        const lastEntry = revisionEntries.nth(entryCount - 1);
-        await lastEntry.click();
+        await revisionEntries.first().click();
 
         const detail = sidebar.locator(".task-history-detail");
         await expect(detail).toBeVisible({ timeout: 10_000 });

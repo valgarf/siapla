@@ -145,11 +145,12 @@ import {
   type DependencyChangeData,
   type ResourceConstraintChangeData,
 } from 'src/stores/taskHistory';
-import TaskSnapshotReadonly, {
-  type TaskSnapshotReadonlyData,
-  type TaskSnapshotReadonlyResourceConstraint,
-  type TaskSnapshotReadonlyBooking,
-} from 'src/components/task/TaskSnapshotReadonly.vue';
+import TaskSnapshotReadonly from 'src/components/task/TaskSnapshotReadonly.vue';
+import type {
+  TaskSnapshotReadonlyData,
+  TaskSnapshotReadonlyResourceConstraint,
+  TaskSnapshotReadonlyBooking,
+} from 'src/components/task/TaskSnapshotReadonlyTypes';
 
 const props = defineProps<{
   taskHeaderId: number;
@@ -262,13 +263,13 @@ function resourceRefToResource(refResource: {
 function deriveRequirements(snapshot: TaskSnapshotData): Task[] {
   return snapshot.predecessors
     .map(taskRefToTask)
-    .filter((task) => task.designation === 'REQUIREMENT');
+    .filter((task) => task.designation === TaskDesignation.Requirement);
 }
 
 function deriveMilestones(snapshot: TaskSnapshotData): Task[] {
   return snapshot.successors
     .map(taskRefToTask)
-    .filter((task) => task.designation === 'MILESTONE');
+    .filter((task) => task.designation === TaskDesignation.Milestone);
 }
 
 const readonlySnapshot = computed<TaskSnapshotReadonlyData>(() => {
@@ -278,7 +279,7 @@ const readonlySnapshot = computed<TaskSnapshotReadonlyData>(() => {
       dbId: props.taskHeaderId,
       title: '',
       description: '',
-      designation: 'TASK',
+      designation: TaskDesignation.Task,
       earliestStart: null,
       scheduleTarget: null,
       effort: null,

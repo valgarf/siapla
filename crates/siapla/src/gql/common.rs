@@ -68,18 +68,10 @@ macro_rules! resolve_many_to_many {
                 let target_ids: ::std::vec::Vec<::sea_orm::Value> =
                     links.iter().map(|link| $target_id_field(link.clone()).into()).collect();
                 let targets = target_loader.load_many_one(target_ids.clone()).await?;
-                target_ids
+                Ok(target_ids
                     .into_iter()
-                    .map(|target_id| {
-                        targets.get(&target_id).cloned().flatten().ok_or_else(|| {
-                            ::anyhow::anyhow!(
-                                "Could not resolve link between {} and {}",
-                                ::std::any::type_name::<$link_ent>(),
-                                ::std::any::type_name::<$target_ent>()
-                            )
-                        })
-                    })
-                    .collect::<::anyhow::Result<::std::vec::Vec<_>>>()
+                    .filter_map(|target_id| targets.get(&target_id).cloned().flatten())
+                    .collect::<::std::vec::Vec<_>>())
             }
         }
     }};
@@ -106,18 +98,10 @@ macro_rules! resolve_many_to_many {
                 let target_ids: ::std::vec::Vec<::sea_orm::Value> =
                     links.iter().map(|link| $target_id_field(link.clone()).into()).collect();
                 let targets = target_loader.load_many_one(target_ids.clone()).await?;
-                target_ids
+                Ok(target_ids
                     .into_iter()
-                    .map(|target_id| {
-                        targets.get(&target_id).cloned().flatten().ok_or_else(|| {
-                            ::anyhow::anyhow!(
-                                "Could not resolve link between {} and {}",
-                                ::std::any::type_name::<$link_ent>(),
-                                ::std::any::type_name::<$target_ent>()
-                            )
-                        })
-                    })
-                    .collect::<::anyhow::Result<::std::vec::Vec<_>>>()
+                    .filter_map(|target_id| targets.get(&target_id).cloned().flatten())
+                    .collect::<::std::vec::Vec<_>>())
             }
         }
     }};

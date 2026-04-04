@@ -257,11 +257,12 @@ import {
   type TaskIterationChangeData,
   type TaskSnapshotData,
 } from 'src/stores/taskHistory';
-import TaskSnapshotReadonly, {
-  type TaskSnapshotReadonlyBooking,
-  type TaskSnapshotReadonlyData,
-  type TaskSnapshotReadonlyResourceConstraint,
-} from 'src/components/task/TaskSnapshotReadonly.vue';
+import TaskSnapshotReadonly from 'src/components/task/TaskSnapshotReadonly.vue';
+import type {
+  TaskSnapshotReadonlyBooking,
+  TaskSnapshotReadonlyData,
+  TaskSnapshotReadonlyResourceConstraint,
+} from 'src/components/task/TaskSnapshotReadonlyTypes';
 
 const props = defineProps<{
   taskHeaderId: number;

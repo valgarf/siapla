@@ -17,7 +17,8 @@ pub struct Model {
     pub id: i32,
     pub allocation_id: i32,
     pub resource_id: i32,
-    pub revision: i64,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -25,7 +26,8 @@ pub enum Column {
     Id,
     AllocationId,
     ResourceId,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -53,7 +55,8 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::AllocationId => ColumnType::Integer.def(),
             Self::ResourceId => ColumnType::Integer.def(),
-            Self::Revision => ColumnType::BigInteger.def(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

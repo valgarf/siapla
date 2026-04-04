@@ -1392,7 +1392,7 @@ async fn test_plan_visible_after_task_modification() {
     ))
     .await;
     exec_raw_sql(&format!(
-        "INSERT INTO allocation (task_id, start, end, revision) \
+        "INSERT INTO allocation (task_id, start, end, rev_created) \
          VALUES ({task_header_id}, '2025-06-01T00:00:00Z', '2025-06-10T00:00:00Z', {plan_revision})"
     ))
     .await;
@@ -1559,7 +1559,7 @@ async fn test_allocation_references_header_id_and_revision_fields() {
     ))
     .await;
     exec_raw_sql(&format!(
-        "INSERT INTO allocation (task_id, start, end, revision) \
+        "INSERT INTO allocation (task_id, start, end, rev_created) \
          VALUES ({task_header}, '2025-07-01T00:00:00Z', '2025-07-10T00:00:00Z', {plan_revision})"
     ))
     .await;

@@ -26,7 +26,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::prelude::StableGraph;
 use petgraph::visit::{EdgeRef as _, IntoNodeReferences};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr,
+    ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, Value, sea_query::Expr,
 };
 use tokio::task::JoinSet;
 
@@ -679,6 +679,28 @@ pub fn reduce_graph(g: &mut Graph<Node, ()>) -> anyhow::Result<()> {
 pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let revision_id = project.revision;
+
+    // Soft-delete previous plan data by setting rev_deleted on all active
+    // allocations, allocated_resources, and issues.
+    allocated_resource::Entity::update_many()
+        .col_expr(
+            allocated_resource::Column::RevDeleted,
+            Expr::value(Value::BigInt(Some(revision_id))),
+        )
+        .filter(allocated_resource::Column::RevDeleted.is_null())
+        .exec(txn)
+        .await?;
+    allocation::Entity::update_many()
+        .col_expr(allocation::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+        .filter(allocation::Column::RevDeleted.is_null())
+        .exec(txn)
+        .await?;
+    issue::Entity::update_many()
+        .col_expr(issue::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
+        .filter(issue::Column::RevDeleted.is_null())
+        .exec(txn)
+        .await?;
+
     for (task_id, assignment) in &plan.assignments {
         let range = assignment
             .values()
@@ -693,7 +715,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(*task_id),
             start: ActiveValue::Set(range.start().value().expect("No unbound intervals").and_utc()),
             end: ActiveValue::Set(range.end().value().expect("No unbound intervals").and_utc()),
-            revision: ActiveValue::Set(revision_id),
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
         };
         let db_alloc = am.insert(txn).await?;
         for res_id in assignment.keys() {
@@ -708,7 +731,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
                 id: ActiveValue::NotSet,
                 allocation_id: ActiveValue::Set(db_alloc.id),
                 resource_id: ActiveValue::Set(stored_resource_id),
-                revision: ActiveValue::Set(revision_id),
+                rev_created: ActiveValue::Set(revision_id),
+                rev_deleted: ActiveValue::Set(None),
             };
             am.insert(txn).await?;
         }
@@ -720,7 +744,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             task_id: ActiveValue::Set(fm.task_id),
             start: ActiveValue::Set(fm.date.and_utc()),
             end: ActiveValue::Set(fm.date.and_utc()),
-            revision: ActiveValue::Set(revision_id),
+            rev_created: ActiveValue::Set(revision_id),
+            rev_deleted: ActiveValue::Set(None),
         };
         am.insert(txn).await?;
     }
@@ -737,7 +762,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             description: sea_orm::ActiveValue::Set(pi.description.clone()),
             r#type: sea_orm::ActiveValue::Set(issue_type_str),
             task_id: sea_orm::ActiveValue::Set(pi.task_id),
-            revision: sea_orm::ActiveValue::Set(revision_id),
+            rev_created: sea_orm::ActiveValue::Set(revision_id),
+            rev_deleted: sea_orm::ActiveValue::Set(None),
         };
         issue_am.insert(txn).await?;
     }
@@ -755,7 +781,8 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
             description: sea_orm::ActiveValue::Set(pi.description.clone()),
             r#type: sea_orm::ActiveValue::Set(issue_type_str),
             task_id: sea_orm::ActiveValue::Set(pi.task_id),
-            revision: sea_orm::ActiveValue::Set(revision_id),
+            rev_created: sea_orm::ActiveValue::Set(revision_id),
+            rev_deleted: sea_orm::ActiveValue::Set(None),
         };
         issue_am.insert(txn).await?;
     }

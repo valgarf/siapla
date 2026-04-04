@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use sea_orm::sea_query::IntoCondition as _;
 use sea_orm::{ColumnTrait, EntityTrait};
 use thiserror::Error;
 
@@ -12,21 +11,15 @@ pub mod gql;
 pub mod revisioning;
 pub mod scheduling;
 
-/// Enum representing the revision mode of an entity: either a range (created and deleted columns)
-/// or an exact revision column.
-pub enum RevMode<C> {
-    Range { created: C, deleted: C },
-    Exact { revision: C },
+/// Revision mode for an entity: a range with created and deleted columns.
+pub struct RevMode<C> {
+    pub created: C,
+    pub deleted: C,
 }
 
 impl<C: ColumnTrait> RevMode<C> {
     pub fn condition(&self, revision: i64) -> sea_orm::Condition {
-        match self {
-            Self::Range { created, deleted } => {
-                active_for_revision(*created, *deleted, Some(revision))
-            }
-            Self::Exact { revision: rev_col } => rev_col.eq(revision).into_condition(),
-        }
+        active_for_revision(self.created, self.deleted, Some(revision))
     }
 }
 
@@ -46,12 +39,6 @@ pub trait RangeRevColumns: EntityTrait {
     fn rev_deleted_column() -> Self::Column;
 }
 
-/// Trait for entities that have a single revision column.
-/// They also implement `RevModeEntity` with `RevMode::Exact`.
-pub trait ExactRevColumn: EntityTrait {
-    fn rev_column() -> Self::Column;
-}
-
 macro_rules! impl_range_rev_columns {
     ($entity:path, $created:ident, $deleted:ident) => {
         impl RangeRevColumns for $entity {
@@ -66,23 +53,7 @@ macro_rules! impl_range_rev_columns {
 
         impl RevModeEntity for $entity {
             fn rev_mode() -> RevMode<Self::Column> {
-                RevMode::Range { created: Self::Column::$created, deleted: Self::Column::$deleted }
-            }
-        }
-    };
-}
-
-macro_rules! impl_exact_rev_column {
-    ($entity:path, $revision:ident) => {
-        impl ExactRevColumn for $entity {
-            fn rev_column() -> Self::Column {
-                Self::Column::$revision
-            }
-        }
-
-        impl RevModeEntity for $entity {
-            fn rev_mode() -> RevMode<Self::Column> {
-                RevMode::Exact { revision: Self::Column::$revision }
+                RevMode { created: Self::Column::$created, deleted: Self::Column::$deleted }
             }
         }
     };
@@ -128,9 +99,9 @@ impl_range_rev_columns!(entity::availability::Entity, RevCreated, RevDeleted);
 impl_range_rev_columns!(entity::vacation::Entity, RevCreated, RevDeleted);
 impl_range_rev_columns!(entity::booking::Entity, RevCreated, RevDeleted);
 
-impl_exact_rev_column!(entity::allocation::Entity, Revision);
-impl_exact_rev_column!(entity::allocated_resource::Entity, Revision);
-impl_exact_rev_column!(entity::issue::Entity, Revision);
+impl_range_rev_columns!(entity::allocation::Entity, RevCreated, RevDeleted);
+impl_range_rev_columns!(entity::allocated_resource::Entity, RevCreated, RevDeleted);
+impl_range_rev_columns!(entity::issue::Entity, RevCreated, RevDeleted);
 
 #[derive(Error, Debug)]
 pub struct SiaplaError {

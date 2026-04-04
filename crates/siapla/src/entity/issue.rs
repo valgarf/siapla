@@ -19,7 +19,8 @@ pub struct Model {
     pub description: String,
     pub r#type: String,
     pub task_id: Option<i32>,
-    pub revision: i64,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -29,7 +30,8 @@ pub enum Column {
     Description,
     Type,
     TaskId,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -58,7 +60,8 @@ impl ColumnTrait for Column {
             Self::Description => ColumnType::String(StringLen::None).def(),
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::TaskId => ColumnType::Integer.def().null(),
-            Self::Revision => ColumnType::BigInteger.def(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

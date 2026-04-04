@@ -18,7 +18,8 @@ pub struct Model {
     pub task_id: i32,
     pub start: DateTimeUtc,
     pub end: DateTimeUtc,
-    pub revision: i64,
+    pub rev_created: i64,
+    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -27,7 +28,8 @@ pub enum Column {
     TaskId,
     Start,
     End,
-    Revision,
+    RevCreated,
+    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -56,7 +58,8 @@ impl ColumnTrait for Column {
             Self::TaskId => ColumnType::Integer.def(),
             Self::Start => ColumnType::Timestamp.def(),
             Self::End => ColumnType::Timestamp.def(),
-            Self::Revision => ColumnType::BigInteger.def(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
+            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }

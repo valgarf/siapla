@@ -1,6 +1,6 @@
 use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
-use sea_orm::{ActiveValue, EntityTrait as _, QueryFilter as _, prelude::*};
+use sea_orm::{ActiveValue, ConnectionTrait as _, EntityTrait as _, QueryFilter as _, prelude::*};
 
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
@@ -238,6 +238,8 @@ impl Mutation {
         task_header::Entity::delete_many().exec(txn).await?;
         resource_header::Entity::delete_many().exec(txn).await?;
         revision::Entity::delete_many().exec(txn).await?;
+        // Reset AUTOINCREMENT counters so header and iteration IDs stay aligned
+        txn.execute_unprepared("DELETE FROM sqlite_sequence").await?;
         // Create a fresh initial revision
         create_revision(txn, PlanState::NotCalculated).await?;
         Ok(true)
