@@ -1,3 +1,4 @@
+use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{big_unsigned, boolean, integer, pk_auto, string, timestamp};
 use sea_query::{Expr, OnConflict, Query};
@@ -10,9 +11,12 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let backend = manager.get_database_backend();
         let db = manager.get_connection();
+        let is_sqlite = matches!(backend, DatabaseBackend::Sqlite);
 
-        db.execute_unprepared("PRAGMA foreign_keys=OFF").await?;
-        db.execute_unprepared("PRAGMA legacy_alter_table=ON").await?;
+        if is_sqlite {
+            db.execute_unprepared("PRAGMA foreign_keys=OFF").await?;
+            db.execute_unprepared("PRAGMA legacy_alter_table=ON").await?;
+        }
 
         // === Phase 1: Create revision table and seed it ===
         manager
@@ -93,8 +97,16 @@ impl MigrationTrait for Migration {
             .await?;
 
         // === Phase 3: Recreate task -> task_iteration with proper FKs ===
-        db.execute_unprepared("ALTER TABLE \"task\" RENAME TO \"_task_old\"")
-            .await?;
+        if is_sqlite {
+            db.execute_unprepared("ALTER TABLE \"task\" RENAME TO \"_task_old\"")
+                .await?;
+        } else {
+            manager
+                .rename_table(
+                    Table::rename().table(Task::Table, Alias::new("_task_old")).to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .create_table(
@@ -200,21 +212,35 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_task_iterations)).await?;
 
-        db.execute_unprepared(concat!(
-            "UPDATE \"task_iteration\" SET \"parent_id\" = (",
-            " SELECT parent.\"header_id\" FROM \"task_iteration\" AS parent",
-            " WHERE parent.\"id\" = \"task_iteration\".\"parent_id\"",
-            ") WHERE \"parent_id\" IS NOT NULL"
-        ))
-        .await?;
+        let rewrite_task_parent_ids_to_headers = Query::update()
+            .table(TaskIterationFull::Table)
+            .value(
+                TaskIterationFull::ParentId,
+                Expr::cust(
+                    "(SELECT parent.\"header_id\" FROM \"task_iteration\" AS parent WHERE parent.\"id\" = \"task_iteration\".\"parent_id\")",
+                ),
+            )
+            .and_where(Expr::col(TaskIterationFull::ParentId).is_not_null())
+            .to_owned();
+        db.execute(backend.build(&rewrite_task_parent_ids_to_headers)).await?;
 
         manager
             .drop_table(Table::drop().table(Alias::new("_task_old")).to_owned())
             .await?;
 
         // === Phase 4: Recreate resource -> resource_iteration with proper FKs ===
-        db.execute_unprepared("ALTER TABLE \"resource\" RENAME TO \"_resource_old\"")
-            .await?;
+        if is_sqlite {
+            db.execute_unprepared("ALTER TABLE \"resource\" RENAME TO \"_resource_old\"")
+                .await?;
+        } else {
+            manager
+                .rename_table(
+                    Table::rename()
+                        .table(Resource::Table, Alias::new("_resource_old"))
+                        .to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .create_table(
@@ -1081,8 +1107,10 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(Alias::new("_issue_old")).to_owned())
             .await?;
 
-        db.execute_unprepared("PRAGMA legacy_alter_table=OFF").await?;
-        db.execute_unprepared("PRAGMA foreign_keys=ON").await?;
+        if is_sqlite {
+            db.execute_unprepared("PRAGMA legacy_alter_table=OFF").await?;
+            db.execute_unprepared("PRAGMA foreign_keys=ON").await?;
+        }
 
         Ok(())
     }
