@@ -13,8 +13,8 @@ use tracing::trace;
 
 use crate::{
     entity::{
-        dependency, resource_constraint, resource_constraint_entry,
-        resource_iteration as resource, task_header, task_iteration as task,
+        dependency, resource_constraint, resource_constraint_entry, resource_iteration as resource,
+        task_header, task_iteration as task,
     },
     gql::{common::nullable_to_av, context::Context},
     revisioning::{PlanState, active_for_revision, create_revision},

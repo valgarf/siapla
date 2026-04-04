@@ -1,4 +1,4 @@
-use super::batcher::{Batcher, BatcherWrapper, VecBatcher};
+use super::batcher::{Batcher, BatcherWrapper};
 use crate::db::context::DbContext;
 use dataloader::{cached::Loader as CachedLoader, non_cached::Loader as NonCachedLoader};
 use std::{
@@ -6,6 +6,20 @@ use std::{
     sync::{Arc, Weak},
 };
 
+/// Detects if a batcher returns a `Vec` and provides helper methods to load single items.
+pub trait VecBatcher: Batcher<Value = Vec<Self::Item>> {
+    type Item: Clone + Send + Sync;
+}
+
+impl<B, T> VecBatcher for B
+where
+    B: Batcher<Value = Vec<T>>,
+    T: Clone + Send + Sync,
+{
+    type Item = T;
+}
+
+/// Wraps a loader (cached or uncached) and provides a convenient interface for loading values.
 #[derive(Clone)]
 pub enum LoaderWrapper<B: Batcher> {
     Cached(Arc<CachedLoader<B::Key, B::Value, BatcherWrapper<B>>>),

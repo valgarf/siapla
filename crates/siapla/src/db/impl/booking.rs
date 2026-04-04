@@ -39,4 +39,3 @@ impl booking::Model {
             .await
     }
 }
-

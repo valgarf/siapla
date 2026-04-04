@@ -423,10 +423,8 @@ pub async fn query_task_history(
         let deleted_iters: Vec<&task::Model> =
             task_iterations.iter().filter(|t| t.rev_deleted == Some(rev_id)).collect();
 
-        let created_headers: HashSet<i32> =
-            created_iters.iter().map(|t| t.header_id).collect();
-        let deleted_headers: HashSet<i32> =
-            deleted_iters.iter().map(|t| t.header_id).collect();
+        let created_headers: HashSet<i32> = created_iters.iter().map(|t| t.header_id).collect();
+        let deleted_headers: HashSet<i32> = deleted_iters.iter().map(|t| t.header_id).collect();
         let updated_headers: HashSet<i32> =
             created_headers.intersection(&deleted_headers).copied().collect();
 
@@ -441,14 +439,8 @@ pub async fn query_task_history(
                 if is_first { ChangeType::Created } else { ChangeType::Updated }
             };
             changes.push(
-                TaskIterationChange {
-                    rev_id,
-                    ts,
-                    ct,
-                    task_model: (*t).clone(),
-                    revision: rev_id,
-                }
-                .into(),
+                TaskIterationChange { rev_id, ts, ct, task_model: (*t).clone(), revision: rev_id }
+                    .into(),
             );
         }
 

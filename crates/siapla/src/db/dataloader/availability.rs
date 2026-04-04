@@ -1,16 +1,16 @@
-use std::collections::{HashMap, HashSet};
 use std::cmp::{max, min};
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Datelike, NaiveDateTime, NaiveTime, TimeDelta, Utc, Weekday};
 use chrono_tz::Tz;
 use sea_orm::prelude::Decimal;
-use sea_orm::{EntityTrait, ColumnTrait, Order, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder};
 
+use super::base::Batcher;
+use crate::db::RangeRevColumns;
 use crate::db::context::DbContext;
 use crate::db::entity::{availability, resource_iteration as resource, vacation};
-use crate::db::RangeRevColumns;
 use crate::scheduling::{Interval, Intervals};
-use super::base::Batcher;
 
 pub fn string_to_weekday(s: &str) -> anyhow::Result<Weekday> {
     match s {
