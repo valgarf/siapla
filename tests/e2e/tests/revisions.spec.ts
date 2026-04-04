@@ -826,12 +826,13 @@ test.describe("Revision System", () => {
             );
 
             expect(oldParent).toBeDefined();
+            expect(oldParent!.children).toBeDefined();
             expect(oldChild).toBeDefined();
             expect(oldChild!.parent).toBeDefined();
             expect(oldChild!.parent!.dbId).toBe(group.dbId);
-            expect(oldParent!.children.some((c) => c.dbId === child.dbId)).toBe(
-                true,
-            );
+            expect(
+                oldParent!.children!.some((c) => c.dbId === child.dbId),
+            ).toBe(true);
 
             const newRevision =
                 await queryTasksAtRevision(revAfterParentUpdate);
@@ -843,11 +844,12 @@ test.describe("Revision System", () => {
             );
 
             expect(newParent).toBeDefined();
+            expect(newParent!.children).toBeDefined();
             expect(currentChild).toBeDefined();
             expect(currentChild!.parent).toBeDefined();
             expect(currentChild!.parent!.dbId).toBe(updatedGroup.taskSave.dbId);
             expect(
-                newParent!.children.some((c) => c.dbId === currentChild!.dbId),
+                newParent!.children!.some((c) => c.dbId === currentChild!.dbId),
             ).toBe(true);
         });
     });

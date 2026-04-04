@@ -83,35 +83,29 @@ impl_range_rev_columns!(entity::issue::Entity, RevCreated, RevDeleted);
 // Link – describes a many-to-many traversal through a link table
 // ---------------------------------------------------------------------------
 
-/// Describes how to traverse from a source id through a link table to a target table.
-///
-/// The dataloader uses this to batch-load targets:
-/// 1. Query the link table filtered by `link_filter_col` ∈ source ids.
-/// 2. Extract target ids via `extract_target_id`.
-/// 3. Query the target table filtered by `target_match_col` ∈ target ids (and revision).
 pub trait Link: Clone + Send + Sync + 'static {
     type LinkEntity: EntityTrait;
-    type TargetEntity: EntityTrait;
+    type TargetEntity: EntityTrait + RangeRevColumns;
 
-    fn link_filter_col() -> <Self::LinkEntity as EntityTrait>::Column;
-    fn extract_target_id(link: &<Self::LinkEntity as EntityTrait>::Model) -> sea_orm::Value;
-    fn target_match_col() -> <Self::TargetEntity as EntityTrait>::Column;
-
-    /// Override to add a revision filter on the **link** table.
-    /// Return `None` (the default) when the link table has no revision columns.
-    fn link_revision_condition(_revision: i64) -> Option<sea_orm::Condition> {
+    fn filter_column() -> <Self::LinkEntity as EntityTrait>::Column;
+    fn join_link_column() -> <Self::LinkEntity as EntityTrait>::Column;
+    fn join_target_column() -> <Self::TargetEntity as EntityTrait>::Column;
+    fn link_rev_created_column() -> Option<<Self::LinkEntity as EntityTrait>::Column> {
+        None
+    }
+    fn link_rev_deleted_column() -> Option<<Self::LinkEntity as EntityTrait>::Column> {
         None
     }
 }
 
-// Helper macro – two arms: without and with `revisioned_link`.
 macro_rules! define_link {
-    // Non-revisioned link table
     (
         $name:ident,
-        link: $link_entity:ty, filter: $filter_col:expr,
-        extract: |$lp:ident| $extract:expr,
-        target: $target_entity:ty, match_col: $match_col:expr
+        link: $link_entity:ty,
+        filter: $filter_col:expr,
+        link_join: $link_join_col:expr,
+        target: $target_entity:ty,
+        target_join: $target_join_col:expr
     ) => {
         #[derive(Clone)]
         pub struct $name;
@@ -120,26 +114,29 @@ macro_rules! define_link {
             type LinkEntity = $link_entity;
             type TargetEntity = $target_entity;
 
-            fn link_filter_col() -> <Self::LinkEntity as EntityTrait>::Column {
+            fn filter_column() -> <Self::LinkEntity as EntityTrait>::Column {
                 $filter_col
             }
-            fn extract_target_id(
-                $lp: &<Self::LinkEntity as EntityTrait>::Model,
-            ) -> sea_orm::Value {
-                $extract
+
+            fn join_link_column() -> <Self::LinkEntity as EntityTrait>::Column {
+                $link_join_col
             }
-            fn target_match_col() -> <Self::TargetEntity as EntityTrait>::Column {
-                $match_col
+
+            fn join_target_column() -> <Self::TargetEntity as EntityTrait>::Column {
+                $target_join_col
             }
+
         }
     };
-    // Revisioned link table
     (
         $name:ident,
-        link: $link_entity:ty, filter: $filter_col:expr,
-        extract: |$lp:ident| $extract:expr,
-        target: $target_entity:ty, match_col: $match_col:expr,
-        revisioned_link: $rev_entity:ty
+        link: $link_entity:ty,
+        filter: $filter_col:expr,
+        link_join: $link_join_col:expr,
+        target: $target_entity:ty,
+        target_join: $target_join_col:expr,
+        link_rev_created: $link_rev_created_col:expr,
+        link_rev_deleted: $link_rev_deleted_col:expr
     ) => {
         #[derive(Clone)]
         pub struct $name;
@@ -148,96 +145,125 @@ macro_rules! define_link {
             type LinkEntity = $link_entity;
             type TargetEntity = $target_entity;
 
-            fn link_filter_col() -> <Self::LinkEntity as EntityTrait>::Column {
+            fn filter_column() -> <Self::LinkEntity as EntityTrait>::Column {
                 $filter_col
             }
-            fn extract_target_id(
-                $lp: &<Self::LinkEntity as EntityTrait>::Model,
-            ) -> sea_orm::Value {
-                $extract
+
+            fn join_link_column() -> <Self::LinkEntity as EntityTrait>::Column {
+                $link_join_col
             }
-            fn target_match_col() -> <Self::TargetEntity as EntityTrait>::Column {
-                $match_col
+
+            fn join_target_column() -> <Self::TargetEntity as EntityTrait>::Column {
+                $target_join_col
             }
-            fn link_revision_condition(revision: i64) -> Option<sea_orm::Condition> {
-                Some(<$rev_entity as RangeRevColumns>::condition(revision))
+
+            fn link_rev_created_column() -> Option<<Self::LinkEntity as EntityTrait>::Column> {
+                Some($link_rev_created_col)
+            }
+
+            fn link_rev_deleted_column() -> Option<<Self::LinkEntity as EntityTrait>::Column> {
+                Some($link_rev_deleted_col)
             }
         }
     };
 }
 
-// -- dependency-based links (revisioned link table) -------------------------
-
-define_link!(PredecessorTaskIterations,
-    link: entity::dependency::Entity, filter: entity::dependency::Column::SuccessorId,
-    extract: |d| d.predecessor_id.into(),
-    target: entity::task_iteration::Entity, match_col: entity::task_iteration::Column::HeaderId,
-    revisioned_link: entity::dependency::Entity
+define_link!(
+    PredecessorTaskIterations,
+    link: entity::dependency::Entity,
+    filter: entity::dependency::Column::SuccessorId,
+    link_join: entity::dependency::Column::PredecessorId,
+    target: entity::task_iteration::Entity,
+    target_join: entity::task_iteration::Column::HeaderId,
+    link_rev_created: entity::dependency::Column::RevCreated,
+    link_rev_deleted: entity::dependency::Column::RevDeleted
 );
 
-define_link!(SuccessorTaskIterations,
-    link: entity::dependency::Entity, filter: entity::dependency::Column::PredecessorId,
-    extract: |d| d.successor_id.into(),
-    target: entity::task_iteration::Entity, match_col: entity::task_iteration::Column::HeaderId,
-    revisioned_link: entity::dependency::Entity
+define_link!(
+    SuccessorTaskIterations,
+    link: entity::dependency::Entity,
+    filter: entity::dependency::Column::PredecessorId,
+    link_join: entity::dependency::Column::SuccessorId,
+    target: entity::task_iteration::Entity,
+    target_join: entity::task_iteration::Column::HeaderId,
+    link_rev_created: entity::dependency::Column::RevCreated,
+    link_rev_deleted: entity::dependency::Column::RevDeleted
 );
 
-define_link!(PredecessorTaskHeaders,
-    link: entity::dependency::Entity, filter: entity::dependency::Column::SuccessorId,
-    extract: |d| d.predecessor_id.into(),
-    target: entity::task_header::Entity, match_col: entity::task_header::Column::Id,
-    revisioned_link: entity::dependency::Entity
+define_link!(
+    PredecessorTaskHeaders,
+    link: entity::dependency::Entity,
+    filter: entity::dependency::Column::SuccessorId,
+    link_join: entity::dependency::Column::PredecessorId,
+    target: entity::task_header::Entity,
+    target_join: entity::task_header::Column::Id,
+    link_rev_created: entity::dependency::Column::RevCreated,
+    link_rev_deleted: entity::dependency::Column::RevDeleted
 );
 
-define_link!(SuccessorTaskHeaders,
-    link: entity::dependency::Entity, filter: entity::dependency::Column::PredecessorId,
-    extract: |d| d.successor_id.into(),
-    target: entity::task_header::Entity, match_col: entity::task_header::Column::Id,
-    revisioned_link: entity::dependency::Entity
+define_link!(
+    SuccessorTaskHeaders,
+    link: entity::dependency::Entity,
+    filter: entity::dependency::Column::PredecessorId,
+    link_join: entity::dependency::Column::SuccessorId,
+    target: entity::task_header::Entity,
+    target_join: entity::task_header::Column::Id,
+    link_rev_created: entity::dependency::Column::RevCreated,
+    link_rev_deleted: entity::dependency::Column::RevDeleted
 );
 
-// -- allocated_resource-based links (non-revisioned link table) -------------
-
-define_link!(ResourceIterationsFromAllocation,
-    link: entity::allocated_resource::Entity, filter: entity::allocated_resource::Column::AllocationId,
-    extract: |a| a.resource_id.into(),
-    target: entity::resource_iteration::Entity, match_col: entity::resource_iteration::Column::HeaderId
+define_link!(
+    ResourceIterationsFromAllocation,
+    link: entity::allocated_resource::Entity,
+    filter: entity::allocated_resource::Column::AllocationId,
+    link_join: entity::allocated_resource::Column::ResourceId,
+    target: entity::resource_iteration::Entity,
+    target_join: entity::resource_iteration::Column::HeaderId
 );
 
-define_link!(ResourceHeadersFromAllocation,
-    link: entity::allocated_resource::Entity, filter: entity::allocated_resource::Column::AllocationId,
-    extract: |a| a.resource_id.into(),
-    target: entity::resource_header::Entity, match_col: entity::resource_header::Column::Id
+define_link!(
+    ResourceHeadersFromAllocation,
+    link: entity::allocated_resource::Entity,
+    filter: entity::allocated_resource::Column::AllocationId,
+    link_join: entity::allocated_resource::Column::ResourceId,
+    target: entity::resource_header::Entity,
+    target_join: entity::resource_header::Column::Id
 );
 
-// -- booking_resource-based links (non-revisioned link table) ---------------
-
-define_link!(ResourceIterationsFromBooking,
-    link: entity::booking_resource::Entity, filter: entity::booking_resource::Column::BookingId,
-    extract: |b| b.resource_id.into(),
-    target: entity::resource_iteration::Entity, match_col: entity::resource_iteration::Column::HeaderId
+define_link!(
+    ResourceIterationsFromBooking,
+    link: entity::booking_resource::Entity,
+    filter: entity::booking_resource::Column::BookingId,
+    link_join: entity::booking_resource::Column::ResourceId,
+    target: entity::resource_iteration::Entity,
+    target_join: entity::resource_iteration::Column::HeaderId
 );
 
-define_link!(ResourceHeadersFromBooking,
-    link: entity::booking_resource::Entity, filter: entity::booking_resource::Column::BookingId,
-    extract: |b| b.resource_id.into(),
-    target: entity::resource_header::Entity, match_col: entity::resource_header::Column::Id
+define_link!(
+    ResourceHeadersFromBooking,
+    link: entity::booking_resource::Entity,
+    filter: entity::booking_resource::Column::BookingId,
+    link_join: entity::booking_resource::Column::ResourceId,
+    target: entity::resource_header::Entity,
+    target_join: entity::resource_header::Column::Id
 );
 
-// -- resource_constraint_entry-based links (non-revisioned link table) ------
-
-define_link!(ResourceIterationsFromResourceConstraint,
+define_link!(
+    ResourceIterationsFromResourceConstraint,
     link: entity::resource_constraint_entry::Entity,
     filter: entity::resource_constraint_entry::Column::ResourceConstraintId,
-    extract: |e| e.resource_id.into(),
-    target: entity::resource_iteration::Entity, match_col: entity::resource_iteration::Column::HeaderId
+    link_join: entity::resource_constraint_entry::Column::ResourceId,
+    target: entity::resource_iteration::Entity,
+    target_join: entity::resource_iteration::Column::HeaderId
 );
 
-define_link!(ResourceHeadersFromResourceConstraint,
+define_link!(
+    ResourceHeadersFromResourceConstraint,
     link: entity::resource_constraint_entry::Entity,
     filter: entity::resource_constraint_entry::Column::ResourceConstraintId,
-    extract: |e| e.resource_id.into(),
-    target: entity::resource_header::Entity, match_col: entity::resource_header::Column::Id
+    link_join: entity::resource_constraint_entry::Column::ResourceId,
+    target: entity::resource_header::Entity,
+    target_join: entity::resource_header::Column::Id
 );
 
 // ---------------------------------------------------------------------------

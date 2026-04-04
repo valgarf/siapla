@@ -12,7 +12,7 @@ init: install-frontend build-frontend build-backend install-e2e test
 
 [positional-arguments]
 [working-directory(".")]
-backup-db *args='':
+backup-db:
     #!/usr/bin/env bash
     db_file="{{ db }}"
     if [[ $db_file == *sqlite ]]

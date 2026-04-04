@@ -23,6 +23,7 @@ chrono = "0.4.40"
 dataloader = { version = "0.18.0", default-features = false, features = ["runtime-tokio"] }
 futures = "0.3.31"
 itertools = "0.14.0"
+paste = "1.0.15"
 juniper = { version = "0.17.0", features = ["anyhow", "chrono", "schema-language"] }
 juniper_axum = { version = "0.3.0", features = ["subscriptions"] }
 juniper_graphql_ws = { version = "0.5.0", features = ["graphql-transport-ws"] }

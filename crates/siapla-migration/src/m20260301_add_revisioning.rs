@@ -1,6 +1,6 @@
 use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::{big_unsigned, boolean, integer, pk_auto, string, timestamp};
+use sea_orm_migration::schema::*;
 use sea_query::{Expr, OnConflict, Query};
 
 #[derive(DeriveMigrationName)]
@@ -98,8 +98,7 @@ impl MigrationTrait for Migration {
 
         // === Phase 3: Recreate task -> task_iteration with proper FKs ===
         if is_sqlite {
-            db.execute_unprepared("ALTER TABLE \"task\" RENAME TO \"_task_old\"")
-                .await?;
+            db.execute_unprepared("ALTER TABLE \"task\" RENAME TO \"_task_old\"").await?;
         } else {
             manager
                 .rename_table(
@@ -224,20 +223,15 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&rewrite_task_parent_ids_to_headers)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_task_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_task_old")).to_owned()).await?;
 
         // === Phase 4: Recreate resource -> resource_iteration with proper FKs ===
         if is_sqlite {
-            db.execute_unprepared("ALTER TABLE \"resource\" RENAME TO \"_resource_old\"")
-                .await?;
+            db.execute_unprepared("ALTER TABLE \"resource\" RENAME TO \"_resource_old\"").await?;
         } else {
             manager
                 .rename_table(
-                    Table::rename()
-                        .table(Resource::Table, Alias::new("_resource_old"))
-                        .to_owned(),
+                    Table::rename().table(Resource::Table, Alias::new("_resource_old")).to_owned(),
                 )
                 .await?;
         }
@@ -253,11 +247,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(ResourceIterationFull::Removed).timestamp().null())
                     .col(ColumnDef::new(ResourceIterationFull::HolidayId).integer().null())
                     .col(integer(ResourceIterationFull::HeaderId))
-                    .col(
-                        ColumnDef::new(ResourceIterationFull::RevCreated)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(ResourceIterationFull::RevCreated).big_integer().not_null())
                     .col(ColumnDef::new(ResourceIterationFull::RevDeleted).big_integer().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -297,11 +287,7 @@ impl MigrationTrait for Migration {
 
         let insert_resource_headers = Query::insert()
             .into_table(ResourceHeader::Table)
-            .columns([
-                ResourceHeader::Id,
-                ResourceHeader::RevCreated,
-                ResourceHeader::RevDeleted,
-            ])
+            .columns([ResourceHeader::Id, ResourceHeader::RevCreated, ResourceHeader::RevDeleted])
             .select_from(
                 Query::select()
                     .column(Alias::new("id"))
@@ -345,9 +331,7 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_resource_iterations)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_resource_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_resource_old")).to_owned()).await?;
 
         // === Phase 5: Create booking tables ===
         manager
@@ -580,9 +564,7 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_dependencies)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_dependency_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_dependency_old")).to_owned()).await?;
 
         manager
             .create_index(
@@ -676,9 +658,7 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_vacations)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_vacation_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_vacation_old")).to_owned()).await?;
 
         // -- availability (resource_id -> resource_header) --
         manager
@@ -695,9 +675,9 @@ impl MigrationTrait for Migration {
                     .table(AvailabilityFull::Table)
                     .col(pk_auto(AvailabilityFull::Id))
                     .col(integer(AvailabilityFull::ResourceId))
-                    .col(ColumnDef::new(AvailabilityFull::Weekday).string_len(2).not_null())
-                    .col(ColumnDef::new(AvailabilityFull::Duration).double().not_null())
-                    .col(ColumnDef::new(AvailabilityFull::RevCreated).big_integer().not_null())
+                    .col(string_len(AvailabilityFull::Weekday, 2).not_null())
+                    .col(decimal(AvailabilityFull::Duration).not_null())
+                    .col(big_integer(AvailabilityFull::RevCreated).not_null())
                     .col(ColumnDef::new(AvailabilityFull::RevDeleted).big_integer().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -752,9 +732,7 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_availabilities)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_availability_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_availability_old")).to_owned()).await?;
 
         // -- resource_constraint (task_id -> task_header) --
         manager
@@ -778,9 +756,7 @@ impl MigrationTrait for Migration {
                     .col(boolean(ResourceConstraintFull::Optional))
                     .col(ColumnDef::new(ResourceConstraintFull::Speed).float().not_null())
                     .col(
-                        ColumnDef::new(ResourceConstraintFull::RevCreated)
-                            .big_integer()
-                            .not_null(),
+                        ColumnDef::new(ResourceConstraintFull::RevCreated).big_integer().not_null(),
                     )
                     .col(ColumnDef::new(ResourceConstraintFull::RevDeleted).big_integer().null())
                     .foreign_key(
@@ -794,10 +770,7 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_ResourceConstraint_RevCreated")
-                            .from(
-                                ResourceConstraintFull::Table,
-                                ResourceConstraintFull::RevCreated,
-                            )
+                            .from(ResourceConstraintFull::Table, ResourceConstraintFull::RevCreated)
                             .to(Revision::Table, Revision::Id)
                             .on_delete(ForeignKeyAction::Restrict)
                             .on_update(ForeignKeyAction::Cascade),
@@ -805,10 +778,7 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_ResourceConstraint_RevDeleted")
-                            .from(
-                                ResourceConstraintFull::Table,
-                                ResourceConstraintFull::RevDeleted,
-                            )
+                            .from(ResourceConstraintFull::Table, ResourceConstraintFull::RevDeleted)
                             .to(Revision::Table, Revision::Id)
                             .on_delete(ForeignKeyAction::Restrict)
                             .on_update(ForeignKeyAction::Cascade),
@@ -845,11 +815,7 @@ impl MigrationTrait for Migration {
         db.execute(backend.build(&insert_resource_constraints)).await?;
 
         manager
-            .drop_table(
-                Table::drop()
-                    .table(Alias::new("_resource_constraint_old"))
-                    .to_owned(),
-            )
+            .drop_table(Table::drop().table(Alias::new("_resource_constraint_old")).to_owned())
             .await?;
 
         // -- resource_constraint_entry (resource_id -> resource_header) --
@@ -918,9 +884,7 @@ impl MigrationTrait for Migration {
 
         manager
             .drop_table(
-                Table::drop()
-                    .table(Alias::new("_resource_constraint_entry_old"))
-                    .to_owned(),
+                Table::drop().table(Alias::new("_resource_constraint_entry_old")).to_owned(),
             )
             .await?;
 
@@ -971,18 +935,13 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_allocation_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_allocation_old")).to_owned()).await?;
 
         // -- allocated_resource (resource_id -> resource_header, empty after cleanup) --
         manager
             .rename_table(
                 Table::rename()
-                    .table(
-                        Alias::new("allocated_resource"),
-                        Alias::new("_allocated_resource_old"),
-                    )
+                    .table(Alias::new("allocated_resource"), Alias::new("_allocated_resource_old"))
                     .to_owned(),
             )
             .await?;
@@ -997,10 +956,7 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_AllocatedResource_AllocationId")
-                            .from(
-                                AllocatedResourceFull::Table,
-                                AllocatedResourceFull::AllocationId,
-                            )
+                            .from(AllocatedResourceFull::Table, AllocatedResourceFull::AllocationId)
                             .to(AllocationFull::Table, AllocationFull::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
@@ -1008,10 +964,7 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_AllocatedResource_ResourceId")
-                            .from(
-                                AllocatedResourceFull::Table,
-                                AllocatedResourceFull::ResourceId,
-                            )
+                            .from(AllocatedResourceFull::Table, AllocatedResourceFull::ResourceId)
                             .to(ResourceHeader::Table, ResourceHeader::Id)
                             .on_delete(ForeignKeyAction::Restrict)
                             .on_update(ForeignKeyAction::Cascade),
@@ -1021,19 +974,13 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
-            .drop_table(
-                Table::drop()
-                    .table(Alias::new("_allocated_resource_old"))
-                    .to_owned(),
-            )
+            .drop_table(Table::drop().table(Alias::new("_allocated_resource_old")).to_owned())
             .await?;
 
         // -- issue (task_id -> task_header) --
         manager
             .rename_table(
-                Table::rename()
-                    .table(Alias::new("issue"), Alias::new("_issue_old"))
-                    .to_owned(),
+                Table::rename().table(Alias::new("issue"), Alias::new("_issue_old")).to_owned(),
             )
             .await?;
 
@@ -1103,9 +1050,7 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&insert_issues)).await?;
 
-        manager
-            .drop_table(Table::drop().table(Alias::new("_issue_old")).to_owned())
-            .await?;
+        manager.drop_table(Table::drop().table(Alias::new("_issue_old")).to_owned()).await?;
 
         if is_sqlite {
             db.execute_unprepared("PRAGMA legacy_alter_table=OFF").await?;

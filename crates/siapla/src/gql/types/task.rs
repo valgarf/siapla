@@ -16,11 +16,7 @@ use crate::{
         allocation, dependency, resource_constraint, resource_constraint_entry,
         resource_iteration as resource, task_header, task_iteration as task,
     },
-    gql::{
-        common::nullable_to_av,
-        context::Context,
-        dataloader::LinkBatcher,
-    },
+    gql::{common::nullable_to_av, context::Context, dataloader::LinkBatcher},
     revisioning::{PlanState, active_for_revision, create_revision},
 };
 
@@ -120,7 +116,7 @@ impl GQLTask {
         Ok(hm.and_then(|h| h.rev_deleted).map(|v| v as i32))
     }
 
-    // -- Predecessors (revision-aware via revision-aware dataloader) ---------
+    // -- Predecessors (revision-aware via link dataloader) -------------------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
         let models = ctx
             .loader(LinkBatcher::<crate::PredecessorTaskIterations>::new(self.revision))
@@ -130,7 +126,7 @@ impl GQLTask {
         Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
-    // -- Successors (revision-aware via revision-aware dataloader) -----------
+    // -- Successors (revision-aware via link dataloader) ---------------------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
         let models = ctx
             .loader(LinkBatcher::<crate::SuccessorTaskIterations>::new(self.revision))
