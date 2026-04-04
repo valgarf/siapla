@@ -75,7 +75,7 @@ impl From<task::Model> for GQLTask {
 impl GQLTask {
     /// Stable identity — always the `task_header.id`.
     fn db_id(&self) -> i32 {
-        self.model.header_id.unwrap_or(self.model.id)
+        self.model.header_id
     }
     /// The mutable iteration id (changes on every edit).
     fn iteration_id(&self) -> &i32 {
@@ -110,7 +110,7 @@ impl GQLTask {
     }
     async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
         let hm = self.load_header(ctx).await?;
-        Ok(hm.and_then(|h| h.rev_created).map(|v| v as i32))
+        Ok(hm.map(|h| h.rev_created as i32))
     }
     async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
         let hm = self.load_header(ctx).await?;
@@ -120,9 +120,7 @@ impl GQLTask {
     // -- Predecessors (revision-aware via revision-aware dataloader) ---------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
         let rev = self.revision;
-        let Some(header_id) = self.model.header_id else {
-            return Ok(Vec::new());
-        };
+        let header_id = self.model.header_id;
         let models: Vec<task::Model> = resolve_many_to_many!(
             ctx,
             rev,
@@ -139,9 +137,7 @@ impl GQLTask {
     // -- Successors (revision-aware via revision-aware dataloader) -----------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
         let rev = self.revision;
-        let Some(header_id) = self.model.header_id else {
-            return Ok(Vec::new());
-        };
+        let header_id = self.model.header_id;
         let models: Vec<task::Model> = resolve_many_to_many!(
             ctx,
             rev,
@@ -156,9 +152,7 @@ impl GQLTask {
     }
 
     pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let Some(header_id) = self.model.header_id else {
-            return Ok(Vec::new());
-        };
+        let header_id = self.model.header_id;
         let txn = ctx.txn().await?;
         let children = task::Entity::find()
             .filter(task::Column::ParentId.eq(header_id))
@@ -177,7 +171,7 @@ impl GQLTask {
         let Some(revision) = self.revision else {
             return Ok(Vec::new());
         };
-        let header_id = self.model.header_id.unwrap_or(self.model.id);
+        let header_id = self.model.header_id;
         let issues = ctx
             .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::issue::Entity> {
                 revision,
@@ -213,7 +207,7 @@ impl GQLTask {
         ctx: &Context,
     ) -> anyhow::Result<Vec<GQLResourceConstraint>> {
         let txn = ctx.txn().await?;
-        let header_id = self.model.header_id.unwrap_or(self.model.id);
+        let header_id = self.model.header_id;
         let constraints = resource_constraint::Entity::find()
             .filter(resource_constraint::Column::TaskId.eq(header_id))
             .filter(active_for_revision(
@@ -231,7 +225,7 @@ impl GQLTask {
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
-        let header_id = self.model.header_id.unwrap_or(self.model.id);
+        let header_id = self.model.header_id;
         let Some(revision) = self.revision else {
             return Ok(Vec::new());
         };
@@ -253,9 +247,7 @@ impl GQLTask {
         if let Some(ref hm) = self.header_model {
             return Ok(Some(hm.clone()));
         }
-        let Some(hid) = self.model.header_id else {
-            return Ok(None);
-        };
+        let hid = self.model.header_id;
         let txn = ctx.txn().await?;
         Ok(task_header::Entity::find_by_id(hid).one(txn).await?)
     }
@@ -401,14 +393,14 @@ async fn resolve_task_header_ids(
         .all(txn)
         .await?;
     let mut resolved: BTreeSet<i32> =
-        active_targets.into_iter().filter_map(|task| task.header_id).collect();
+        active_targets.into_iter().map(|task| task.header_id).collect();
 
     if resolved.len() < ids.len() {
         let historical_targets = task::Entity::find()
             .filter(task::Column::HeaderId.is_in(ids.to_vec()))
             .all(txn)
             .await?;
-        resolved.extend(historical_targets.into_iter().filter_map(|task| task.header_id));
+        resolved.extend(historical_targets.into_iter().map(|task| task.header_id));
     }
 
     Ok(resolved.into_iter().collect())
@@ -480,14 +472,14 @@ async fn resolve_resource_header_ids(
         .all(txn)
         .await?;
     let mut resolved: BTreeSet<i32> =
-        active_targets.into_iter().filter_map(|resource| resource.header_id).collect();
+        active_targets.into_iter().map(|resource| resource.header_id).collect();
 
     if resolved.len() < ids.len() {
         let historical_targets = resource::Entity::find()
             .filter(resource::Column::HeaderId.is_in(ids.to_vec()))
             .all(txn)
             .await?;
-        resolved.extend(historical_targets.into_iter().filter_map(|resource| resource.header_id));
+        resolved.extend(historical_targets.into_iter().map(|resource| resource.header_id));
     }
 
     Ok(resolved.into_iter().collect())
@@ -502,7 +494,7 @@ async fn task_save_is_noop(
     children: Option<&Vec<i32>>,
     resource_constraints: Option<&Vec<ResourceConstraintInput>>,
 ) -> anyhow::Result<bool> {
-    let existing_header_id = existing.header_id.unwrap_or(existing.id);
+    let existing_header_id = existing.header_id;
 
     let scalar_unchanged = existing.title == task_input.title
         && existing.description == task_input.description
@@ -577,7 +569,7 @@ async fn task_save_is_noop(
             .all(txn)
             .await?
             .into_iter()
-            .filter_map(|child| child.header_id)
+            .map(|child| child.header_id)
             .collect();
         if current.into_iter().collect::<Vec<_>>() != target {
             return Ok(false);
@@ -606,9 +598,7 @@ async fn update_predecessors(
     revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let Some(successor_header_id) = model.header_id else {
-        return Ok(());
-    };
+    let successor_header_id = model.header_id;
     let existing_deps = dependency::Entity::find()
         .filter(dependency::Column::SuccessorId.eq(successor_header_id))
         .filter(dependency::Column::RevDeleted.is_null())
@@ -623,14 +613,14 @@ async fn update_predecessors(
         .all(txn)
         .await?;
     let mut target: HashSet<i32> =
-        current_targets.into_iter().filter_map(|task| task.header_id).collect();
+        current_targets.into_iter().map(|task| task.header_id).collect();
 
     if target.len() < predecessor_ids.len() {
         let historical_targets = task::Entity::find()
             .filter(task::Column::HeaderId.is_in(predecessor_ids))
             .all(txn)
             .await?;
-        target.extend(historical_targets.into_iter().filter_map(|task| task.header_id));
+        target.extend(historical_targets.into_iter().map(|task| task.header_id));
     }
 
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
@@ -672,9 +662,7 @@ async fn update_successors(
     revision_id: i64,
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
-    let Some(predecessor_header_id) = model.header_id else {
-        return Ok(());
-    };
+    let predecessor_header_id = model.header_id;
     let existing_deps = dependency::Entity::find()
         .filter(dependency::Column::PredecessorId.eq(predecessor_header_id))
         .filter(dependency::Column::RevDeleted.is_null())
@@ -689,14 +677,14 @@ async fn update_successors(
         .all(txn)
         .await?;
     let mut target: HashSet<i32> =
-        current_targets.into_iter().filter_map(|task| task.header_id).collect();
+        current_targets.into_iter().map(|task| task.header_id).collect();
 
     if target.len() < successor_ids.len() {
         let historical_targets = task::Entity::find()
             .filter(task::Column::HeaderId.is_in(successor_ids))
             .all(txn)
             .await?;
-        target.extend(historical_targets.into_iter().filter_map(|task| task.header_id));
+        target.extend(historical_targets.into_iter().map(|task| task.header_id));
     }
 
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
@@ -737,9 +725,7 @@ async fn update_children(
     mut children: Vec<i32>,
     revision_id: i64,
 ) -> anyhow::Result<()> {
-    let Some(header_id) = model.header_id else {
-        return Ok(());
-    };
+    let header_id = model.header_id;
     let txn = ctx.txn().await?;
     let existing_children = task::Entity::find()
         .filter(task::Column::ParentId.eq(header_id))
@@ -747,7 +733,7 @@ async fn update_children(
         .all(txn)
         .await?;
     let existing: HashSet<i32> =
-        existing_children.into_iter().filter_map(|child| child.header_id).collect();
+        existing_children.into_iter().map(|child| child.header_id).collect();
 
     let child_ids: Vec<i32> = std::mem::take(&mut children);
     let target_children = task::Entity::find()
@@ -760,7 +746,7 @@ async fn update_children(
         .all(txn)
         .await?;
     let mut target: HashSet<i32> =
-        target_children.into_iter().filter_map(|child| child.header_id).collect();
+        target_children.into_iter().map(|child| child.header_id).collect();
 
     if target.len() < child_ids.len() {
         let unresolved_ids: Vec<i32> =
@@ -770,7 +756,7 @@ async fn update_children(
                 .filter(task::Column::Id.is_in(unresolved_ids))
                 .all(txn)
                 .await?;
-            target.extend(fallback_children.into_iter().filter_map(|child| child.header_id));
+            target.extend(fallback_children.into_iter().map(|child| child.header_id));
         }
     }
 
@@ -807,7 +793,7 @@ async fn update_resource_constraints(
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     // Fetch active old constraints (assume order is preserved)
-    let header_id = model.header_id.unwrap_or(model.id);
+    let header_id = model.header_id;
     let old = resource_constraint::Entity::find()
         .filter(resource_constraint::Column::TaskId.eq(header_id))
         .filter(resource_constraint::Column::RevDeleted.is_null())
@@ -871,7 +857,7 @@ async fn update_resource_constraints(
                     let resource_header_id = resource::Entity::find_by_id(entry.resource_id)
                         .one(txn)
                         .await?
-                        .and_then(|r| r.header_id)
+                        .map(|r| r.header_id)
                         .unwrap_or(entry.resource_id);
                     entry_models.push(resource_constraint_entry::ActiveModel {
                         id: ActiveValue::NotSet,
@@ -903,7 +889,7 @@ async fn update_resource_constraints(
                 let resource_header_id = resource::Entity::find_by_id(resource_id)
                     .one(txn)
                     .await?
-                    .and_then(|r| r.header_id)
+                    .map(|r| r.header_id)
                     .unwrap_or(resource_id);
                 entries.push(resource_constraint_entry::ActiveModel {
                     id: ActiveValue::NotSet,
@@ -1006,12 +992,12 @@ pub async fn task_save(ctx: &Context, mut task: TaskSaveInput) -> anyhow::Result
     } else {
         let header = crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
-            rev_created: ActiveValue::Set(Some(revision_id)),
+            rev_created: ActiveValue::Set(revision_id),
             rev_deleted: ActiveValue::Set(None),
         }
         .insert(txn)
         .await?;
-        am.header_id = ActiveValue::Set(Some(header.id));
+        am.header_id = ActiveValue::Set(header.id);
         am.rev_created = ActiveValue::Set(revision_id);
         am.rev_deleted = ActiveValue::Set(None);
         am.insert(txn).await?

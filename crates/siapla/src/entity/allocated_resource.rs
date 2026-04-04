@@ -17,8 +17,6 @@ pub struct Model {
     pub id: i32,
     pub allocation_id: i32,
     pub resource_id: i32,
-    pub rev_created: i64,
-    pub rev_deleted: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -26,8 +24,6 @@ pub enum Column {
     Id,
     AllocationId,
     ResourceId,
-    RevCreated,
-    RevDeleted,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -45,7 +41,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     Allocation,
-    ResourceIteration,
+    ResourceHeader,
 }
 
 impl ColumnTrait for Column {
@@ -55,8 +51,6 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Integer.def(),
             Self::AllocationId => ColumnType::Integer.def(),
             Self::ResourceId => ColumnType::Integer.def(),
-            Self::RevCreated => ColumnType::BigInteger.def(),
-            Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
 }
@@ -68,9 +62,9 @@ impl RelationTrait for Relation {
                 .from(Column::AllocationId)
                 .to(super::allocation::Column::Id)
                 .into(),
-            Self::ResourceIteration => Entity::belongs_to(super::resource_iteration::Entity)
+            Self::ResourceHeader => Entity::belongs_to(super::resource_header::Entity)
                 .from(Column::ResourceId)
-                .to(super::resource_iteration::Column::Id)
+                .to(super::resource_header::Column::Id)
                 .into(),
         }
     }
@@ -82,9 +76,9 @@ impl Related<super::allocation::Entity> for Entity {
     }
 }
 
-impl Related<super::resource_iteration::Entity> for Entity {
+impl Related<super::resource_header::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ResourceIteration.def()
+        Relation::ResourceHeader.def()
     }
 }
 

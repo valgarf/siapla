@@ -15,7 +15,7 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub rev_created: Option<i64>,
+    pub rev_created: i64,
     pub rev_deleted: Option<i64>,
 }
 
@@ -41,6 +41,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     Allocation,
+    Booking,
+    Issue,
     ResourceConstraint,
     Revision2,
     Revision1,
@@ -51,7 +53,7 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::RevCreated => ColumnType::BigInteger.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
             Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
@@ -61,6 +63,8 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::Allocation => Entity::has_many(super::allocation::Entity).into(),
+            Self::Booking => Entity::has_many(super::booking::Entity).into(),
+            Self::Issue => Entity::has_many(super::issue::Entity).into(),
             Self::ResourceConstraint => Entity::has_many(super::resource_constraint::Entity).into(),
             Self::Revision2 => Entity::belongs_to(super::revision::Entity)
                 .from(Column::RevDeleted)
@@ -77,6 +81,18 @@ impl RelationTrait for Relation {
 impl Related<super::allocation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Allocation.def()
+    }
+}
+
+impl Related<super::booking::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Booking.def()
+    }
+}
+
+impl Related<super::issue::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Issue.def()
     }
 }
 

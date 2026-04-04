@@ -41,7 +41,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     ResourceConstraint,
-    ResourceIteration,
+    ResourceHeader,
 }
 
 impl ColumnTrait for Column {
@@ -62,9 +62,9 @@ impl RelationTrait for Relation {
                 .from(Column::ResourceConstraintId)
                 .to(super::resource_constraint::Column::Id)
                 .into(),
-            Self::ResourceIteration => Entity::belongs_to(super::resource_iteration::Entity)
+            Self::ResourceHeader => Entity::belongs_to(super::resource_header::Entity)
                 .from(Column::ResourceId)
-                .to(super::resource_iteration::Column::Id)
+                .to(super::resource_header::Column::Id)
                 .into(),
         }
     }
@@ -76,9 +76,9 @@ impl Related<super::resource_constraint::Entity> for Entity {
     }
 }
 
-impl Related<super::resource_iteration::Entity> for Entity {
+impl Related<super::resource_header::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ResourceIteration.def()
+        Relation::ResourceHeader.def()
     }
 }
 

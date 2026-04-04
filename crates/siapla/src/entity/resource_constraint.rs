@@ -49,6 +49,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     ResourceConstraintEntry,
+    Revision2,
+    Revision1,
     TaskHeader,
 }
 
@@ -73,6 +75,14 @@ impl RelationTrait for Relation {
             Self::ResourceConstraintEntry => {
                 Entity::has_many(super::resource_constraint_entry::Entity).into()
             }
+            Self::Revision2 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevDeleted)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::Revision1 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevCreated)
+                .to(super::revision::Column::Id)
+                .into(),
             Self::TaskHeader => Entity::belongs_to(super::task_header::Entity)
                 .from(Column::TaskId)
                 .to(super::task_header::Column::Id)

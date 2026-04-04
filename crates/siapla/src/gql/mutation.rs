@@ -174,13 +174,13 @@ impl Mutation {
             .one(txn)
             .await?
         {
-            active_task.header_id.unwrap_or(active_task.id)
+            active_task.header_id
         } else if let Some(active_task) = task::Entity::find_by_id(task_id)
             .filter(task::Column::RevDeleted.is_null())
             .one(txn)
             .await?
         {
-            active_task.header_id.unwrap_or(active_task.id)
+            active_task.header_id
         } else {
             return Err(anyhow::anyhow!(
                 "No active task iteration found for task header {task_id}"
@@ -207,13 +207,13 @@ impl Mutation {
                     .one(txn)
                     .await?
             {
-                active_resource.header_id.unwrap_or(active_resource.id)
+                active_resource.header_id
             } else if let Some(active_resource) = resource::Entity::find_by_id(rid)
                 .filter(resource::Column::RevDeleted.is_null())
                 .one(txn)
                 .await?
             {
-                active_resource.header_id.unwrap_or(active_resource.id)
+                active_resource.header_id
             } else {
                 return Err(anyhow::anyhow!(
                     "No active resource iteration found for resource header {rid}"

@@ -100,7 +100,6 @@ impl_range_rev_columns!(entity::vacation::Entity, RevCreated, RevDeleted);
 impl_range_rev_columns!(entity::booking::Entity, RevCreated, RevDeleted);
 
 impl_range_rev_columns!(entity::allocation::Entity, RevCreated, RevDeleted);
-impl_range_rev_columns!(entity::allocated_resource::Entity, RevCreated, RevDeleted);
 impl_range_rev_columns!(entity::issue::Entity, RevCreated, RevDeleted);
 
 #[derive(Error, Debug)]

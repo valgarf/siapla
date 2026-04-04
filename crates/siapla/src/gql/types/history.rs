@@ -424,14 +424,14 @@ pub async fn query_task_history(
             task_iterations.iter().filter(|t| t.rev_deleted == Some(rev_id)).collect();
 
         let created_headers: HashSet<i32> =
-            created_iters.iter().filter_map(|t| t.header_id).collect();
+            created_iters.iter().map(|t| t.header_id).collect();
         let deleted_headers: HashSet<i32> =
-            deleted_iters.iter().filter_map(|t| t.header_id).collect();
+            deleted_iters.iter().map(|t| t.header_id).collect();
         let updated_headers: HashSet<i32> =
             created_headers.intersection(&deleted_headers).copied().collect();
 
         for t in &created_iters {
-            let hid = t.header_id.unwrap_or(t.id);
+            let hid = t.header_id;
             let ct = if updated_headers.contains(&hid) {
                 ChangeType::Updated
             } else {
@@ -453,7 +453,7 @@ pub async fn query_task_history(
         }
 
         for t in &deleted_iters {
-            let hid = t.header_id.unwrap_or(t.id);
+            let hid = t.header_id;
             if !updated_headers.contains(&hid) {
                 changes.push(
                     TaskIterationChange {

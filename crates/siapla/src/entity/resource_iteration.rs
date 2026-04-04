@@ -20,7 +20,7 @@ pub struct Model {
     pub added: DateTimeUtc,
     pub removed: Option<DateTimeUtc>,
     pub holiday_id: Option<i32>,
-    pub header_id: Option<i32>,
+    pub header_id: i32,
     pub rev_created: i64,
     pub rev_deleted: Option<i64>,
 }
@@ -52,11 +52,10 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    AllocatedResource,
-    Availability,
     Holiday,
-    ResourceConstraintEntry,
-    Vacation,
+    ResourceHeader,
+    Revision2,
+    Revision1,
 }
 
 impl ColumnTrait for Column {
@@ -69,7 +68,7 @@ impl ColumnTrait for Column {
             Self::Added => ColumnType::Timestamp.def(),
             Self::Removed => ColumnType::Timestamp.def().null(),
             Self::HolidayId => ColumnType::Integer.def().null(),
-            Self::HeaderId => ColumnType::Integer.def().null(),
+            Self::HeaderId => ColumnType::Integer.def(),
             Self::RevCreated => ColumnType::BigInteger.def(),
             Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
@@ -79,29 +78,23 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
-            Self::Availability => Entity::has_many(super::availability::Entity).into(),
             Self::Holiday => Entity::belongs_to(super::holiday::Entity)
                 .from(Column::HolidayId)
                 .to(super::holiday::Column::Id)
                 .into(),
-            Self::ResourceConstraintEntry => {
-                Entity::has_many(super::resource_constraint_entry::Entity).into()
-            }
-            Self::Vacation => Entity::has_many(super::vacation::Entity).into(),
+            Self::ResourceHeader => Entity::belongs_to(super::resource_header::Entity)
+                .from(Column::HeaderId)
+                .to(super::resource_header::Column::Id)
+                .into(),
+            Self::Revision2 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevDeleted)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::Revision1 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevCreated)
+                .to(super::revision::Column::Id)
+                .into(),
         }
-    }
-}
-
-impl Related<super::allocated_resource::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AllocatedResource.def()
-    }
-}
-
-impl Related<super::availability::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Availability.def()
     }
 }
 
@@ -111,15 +104,9 @@ impl Related<super::holiday::Entity> for Entity {
     }
 }
 
-impl Related<super::resource_constraint_entry::Entity> for Entity {
+impl Related<super::resource_header::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ResourceConstraintEntry.def()
-    }
-}
-
-impl Related<super::vacation::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Vacation.def()
+        Relation::ResourceHeader.def()
     }
 }
 

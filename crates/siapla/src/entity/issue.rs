@@ -48,7 +48,9 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    TaskIteration,
+    Revision2,
+    Revision1,
+    TaskHeader,
 }
 
 impl ColumnTrait for Column {
@@ -69,17 +71,25 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::TaskIteration => Entity::belongs_to(super::task_iteration::Entity)
+            Self::Revision2 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevDeleted)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::Revision1 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevCreated)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::TaskHeader => Entity::belongs_to(super::task_header::Entity)
                 .from(Column::TaskId)
-                .to(super::task_iteration::Column::Id)
+                .to(super::task_header::Column::Id)
                 .into(),
         }
     }
 }
 
-impl Related<super::task_iteration::Entity> for Entity {
+impl Related<super::task_header::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TaskIteration.def()
+        Relation::TaskHeader.def()
     }
 }
 

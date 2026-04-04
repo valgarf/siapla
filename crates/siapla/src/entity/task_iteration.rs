@@ -23,7 +23,7 @@ pub struct Model {
     pub schedule_target: Option<DateTimeUtc>,
     pub effort: Option<f32>,
     pub priority: f32,
-    pub header_id: Option<i32>,
+    pub header_id: i32,
     pub rev_created: i64,
     pub rev_deleted: Option<i64>,
 }
@@ -58,8 +58,10 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Issue,
-    SelfRef,
+    Revision2,
+    Revision1,
+    TaskHeader2,
+    TaskHeader1,
 }
 
 impl ColumnTrait for Column {
@@ -75,7 +77,7 @@ impl ColumnTrait for Column {
             Self::ScheduleTarget => ColumnType::Timestamp.def().null(),
             Self::Effort => ColumnType::Float.def().null(),
             Self::Priority => ColumnType::Float.def(),
-            Self::HeaderId => ColumnType::Integer.def().null(),
+            Self::HeaderId => ColumnType::Integer.def(),
             Self::RevCreated => ColumnType::BigInteger.def(),
             Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
@@ -85,17 +87,23 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Issue => Entity::has_many(super::issue::Entity).into(),
-            Self::SelfRef => {
-                Entity::belongs_to(Entity).from(Column::ParentId).to(Column::Id).into()
-            }
+            Self::Revision2 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevDeleted)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::Revision1 => Entity::belongs_to(super::revision::Entity)
+                .from(Column::RevCreated)
+                .to(super::revision::Column::Id)
+                .into(),
+            Self::TaskHeader2 => Entity::belongs_to(super::task_header::Entity)
+                .from(Column::HeaderId)
+                .to(super::task_header::Column::Id)
+                .into(),
+            Self::TaskHeader1 => Entity::belongs_to(super::task_header::Entity)
+                .from(Column::ParentId)
+                .to(super::task_header::Column::Id)
+                .into(),
         }
-    }
-}
-
-impl Related<super::issue::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Issue.def()
     }
 }
 

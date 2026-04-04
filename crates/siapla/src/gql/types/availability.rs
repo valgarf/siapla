@@ -144,7 +144,7 @@ pub async fn update_availability(
             .filter(|a| add.contains(&a.weekday))
             .map(|a| {
                 let mut am: availability::ActiveModel = a.into();
-                am.resource_id = ActiveValue::Set(model.header_id.unwrap_or(model.id));
+                am.resource_id = ActiveValue::Set(model.header_id);
                 am.rev_created = ActiveValue::Set(revision_id);
                 am.rev_deleted = ActiveValue::Set(None);
                 am
@@ -182,7 +182,7 @@ pub async fn update_availability(
                 .await?;
 
             let mut am: availability::ActiveModel = input.into();
-            am.resource_id = ActiveValue::Set(model.header_id.unwrap_or(model.id));
+            am.resource_id = ActiveValue::Set(model.header_id);
             am.rev_created = ActiveValue::Set(revision_id);
             am.rev_deleted = ActiveValue::Set(None);
             am.insert(txn).await?;

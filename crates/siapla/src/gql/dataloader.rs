@@ -352,7 +352,7 @@ pub async fn query_combined_availability(
         .await?;
     let res_map = db_resources
         .into_iter()
-        .filter_map(|r| r.header_id.map(|hid| (hid, r)))
+        .map(|r| (r.header_id, r))
         .collect::<HashMap<i32, _>>();
 
     let db_availabilities = availability::Entity::find()

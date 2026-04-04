@@ -8,6 +8,13 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let backend = manager.get_database_backend();
+        let db = manager.get_connection();
+
+        db.execute_unprepared("PRAGMA foreign_keys=OFF").await?;
+        db.execute_unprepared("PRAGMA legacy_alter_table=ON").await?;
+
+        // === Phase 1: Create revision table and seed it ===
         manager
             .create_table(
                 Table::create()
@@ -20,23 +27,22 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .rename_table(Table::rename().table(Task::Table, TaskIteration::Table).to_owned())
-            .await?;
+        let seed_revision = Query::insert()
+            .into_table(Revision::Table)
+            .columns([Revision::Id, Revision::Timestamp, Revision::PlanState])
+            .values_panic([1.into(), Expr::current_timestamp().into(), "NOT_CALCULATED".into()])
+            .on_conflict(OnConflict::column(Revision::Id).do_nothing().to_owned())
+            .to_owned();
+        db.execute(backend.build(&seed_revision)).await?;
 
-        manager
-            .rename_table(
-                Table::rename().table(Resource::Table, ResourceIteration::Table).to_owned(),
-            )
-            .await?;
-
+        // === Phase 2: Create header tables ===
         manager
             .create_table(
                 Table::create()
                     .table(TaskHeader::Table)
                     .if_not_exists()
                     .col(pk_auto(TaskHeader::Id))
-                    .col(ColumnDef::new(TaskHeader::RevCreated).big_unsigned())
+                    .col(ColumnDef::new(TaskHeader::RevCreated).big_unsigned().not_null())
                     .col(ColumnDef::new(TaskHeader::RevDeleted).big_unsigned().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -64,7 +70,7 @@ impl MigrationTrait for Migration {
                     .table(ResourceHeader::Table)
                     .if_not_exists()
                     .col(pk_auto(ResourceHeader::Id))
-                    .col(ColumnDef::new(ResourceHeader::RevCreated).big_unsigned())
+                    .col(ColumnDef::new(ResourceHeader::RevCreated).big_unsigned().not_null())
                     .col(ColumnDef::new(ResourceHeader::RevDeleted).big_unsigned().null())
                     .foreign_key(
                         ForeignKey::create()
@@ -86,170 +92,100 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(TaskIteration::Table)
-                    .add_column(ColumnDef::new(TaskIteration::HeaderId).integer().null())
-                    .to_owned(),
-            )
+        // === Phase 3: Recreate task -> task_iteration with proper FKs ===
+        db.execute_unprepared("ALTER TABLE \"task\" RENAME TO \"_task_old\"")
             .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(TaskIteration::Table)
-                    .add_column(
-                        ColumnDef::new(TaskIteration::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(TaskIteration::Table)
-                    .add_column(ColumnDef::new(TaskIteration::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"task_iteration\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"parent_id\" integer NULL,",
+            " \"title\" varchar NOT NULL,",
+            " \"description\" varchar NOT NULL,",
+            " \"designation\" varchar NOT NULL,",
+            " \"earliest_start\" timestamp_text NULL,",
+            " \"schedule_target\" timestamp_text NULL,",
+            " \"effort\" float NULL,",
+            " \"priority\" float NOT NULL DEFAULT 1,",
+            " \"header_id\" integer NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"parent_id\") REFERENCES \"task_header\" (\"id\") ON DELETE SET NULL ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"header_id\") REFERENCES \"task_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"task_header\" (\"id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", 1, NULL FROM \"_task_old\""
+        ))
+        .await?;
+
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"task_iteration\"",
+            " (\"id\", \"parent_id\", \"title\", \"description\", \"designation\",",
+            " \"earliest_start\", \"schedule_target\", \"effort\", \"priority\",",
+            " \"header_id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"parent_id\", \"title\", \"description\", \"designation\",",
+            " \"earliest_start\", \"schedule_target\", \"effort\", \"priority\",",
+            " \"id\", 1, NULL FROM \"_task_old\""
+        ))
+        .await?;
+
+        db.execute_unprepared(concat!(
+            "UPDATE \"task_iteration\" SET \"parent_id\" = (",
+            " SELECT parent.\"header_id\" FROM \"task_iteration\" AS parent",
+            " WHERE parent.\"id\" = \"task_iteration\".\"parent_id\"",
+            ") WHERE \"parent_id\" IS NOT NULL"
+        ))
+        .await?;
+
+        db.execute_unprepared("DROP TABLE \"_task_old\"").await?;
+
+        // === Phase 4: Recreate resource -> resource_iteration with proper FKs ===
+        db.execute_unprepared("ALTER TABLE \"resource\" RENAME TO \"_resource_old\"")
             .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ResourceIteration::Table)
-                    .add_column(ColumnDef::new(ResourceIteration::HeaderId).integer().null())
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ResourceIteration::Table)
-                    .add_column(
-                        ColumnDef::new(ResourceIteration::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ResourceIteration::Table)
-                    .add_column(ColumnDef::new(ResourceIteration::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"resource_iteration\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"name\" varchar NOT NULL,",
+            " \"timezone\" varchar NOT NULL,",
+            " \"added\" timestamp_text NOT NULL,",
+            " \"removed\" timestamp_text NULL,",
+            " \"holiday_id\" integer NULL,",
+            " \"header_id\" integer NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"holiday_id\") REFERENCES \"holiday\" (\"id\") ON DELETE SET NULL ON UPDATE SET NULL,",
+            " FOREIGN KEY (\"header_id\") REFERENCES \"resource_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Dependency::Table)
-                    .add_column(
-                        ColumnDef::new(Dependency::RevCreated).big_unsigned().not_null().default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Dependency::Table)
-                    .add_column(ColumnDef::new(Dependency::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"resource_header\" (\"id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", 1, NULL FROM \"_resource_old\""
+        ))
+        .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Vacation::Table)
-                    .add_column(
-                        ColumnDef::new(Vacation::RevCreated).big_unsigned().not_null().default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Vacation::Table)
-                    .add_column(ColumnDef::new(Vacation::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"resource_iteration\"",
+            " (\"id\", \"name\", \"timezone\", \"added\", \"removed\", \"holiday_id\",",
+            " \"header_id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"name\", \"timezone\", \"added\", \"removed\", \"holiday_id\",",
+            " \"id\", 1, NULL FROM \"_resource_old\""
+        ))
+        .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Availability::Table)
-                    .add_column(
-                        ColumnDef::new(Availability::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Availability::Table)
-                    .add_column(ColumnDef::new(Availability::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
+        db.execute_unprepared("DROP TABLE \"_resource_old\"").await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ResourceConstraint::Table)
-                    .add_column(
-                        ColumnDef::new(ResourceConstraint::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ResourceConstraint::Table)
-                    .add_column(
-                        ColumnDef::new(ResourceConstraint::RevDeleted).big_unsigned().null(),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Allocation::Table)
-                    .add_column(
-                        ColumnDef::new(Allocation::RevCreated).big_unsigned().not_null().default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Allocation::Table)
-                    .add_column(ColumnDef::new(Allocation::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
-
+        // === Phase 5: Create booking tables ===
         manager
             .create_table(
                 Table::create()
@@ -266,7 +202,7 @@ impl MigrationTrait for Migration {
                         ForeignKey::create()
                             .name("FK_Booking_Task")
                             .from(Booking::Table, Booking::TaskId)
-                            .to(TaskIteration::Table, TaskIteration::Id)
+                            .to(TaskHeader::Table, TaskHeader::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
@@ -310,7 +246,7 @@ impl MigrationTrait for Migration {
                         ForeignKey::create()
                             .name("FK_BookingResource_Resource")
                             .from(BookingResource::Table, BookingResource::ResourceId)
-                            .to(ResourceIteration::Table, ResourceIteration::Id)
+                            .to(ResourceHeader::Table, ResourceHeader::Id)
                             .on_delete(ForeignKeyAction::Restrict)
                             .on_update(ForeignKeyAction::Cascade),
                     )
@@ -318,120 +254,7 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(AllocatedResource::Table)
-                    .add_column(
-                        ColumnDef::new(AllocatedResource::RevCreated)
-                            .big_unsigned()
-                            .not_null()
-                            .default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(AllocatedResource::Table)
-                    .add_column(ColumnDef::new(AllocatedResource::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Issue::Table)
-                    .add_column(
-                        ColumnDef::new(Issue::RevCreated).big_unsigned().not_null().default(1),
-                    )
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Issue::Table)
-                    .add_column(ColumnDef::new(Issue::RevDeleted).big_unsigned().null())
-                    .to_owned(),
-            )
-            .await?;
-
-        let backend = manager.get_database_backend();
-        let db = manager.get_connection();
-
-        let seed_revision = Query::insert()
-            .into_table(Revision::Table)
-            .columns([Revision::Id, Revision::Timestamp, Revision::PlanState])
-            .values_panic([1.into(), Expr::current_timestamp().into(), "NOT_CALCULATED".into()])
-            .on_conflict(OnConflict::column(Revision::Id).do_nothing().to_owned())
-            .to_owned();
-
-        db.execute(backend.build(&seed_revision)).await?;
-
-        let copy_task_headers = Query::insert()
-            .into_table(TaskHeader::Table)
-            .columns([TaskHeader::Id, TaskHeader::RevCreated, TaskHeader::RevDeleted])
-            .select_from(
-                Query::select()
-                    .column(TaskIteration::Id)
-                    .expr(Expr::value(1))
-                    .expr(Expr::value(Value::BigUnsigned(None)))
-                    .from(TaskIteration::Table)
-                    .to_owned(),
-            )
-            .map_err(|e| DbErr::Custom(e.to_string()))?
-            .to_owned();
-
-        db.execute(backend.build(&copy_task_headers)).await?;
-
-        let copy_resource_headers = Query::insert()
-            .into_table(ResourceHeader::Table)
-            .columns([ResourceHeader::Id, ResourceHeader::RevCreated, ResourceHeader::RevDeleted])
-            .select_from(
-                Query::select()
-                    .column(ResourceIteration::Id)
-                    .expr(Expr::value(1))
-                    .expr(Expr::value(Value::BigUnsigned(None)))
-                    .from(ResourceIteration::Table)
-                    .to_owned(),
-            )
-            .map_err(|e| DbErr::Custom(e.to_string()))?
-            .to_owned();
-
-        db.execute(backend.build(&copy_resource_headers)).await?;
-
-        let fill_task_header_ids = Query::update()
-            .table(TaskIteration::Table)
-            .value(TaskIteration::HeaderId, Expr::col(TaskIteration::Id))
-            .and_where(Expr::col(TaskIteration::HeaderId).is_null())
-            .to_owned();
-
-        db.execute(backend.build(&fill_task_header_ids)).await?;
-
-        let rewrite_task_parent_ids_to_headers = Query::update()
-            .table(TaskIteration::Table)
-            .value(
-                TaskIteration::ParentId,
-                Expr::cust(
-                    "(SELECT parent.header_id FROM task_iteration AS parent WHERE parent.id = task_iteration.parent_id)",
-                ),
-            )
-            .and_where(Expr::col(TaskIteration::ParentId).is_not_null())
-            .to_owned();
-
-        db.execute(backend.build(&rewrite_task_parent_ids_to_headers)).await?;
-
-        let fill_resource_header_ids = Query::update()
-            .table(ResourceIteration::Table)
-            .value(ResourceIteration::HeaderId, Expr::col(ResourceIteration::Id))
-            .and_where(Expr::col(ResourceIteration::HeaderId).is_null())
-            .to_owned();
-
-        db.execute(backend.build(&fill_resource_header_ids)).await?;
-
+        // === Phase 6: Copy bookings from allocation table ===
         let copy_bookings = Query::insert()
             .into_table(Booking::Table)
             .columns([
@@ -511,20 +334,205 @@ impl MigrationTrait for Migration {
         let delete_plan_allocations = Query::delete().from_table(Allocation::Table).to_owned();
         db.execute(backend.build(&delete_plan_allocations)).await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(Allocation::Table)
-                    .drop_column(Allocation::AllocationType)
-                    .to_owned(),
-            )
-            .await?;
+        // === Phase 7: Recreate tables with corrected FK targets ===
+        // All rev_created/rev_deleted get FK to revision with ON DELETE RESTRICT.
+        // task-referencing FKs now point to task_header.
+        // resource-referencing FKs now point to resource_header.
 
-        manager
-            .alter_table(
-                Table::alter().table(Allocation::Table).drop_column(Allocation::Final).to_owned(),
-            )
+        // -- dependency (predecessor_id/successor_id -> task_header) --
+        db.execute_unprepared("ALTER TABLE \"dependency\" RENAME TO \"_dependency_old\"")
             .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"dependency\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"predecessor_id\" integer NOT NULL,",
+            " \"successor_id\" integer NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"predecessor_id\") REFERENCES \"task_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"successor_id\") REFERENCES \"task_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"dependency\" (\"id\", \"predecessor_id\", \"successor_id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"predecessor_id\", \"successor_id\", 1, NULL FROM \"_dependency_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_dependency_old\"").await?;
+        db.execute_unprepared(
+            "CREATE INDEX \"IDX_Dependency_PredecessorId\" ON \"dependency\" (\"predecessor_id\")",
+        )
+        .await?;
+        db.execute_unprepared(
+            "CREATE INDEX \"IDX_Dependency_SuccessorId\" ON \"dependency\" (\"successor_id\")",
+        )
+        .await?;
+
+        // -- vacation (resource_id -> resource_header) --
+        db.execute_unprepared("ALTER TABLE \"vacation\" RENAME TO \"_vacation_old\"")
+            .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"vacation\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"resource_id\" integer NOT NULL,",
+            " \"from\" timestamp_text NOT NULL,",
+            " \"until\" timestamp_text NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"resource_id\") REFERENCES \"resource_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"vacation\" (\"id\", \"resource_id\", \"from\", \"until\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"resource_id\", \"from\", \"until\", 1, NULL FROM \"_vacation_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_vacation_old\"").await?;
+
+        // -- availability (resource_id -> resource_header) --
+        db.execute_unprepared("ALTER TABLE \"availability\" RENAME TO \"_availability_old\"")
+            .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"availability\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"resource_id\" integer NOT NULL,",
+            " \"weekday\" varchar(2) NOT NULL,",
+            " \"duration\" real NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"resource_id\") REFERENCES \"resource_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"availability\" (\"id\", \"resource_id\", \"weekday\", \"duration\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"resource_id\", \"weekday\", \"duration\", 1, NULL FROM \"_availability_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_availability_old\"").await?;
+
+        // -- resource_constraint (task_id -> task_header) --
+        db.execute_unprepared(
+            "ALTER TABLE \"resource_constraint\" RENAME TO \"_resource_constraint_old\"",
+        )
+        .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"resource_constraint\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"task_id\" integer NOT NULL,",
+            " \"type\" varchar NOT NULL,",
+            " \"optional\" boolean NOT NULL,",
+            " \"speed\" float NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"task_id\") REFERENCES \"task_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"resource_constraint\"",
+            " (\"id\", \"task_id\", \"type\", \"optional\", \"speed\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"task_id\", \"type\", \"optional\", \"speed\", 1, NULL",
+            " FROM \"_resource_constraint_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_resource_constraint_old\"").await?;
+
+        // -- resource_constraint_entry (resource_id -> resource_header) --
+        db.execute_unprepared(
+            "ALTER TABLE \"resource_constraint_entry\" RENAME TO \"_resource_constraint_entry_old\"",
+        )
+        .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"resource_constraint_entry\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"resource_constraint_id\" integer NOT NULL,",
+            " \"resource_id\" integer NOT NULL,",
+            " FOREIGN KEY (\"resource_constraint_id\") REFERENCES \"resource_constraint\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"resource_id\") REFERENCES \"resource_header\" (\"id\") ON DELETE RESTRICT ON UPDATE RESTRICT",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"resource_constraint_entry\" (\"id\", \"resource_constraint_id\", \"resource_id\")",
+            " SELECT \"id\", \"resource_constraint_id\", \"resource_id\" FROM \"_resource_constraint_entry_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_resource_constraint_entry_old\"").await?;
+
+        // -- allocation (task_id -> task_header, empty after cleanup, without allocation_type/final) --
+        db.execute_unprepared("ALTER TABLE \"allocation\" RENAME TO \"_allocation_old\"")
+            .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"allocation\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"task_id\" integer NOT NULL,",
+            " \"start\" timestamp_text NOT NULL,",
+            " \"end\" timestamp_text NOT NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"task_id\") REFERENCES \"task_header\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_allocation_old\"").await?;
+
+        // -- allocated_resource (resource_id -> resource_header, empty after cleanup) --
+        db.execute_unprepared(
+            "ALTER TABLE \"allocated_resource\" RENAME TO \"_allocated_resource_old\"",
+        )
+        .await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"allocated_resource\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"allocation_id\" integer NOT NULL,",
+            " \"resource_id\" integer NOT NULL,",
+            " FOREIGN KEY (\"allocation_id\") REFERENCES \"allocation\" (\"id\") ON DELETE CASCADE ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"resource_id\") REFERENCES \"resource_header\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_allocated_resource_old\"").await?;
+
+        // -- issue (task_id -> task_header) --
+        db.execute_unprepared("ALTER TABLE \"issue\" RENAME TO \"_issue_old\"").await?;
+        db.execute_unprepared(concat!(
+            "CREATE TABLE \"issue\" (",
+            " \"id\" integer NOT NULL PRIMARY KEY AUTOINCREMENT,",
+            " \"code\" integer NOT NULL,",
+            " \"description\" varchar NOT NULL,",
+            " \"type\" varchar NOT NULL,",
+            " \"task_id\" integer NULL,",
+            " \"rev_created\" bigint NOT NULL,",
+            " \"rev_deleted\" bigint NULL,",
+            " FOREIGN KEY (\"task_id\") REFERENCES \"task_header\" (\"id\") ON DELETE SET NULL ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_created\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE,",
+            " FOREIGN KEY (\"rev_deleted\") REFERENCES \"revision\" (\"id\") ON DELETE RESTRICT ON UPDATE CASCADE",
+            ")"
+        ))
+        .await?;
+        db.execute_unprepared(concat!(
+            "INSERT INTO \"issue\"",
+            " (\"id\", \"code\", \"description\", \"type\", \"task_id\", \"rev_created\", \"rev_deleted\")",
+            " SELECT \"id\", \"code\", \"description\", \"type\", \"task_id\", 1, NULL FROM \"_issue_old\""
+        ))
+        .await?;
+        db.execute_unprepared("DROP TABLE \"_issue_old\"").await?;
+
+        db.execute_unprepared("PRAGMA legacy_alter_table=OFF").await?;
+        db.execute_unprepared("PRAGMA foreign_keys=ON").await?;
 
         Ok(())
     }
@@ -532,6 +540,12 @@ impl MigrationTrait for Migration {
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let backend = manager.get_database_backend();
         let db = manager.get_connection();
+
+        let delete_booking = Query::delete()
+            .from_table(Booking::Table)
+            .and_where(Expr::col(Booking::RevDeleted).is_not_null())
+            .to_owned();
+        db.execute(backend.build(&delete_booking)).await?;
 
         let delete_dependency = Query::delete()
             .from_table(Dependency::Table)
@@ -587,12 +601,6 @@ impl MigrationTrait for Migration {
             .to_owned();
         db.execute(backend.build(&delete_allocation)).await?;
 
-        let delete_allocated_resource = Query::delete()
-            .from_table(AllocatedResource::Table)
-            .and_where(Expr::col(AllocatedResource::RevDeleted).is_not_null())
-            .to_owned();
-        db.execute(backend.build(&delete_allocated_resource)).await?;
-
         let delete_issue = Query::delete()
             .from_table(Issue::Table)
             .and_where(Expr::col(Issue::RevDeleted).is_not_null())
@@ -602,6 +610,7 @@ impl MigrationTrait for Migration {
     }
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Revision {
     Table,
@@ -610,16 +619,19 @@ enum Revision {
     PlanState,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Task {
     Table,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Resource {
     Table,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum TaskHeader {
     Table,
@@ -628,6 +640,7 @@ enum TaskHeader {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum ResourceHeader {
     Table,
@@ -636,6 +649,7 @@ enum ResourceHeader {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum TaskIteration {
     Table,
@@ -646,6 +660,7 @@ enum TaskIteration {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum ResourceIteration {
     Table,
@@ -655,6 +670,7 @@ enum ResourceIteration {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Dependency {
     Table,
@@ -662,6 +678,7 @@ enum Dependency {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Vacation {
     Table,
@@ -669,6 +686,7 @@ enum Vacation {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Availability {
     Table,
@@ -676,6 +694,7 @@ enum Availability {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum ResourceConstraint {
     Table,
@@ -683,6 +702,7 @@ enum ResourceConstraint {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Allocation {
     Table,
@@ -696,6 +716,7 @@ enum Allocation {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Booking {
     Table,
@@ -708,6 +729,7 @@ enum Booking {
     RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum BookingResource {
     Table,
@@ -716,15 +738,15 @@ enum BookingResource {
     ResourceId,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum AllocatedResource {
     Table,
     AllocationId,
     ResourceId,
-    RevCreated,
-    RevDeleted,
 }
 
+#[allow(dead_code)]
 #[derive(DeriveIden)]
 enum Issue {
     Table,

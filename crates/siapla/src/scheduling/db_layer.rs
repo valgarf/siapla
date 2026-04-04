@@ -58,7 +58,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         .await?;
     let resource_header_to_iter = db_resource_vec
         .iter()
-        .filter_map(|r| r.header_id.map(|hid| (hid, r.id)))
+        .map(|r| (r.header_id, r.id))
         .collect::<HashMap<i32, i32>>();
     let db_dependencies_vec = dependency::Entity::find()
         .filter(active_for_revision(
@@ -68,7 +68,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         ))
         .all(db)
         .await?;
-    let task_header_ids: Vec<i32> = db_task_vec.iter().filter_map(|t| t.header_id).collect();
+    let task_header_ids: Vec<i32> = db_task_vec.iter().map(|t| t.header_id).collect();
     let db_constraints_vec = resource_constraint::Entity::find()
         .filter(resource_constraint::Column::TaskId.is_in(task_header_ids))
         .filter(active_for_revision(
@@ -112,9 +112,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
 
     let mut header_to_task_iter: StdMap<i32, i32> = StdMap::new();
     for t in db_task_map.values() {
-        if let Some(header_id) = t.header_id {
-            header_to_task_iter.insert(header_id, t.id);
-        }
+        header_to_task_iter.insert(t.header_id, t.id);
     }
 
     for a in booking_allocs.iter() {
@@ -157,7 +155,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         let node = if t.designation.as_str() == <&'static str>::from(TaskDesignation::Requirement) {
             let new_ref = Rc::new(RefCell::new(Requirement {
                 db_id: t.id,
-                header_id: t.header_id.unwrap_or(t.id),
+                header_id: t.header_id,
                 title: t.title.clone(),
                 earliest_start: t.earliest_start.map(|dt| dt.naive_utc()).unwrap_or_default(),
             }));
@@ -166,7 +164,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Milestone) {
             let new_ref = Rc::new(RefCell::new(Milestone {
                 db_id: t.id,
-                header_id: t.header_id.unwrap_or(t.id),
+                header_id: t.header_id,
                 title: t.title.clone(),
                 schedule_target: t.schedule_target.map(|dt| dt.naive_utc()).unwrap_or_default(),
                 priority: t.priority as f64,
@@ -177,7 +175,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             let base_effort = t.effort.unwrap_or(0.0) as f64;
             let new_ref = Rc::new(RefCell::new(Task {
                 db_id: t.id,
-                header_id: t.header_id.unwrap_or(t.id),
+                header_id: t.header_id,
                 parent: None,
                 title: t.title.clone(),
                 constraints: Vec::new(), // filled later
@@ -196,7 +194,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         } else if t.designation.as_str() == <&'static str>::from(TaskDesignation::Group) {
             let new_ref = Rc::new(RefCell::new(Group {
                 db_id: t.id,
-                header_id: t.header_id.unwrap_or(t.id),
+                header_id: t.header_id,
                 parent: None,
                 constraints: Vec::new(), // filled later
             }));
@@ -221,7 +219,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
     // Map header_id → iteration_id so we can translate header-based references
     // (used by dependencies and parent_id) to iteration-based keys used in our maps.
     let header_to_iter: HashMap<i32, i32> =
-        db_task_map.values().filter_map(|t| t.header_id.map(|hid| (hid, t.id))).collect();
+        db_task_map.values().map(|t| (t.header_id, t.id)).collect();
 
     let group_map = project_objects
         .groups
@@ -301,7 +299,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
             let last = resource_last_booking.get(&rm.id).cloned();
             Rc::new(RefCell::new(Resource {
                 db_id: rm.id,
-                header_id: rm.header_id.unwrap_or(rm.id),
+                header_id: rm.header_id,
                 name: rm.name,
                 timezone: rm.timezone,
                 slots: vec![],
@@ -681,15 +679,6 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
     let revision_id = project.revision;
 
     // Soft-delete previous plan data by setting rev_deleted on all active
-    // allocations, allocated_resources, and issues.
-    allocated_resource::Entity::update_many()
-        .col_expr(
-            allocated_resource::Column::RevDeleted,
-            Expr::value(Value::BigInt(Some(revision_id))),
-        )
-        .filter(allocated_resource::Column::RevDeleted.is_null())
-        .exec(txn)
-        .await?;
     allocation::Entity::update_many()
         .col_expr(allocation::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
         .filter(allocation::Column::RevDeleted.is_null())
@@ -731,8 +720,6 @@ pub async fn store_plan(ctx: &Context, project: &Project, plan: &Plan) -> anyhow
                 id: ActiveValue::NotSet,
                 allocation_id: ActiveValue::Set(db_alloc.id),
                 resource_id: ActiveValue::Set(stored_resource_id),
-                rev_created: ActiveValue::Set(revision_id),
-                rev_deleted: ActiveValue::Set(None),
             };
             am.insert(txn).await?;
         }

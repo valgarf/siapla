@@ -15,7 +15,7 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq, Serialize, Deserialize)]
 pub struct Model {
     pub id: i32,
-    pub rev_created: Option<i64>,
+    pub rev_created: i64,
     pub rev_deleted: Option<i64>,
 }
 
@@ -40,8 +40,14 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    AllocatedResource,
+    Availability,
+    BookingResource,
+    ResourceConstraintEntry,
+    ResourceIteration,
     Revision2,
     Revision1,
+    Vacation,
 }
 
 impl ColumnTrait for Column {
@@ -49,7 +55,7 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Integer.def(),
-            Self::RevCreated => ColumnType::BigInteger.def().null(),
+            Self::RevCreated => ColumnType::BigInteger.def(),
             Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }
     }
@@ -58,6 +64,13 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::AllocatedResource => Entity::has_many(super::allocated_resource::Entity).into(),
+            Self::Availability => Entity::has_many(super::availability::Entity).into(),
+            Self::BookingResource => Entity::has_many(super::booking_resource::Entity).into(),
+            Self::ResourceConstraintEntry => {
+                Entity::has_many(super::resource_constraint_entry::Entity).into()
+            }
+            Self::ResourceIteration => Entity::has_many(super::resource_iteration::Entity).into(),
             Self::Revision2 => Entity::belongs_to(super::revision::Entity)
                 .from(Column::RevDeleted)
                 .to(super::revision::Column::Id)
@@ -66,7 +79,44 @@ impl RelationTrait for Relation {
                 .from(Column::RevCreated)
                 .to(super::revision::Column::Id)
                 .into(),
+            Self::Vacation => Entity::has_many(super::vacation::Entity).into(),
         }
+    }
+}
+
+impl Related<super::allocated_resource::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AllocatedResource.def()
+    }
+}
+
+impl Related<super::availability::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Availability.def()
+    }
+}
+
+impl Related<super::booking_resource::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::BookingResource.def()
+    }
+}
+
+impl Related<super::resource_constraint_entry::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceConstraintEntry.def()
+    }
+}
+
+impl Related<super::resource_iteration::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ResourceIteration.def()
+    }
+}
+
+impl Related<super::vacation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Vacation.def()
     }
 }
 
