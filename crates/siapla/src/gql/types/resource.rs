@@ -5,9 +5,9 @@ use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
 use tracing::error;
 
-use crate::gql::dataloader::{AvailabilityBatcher, ByColBatcher, ByColRevBatcher};
+use crate::db::dataloader::AvailabilityBatcher;
 use crate::{
-    entity::{availability, holiday, resource_header, resource_iteration as resource, vacation},
+    entity::{resource_header, resource_iteration as resource, vacation},
     gql::{
         availability::GQLAvailability, common::nullable_to_av, context::Context,
         vacation::GQLVacation,
@@ -107,24 +107,11 @@ impl GQLResource {
     }
 
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        let holiday = ctx
-            .loader(ByColBatcher::<holiday::Entity> { col: holiday::Column::Id })
-            .await
-            .load_one(self.model.holiday_id.into())
-            .await?;
-        Ok(holiday.map(GQLHoliday::from_model))
+        Ok(self.model.query_holiday(ctx.db()).await?.map(GQLHoliday::from_model))
     }
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
-        let resource_id = self.model.header_id;
-        let availability = ctx
-            .loader(ByColRevBatcher::<availability::Entity> {
-                revision: self.revision,
-                col: availability::Column::ResourceId,
-            })
-            .await
-            .load(resource_id.into())
-            .await?;
+        let availability = self.model.query_availability(ctx.db(), self.revision).await?;
         Ok(availability
             .into_iter()
             .map(|m| GQLAvailability::at_revision(m, self.revision))
@@ -132,15 +119,7 @@ impl GQLResource {
     }
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
-        let resource_id = self.model.header_id;
-        let vacation = ctx
-            .loader(ByColRevBatcher::<vacation::Entity> {
-                revision: self.revision,
-                col: vacation::Column::ResourceId,
-            })
-            .await
-            .load(resource_id.into())
-            .await?;
+        let vacation = self.model.query_vacation(ctx.db(), self.revision).await?;
         Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
     }
 
@@ -181,37 +160,6 @@ impl GQLResource {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Non-GraphQL helper methods on resource::Model (used by internal save logic)
-// ---------------------------------------------------------------------------
-
-impl resource::Model {
-    /// Load availability rows for this resource (latest / active only).
-    pub async fn availability_latest(
-        &self,
-        ctx: &Context,
-    ) -> anyhow::Result<Vec<availability::Model>> {
-        let resource_id = self.header_id;
-        let availability = availability::Entity::find()
-            .filter(availability::Column::ResourceId.eq(resource_id))
-            .filter(availability::Column::RevDeleted.is_null())
-            .all(ctx.txn().await?)
-            .await?;
-        Ok(availability)
-    }
-
-    /// Load the holiday associated with this resource (used by the dataloader).
-    pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        let holiday = ctx
-            .loader(ByColBatcher::<holiday::Entity> { col: holiday::Column::Id })
-            .await
-            .load_one(self.holiday_id.into())
-            .await?;
-        Ok(holiday.map(GQLHoliday::from_model))
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Input / save logic
 // ---------------------------------------------------------------------------
 

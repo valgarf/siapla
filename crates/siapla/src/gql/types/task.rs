@@ -13,10 +13,10 @@ use tracing::trace;
 
 use crate::{
     entity::{
-        allocation, dependency, resource_constraint, resource_constraint_entry,
+        dependency, resource_constraint, resource_constraint_entry,
         resource_iteration as resource, task_header, task_iteration as task,
     },
-    gql::{common::nullable_to_av, context::Context, dataloader::LinkBatcher},
+    gql::{common::nullable_to_av, context::Context},
     revisioning::{PlanState, active_for_revision, create_revision},
 };
 
@@ -118,21 +118,13 @@ impl GQLTask {
 
     // -- Predecessors (revision-aware via link dataloader) -------------------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = ctx
-            .loader(LinkBatcher::<crate::PredecessorTaskIterations>::new(self.revision))
-            .await
-            .load(self.model.header_id.into())
-            .await?;
+        let models = self.model.query_predecessors(ctx.db(), self.revision).await?;
         Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     // -- Successors (revision-aware via link dataloader) ---------------------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = ctx
-            .loader(LinkBatcher::<crate::SuccessorTaskIterations>::new(self.revision))
-            .await
-            .load(self.model.header_id.into())
-            .await?;
+        let models = self.model.query_successors(ctx.db(), self.revision).await?;
         Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
@@ -153,15 +145,7 @@ impl GQLTask {
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
-        let header_id = self.model.header_id;
-        let issues = ctx
-            .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::issue::Entity> {
-                revision: self.revision,
-                col: crate::entity::issue::Column::TaskId,
-            })
-            .await
-            .load(header_id.into())
-            .await?;
+        let issues = self.model.query_issues(ctx.db(), self.revision).await?;
         Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, self.revision)).collect())
     }
 
@@ -207,15 +191,7 @@ impl GQLTask {
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
-        let header_id = self.model.header_id;
-        let mut res = ctx
-            .loader(crate::gql::dataloader::ByColRevBatcher::<crate::entity::allocation::Entity> {
-                revision: self.revision,
-                col: allocation::Column::TaskId,
-            })
-            .await
-            .load(header_id.into())
-            .await?;
+        let mut res = self.model.query_allocations(ctx.db(), self.revision).await?;
         res.sort_by_key(|a| a.end);
         Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, self.revision)).collect())
     }
@@ -282,7 +258,7 @@ impl GQLResourceConstraintEntry {
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
         let model = ctx
-            .loader(crate::gql::dataloader::ByColRevBatcher::<resource::Entity> {
+            .loader(crate::db::dataloader::ByColRevBatcher::<resource::Entity> {
                 revision: self.revision,
                 col: resource::Column::HeaderId,
             })
@@ -587,8 +563,7 @@ async fn update_predecessors(
         .filter(task::Column::RevDeleted.is_null())
         .all(txn)
         .await?;
-    let mut target: HashSet<i32> =
-        current_targets.into_iter().map(|task| task.header_id).collect();
+    let mut target: HashSet<i32> = current_targets.into_iter().map(|task| task.header_id).collect();
 
     if target.len() < predecessor_ids.len() {
         let historical_targets = task::Entity::find()
@@ -651,8 +626,7 @@ async fn update_successors(
         .filter(task::Column::RevDeleted.is_null())
         .all(txn)
         .await?;
-    let mut target: HashSet<i32> =
-        current_targets.into_iter().map(|task| task.header_id).collect();
+    let mut target: HashSet<i32> = current_targets.into_iter().map(|task| task.header_id).collect();
 
     if target.len() < successor_ids.len() {
         let historical_targets = task::Entity::find()

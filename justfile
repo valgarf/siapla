@@ -35,7 +35,7 @@ generate-entity: (migrate "up")
         --enum-extra-derives 'PartialEq','Eq','Hash' \
         --enum-extra-attributes 'WTF' \
         --expanded-format \
-        -o ./crates/siapla/src/entity
+        -o ./crates/siapla/src/db/entity
     python ./scripts/patch_generated_entities.py
 
 [working-directory(".")]

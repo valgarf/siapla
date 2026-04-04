@@ -5,8 +5,8 @@ use std::fmt::Display;
 use std::rc::{Rc, Weak};
 use std::str::FromStr;
 
+use crate::db::dataloader::AvailabilityBatcher;
 use crate::gql::context::Context;
-use crate::gql::dataloader::AvailabilityBatcher;
 use crate::gql::issue::IssueType;
 use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
 
@@ -56,10 +56,8 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         ))
         .all(db)
         .await?;
-    let resource_header_to_iter = db_resource_vec
-        .iter()
-        .map(|r| (r.header_id, r.id))
-        .collect::<HashMap<i32, i32>>();
+    let resource_header_to_iter =
+        db_resource_vec.iter().map(|r| (r.header_id, r.id)).collect::<HashMap<i32, i32>>();
     let db_dependencies_vec = dependency::Entity::find()
         .filter(active_for_revision(
             dependency::Column::RevCreated,

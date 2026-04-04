@@ -133,7 +133,7 @@ async fn gql_exec(
         .expect("GraphQL execution failed");
 
     // Commit the transaction so data is persisted for subsequent operations.
-    let mut ctx_owned =
+    let ctx_owned =
         Arc::into_inner(ctx).expect("Context Arc should have no other strong references");
     ctx_owned.commit().await.expect("commit failed");
 

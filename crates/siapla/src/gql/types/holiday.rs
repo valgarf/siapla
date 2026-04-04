@@ -165,13 +165,8 @@ impl holiday_entry::Model {
         self.name.as_deref()
     }
     async fn holiday(&self, ctx: &Context) -> anyhow::Result<GQLHoliday> {
-        let loader = ctx
-            .loader(crate::gql::dataloader::ByColBatcher::<holiday::Entity> {
-                col: holiday::Column::Id,
-            })
-            .await;
-        let model = loader
-            .load_one(self.holiday_id.into())
+        let model = self
+            .query_holiday(ctx.db())
             .await?
             .ok_or(anyhow!("Failed to find a holiday with id {}", self.holiday_id))?;
         Ok(GQLHoliday::from_model(model))

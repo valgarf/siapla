@@ -1,5 +1,4 @@
 use super::task::GQLTask;
-use crate::entity::task_iteration as task;
 use crate::{entity::issue, gql::context::Context};
 use juniper::GraphQLEnum;
 use juniper::graphql_object;
@@ -40,23 +39,8 @@ impl GQLIssue {
         Ok(IssueType::from_str(&self.model.r#type)?)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let Some(task_id) = self.model.task_id else {
-            return Ok(None);
-        };
-        let revision_loader = ctx
-            .loader(crate::gql::dataloader::ByColRevBatcher::<task::Entity> {
-                revision: self.revision,
-                col: task::Column::HeaderId,
-            })
-            .await;
-        if let Some(model) = revision_loader.load_one(task_id.into()).await? {
-            return Ok(Some(GQLTask::at_revision(model, self.revision)));
-        }
-        let loader = ctx
-            .loader(crate::gql::dataloader::ByColBatcher::<task::Entity> { col: task::Column::Id })
-            .await;
-        let t = loader.load_one(task_id.into()).await?;
-        Ok(t.map(|m| GQLTask::at_revision(m, self.revision)))
+        let model = self.model.query_task_iteration(ctx.db(), self.revision).await?;
+        Ok(model.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 }
 

@@ -1,10 +1,6 @@
 use super::resource::GQLResource;
 use super::task::GQLTask;
-use crate::gql::dataloader::ByColRevBatcher;
-use crate::{
-    entity::{allocation, resource_iteration as resource, task_iteration as task},
-    gql::context::Context,
-};
+use crate::{entity::allocation, gql::context::Context};
 use chrono::{DateTime, Utc};
 use juniper::{GraphQLEnum, graphql_object};
 
@@ -60,41 +56,15 @@ impl GQLAllocation {
         false
     }
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models: Vec<resource::Model> = ctx
-            .loader(
-                crate::gql::dataloader::LinkBatcher::<
-                    crate::ResourceIterationsFromAllocation,
-                >::new(self.revision),
-            )
-            .await
-            .load(self.model.id.into())
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|m| GQLResource::at_revision(m, self.revision))
-            .collect())
+        let models = self.model.query_resource_iterations(ctx.db(), self.revision).await?;
+        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        let revision = self.revision;
-        let current = ctx
-            .loader(ByColRevBatcher::<task::Entity> {
-                revision,
-                col: task::Column::HeaderId
-            })
-            .await
-            .load_one(self.model.task_id.into())
-            .await?;
-        if let Some(model) = current {
-            return Ok(GQLTask::at_revision(model, revision));
-        }
-        let model = ctx
-            .loader(crate::gql::dataloader::ByColBatcher::<task::Entity> {
-                col: task::Column::Id,
-            })
-            .await
-            .load_one(self.model.task_id.into())
+        let model = self
+            .model
+            .query_task_iteration(ctx.db(), self.revision)
             .await?
             .expect("Task must exist.");
-        Ok(GQLTask::at_revision(model, revision))
+        Ok(GQLTask::at_revision(model, self.revision))
     }
 }

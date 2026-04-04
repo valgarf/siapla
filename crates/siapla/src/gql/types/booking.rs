@@ -1,8 +1,4 @@
-use crate::gql::dataloader::{ByColBatcher, ByColRevBatcher};
-use crate::{
-    entity::{booking, resource_iteration as resource, task_iteration as task},
-    gql::context::Context,
-};
+use crate::{entity::booking, gql::context::Context};
 use chrono::{DateTime, Utc};
 use juniper::graphql_object;
 
@@ -47,37 +43,14 @@ impl GQLBooking {
     }
 
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models: Vec<resource::Model> = ctx
-            .loader(
-                crate::gql::dataloader::LinkBatcher::<crate::ResourceIterationsFromBooking>::new(
-                    self.revision,
-                ),
-            )
-            .await
-            .load(self.model.id.into())
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|m| GQLResource::at_revision(m, self.revision))
-            .collect())
+        let models = self.model.query_resource_iterations(ctx.db(), self.revision).await?;
+        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
-        let current = ctx
-            .loader(ByColRevBatcher::<task::Entity> {
-                revision: self.revision,
-                col: task::Column::HeaderId,
-            })
-            .await
-            .load_one(self.model.task_id.into())
-            .await?;
-        if let Some(model) = current {
-            return Ok(GQLTask::at_revision(model, self.revision));
-        }
-        let model = ctx
-            .loader(ByColBatcher::<task::Entity> { col: task::Column::Id })
-            .await
-            .load_one(self.model.task_id.into())
+        let model = self
+            .model
+            .query_task_iteration(ctx.db(), self.revision)
             .await?
             .expect("Task must exist.");
         Ok(GQLTask::at_revision(model, self.revision))
