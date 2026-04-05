@@ -1,4 +1,5 @@
 use super::task::GQLTask;
+use crate::gql::scalars::ExtendedScalarValue;
 use crate::{entity::issue, gql::context::Context};
 use juniper::GraphQLEnum;
 use juniper::graphql_object;
@@ -24,7 +25,7 @@ impl From<issue::Model> for GQLIssue {
 }
 
 #[graphql_object]
-#[graphql(name = "Issue")]
+#[graphql(name = "Issue", context = Context, scalar = ExtendedScalarValue)]
 impl GQLIssue {
     fn db_id(&self) -> &i32 {
         &self.model.id
@@ -39,7 +40,7 @@ impl GQLIssue {
         Ok(IssueType::from_str(&self.model.r#type)?)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let model = self.model.query_task_iteration(ctx.db(), self.revision).await?;
+        let model = self.model.dataloader_task_iteration(ctx.db(), self.revision).await?;
         Ok(model.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 }

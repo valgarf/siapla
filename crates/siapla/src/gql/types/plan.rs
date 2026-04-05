@@ -1,6 +1,6 @@
 use crate::{
     entity::allocation,
-    gql::{allocation::GQLAllocation, context::Context},
+    gql::{allocation::GQLAllocation, context::Context, scalars::ExtendedScalarValue},
     revisioning::active_for_revision,
 };
 use juniper::graphql_object;
@@ -11,7 +11,7 @@ pub struct Plan {
 }
 
 #[graphql_object]
-#[graphql(name = "Plan")]
+#[graphql(name = "Plan", context = Context, scalar = ExtendedScalarValue)]
 impl Plan {
     pub async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
         let txn = ctx.txn().await?;

@@ -1,6 +1,9 @@
 use super::resource::GQLResource;
 use super::task::GQLTask;
-use crate::{entity::allocation, gql::context::Context};
+use crate::{
+    entity::allocation,
+    gql::{context::Context, scalars::ExtendedScalarValue},
+};
 use chrono::{DateTime, Utc};
 use juniper::{GraphQLEnum, graphql_object};
 
@@ -38,7 +41,7 @@ impl From<allocation::Model> for GQLAllocation {
 }
 
 #[graphql_object]
-#[graphql(name = "Allocation")]
+#[graphql(name = "Allocation", context = Context, scalar = ExtendedScalarValue)]
 impl GQLAllocation {
     fn db_id(&self) -> &i32 {
         &self.model.id
@@ -56,13 +59,13 @@ impl GQLAllocation {
         false
     }
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models = self.model.query_resource_iterations(ctx.db(), self.revision).await?;
+        let models = self.model.dataloader_resource_iterations(ctx.db(), self.revision).await?;
         Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
         let model = self
             .model
-            .query_task_iteration(ctx.db(), self.revision)
+            .dataloader_task_iteration(ctx.db(), self.revision)
             .await?
             .expect("Task must exist.");
         Ok(GQLTask::at_revision(model, self.revision))

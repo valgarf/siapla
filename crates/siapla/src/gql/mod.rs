@@ -12,8 +12,12 @@ pub use types::{
 
 use juniper::*;
 
-pub type Schema =
-    RootNode<query::Query, mutation::Mutation, subscription::Subscription, scalars::MyScalarValue>;
+pub type Schema = RootNode<
+    query::Query,
+    mutation::Mutation,
+    subscription::Subscription,
+    scalars::ExtendedScalarValue,
+>;
 
 pub fn schema() -> Schema {
     Schema::new_with_scalar_value(

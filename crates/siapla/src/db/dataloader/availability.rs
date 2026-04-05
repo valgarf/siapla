@@ -156,7 +156,7 @@ pub async fn query_combined_availability(
             db_availabilities.iter().filter(|a| a.resource_id == rid).collect(),
         )?;
 
-        let holiday_intervals = match db_res.query_holiday(db).await? {
+        let holiday_intervals = match db_res.dataloader_holiday(db).await? {
             Some(h) => h
                 .ensure_entries(
                     txn,

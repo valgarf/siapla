@@ -20,7 +20,7 @@ use siapla::{
     gql::{
         Schema,
         context::{Context, add_context},
-        scalars::MyScalarValue,
+        scalars::ExtendedScalarValue,
     },
     scheduling::recalculate_loop,
 };
@@ -39,8 +39,8 @@ use tracing_subscriber::EnvFilter;
 pub async fn graphql(
     Extension(schema): Extension<Arc<Schema>>,
     Extension(context): Extension<Arc<Context>>,
-    JuniperRequest(req): JuniperRequest<MyScalarValue>,
-) -> JuniperResponse<MyScalarValue> {
+    JuniperRequest(req): JuniperRequest<ExtendedScalarValue>,
+) -> JuniperResponse<ExtendedScalarValue> {
     let gql_res = req.execute(&schema, &context).await;
     if !gql_res.is_ok() {
         context.failed().await;

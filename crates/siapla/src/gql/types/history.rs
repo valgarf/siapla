@@ -11,7 +11,7 @@ use crate::{
     },
     gql::{
         context::Context,
-        scalars::{Int64, MyScalarValue},
+        scalars::{Int64, ExtendedScalarValue},
     },
 };
 
@@ -34,7 +34,7 @@ pub enum SearchDirection {
 #[graphql(
     for = [TaskIterationChange, BookingChange, DependencyChange, ResourceConstraintChange],
     context = Context,
-    scalar = MyScalarValue,
+    scalar = ExtendedScalarValue,
 )]
 #[allow(dead_code)]
 pub trait IChange {
@@ -52,7 +52,7 @@ pub struct TaskIterationChange {
 }
 
 #[graphql_object]
-#[graphql(impl = IChangeValue, context = Context, scalar = MyScalarValue)]
+#[graphql(impl = IChangeValue, context = Context, scalar = ExtendedScalarValue)]
 impl TaskIterationChange {
     fn revision_id(&self) -> Int64 {
         Int64(self.rev_id)
@@ -80,7 +80,7 @@ pub struct BookingChange {
 }
 
 #[graphql_object]
-#[graphql(impl = IChangeValue, context = Context, scalar = MyScalarValue)]
+#[graphql(impl = IChangeValue, context = Context, scalar = ExtendedScalarValue)]
 impl BookingChange {
     fn revision_id(&self) -> Int64 {
         Int64(self.rev_id)
@@ -110,7 +110,7 @@ pub struct DependencyChange {
 }
 
 #[graphql_object]
-#[graphql(impl = IChangeValue, context = Context, scalar = MyScalarValue)]
+#[graphql(impl = IChangeValue, context = Context, scalar = ExtendedScalarValue)]
 impl DependencyChange {
     fn revision_id(&self) -> Int64 {
         Int64(self.rev_id)
@@ -153,7 +153,7 @@ pub struct ResourceConstraintChange {
 }
 
 #[graphql_object]
-#[graphql(impl = IChangeValue, context = Context, scalar = MyScalarValue)]
+#[graphql(impl = IChangeValue, context = Context, scalar = ExtendedScalarValue)]
 impl ResourceConstraintChange {
     fn revision_id(&self) -> Int64 {
         Int64(self.rev_id)
@@ -194,7 +194,7 @@ pub struct TaskHistoryResult {
 }
 
 #[graphql_object]
-#[graphql(context = Context, scalar = MyScalarValue)]
+#[graphql(context = Context, scalar = ExtendedScalarValue)]
 impl TaskHistoryResult {
     fn changes(&self) -> &[IChangeValue] {
         &self.changes

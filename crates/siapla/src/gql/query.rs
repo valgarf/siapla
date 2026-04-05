@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     entity::{holiday, resource_iteration, task_iteration},
-    gql::scalars::Int64,
+    gql::scalars::{ExtendedScalarValue, Int64},
     revisioning::{active_for_revision, resolve_plan_revision, resolve_revision},
 };
 
@@ -23,7 +23,7 @@ use sea_orm::*;
 pub struct Query;
 
 #[graphql_object]
-#[graphql(context = Context, scalar = crate::gql::scalars::MyScalarValue)]
+#[graphql(context = Context, scalar = ExtendedScalarValue)]
 impl Query {
     async fn hello_world() -> anyhow::Result<String> {
         // let tasks: Vec<task_iteration::Model> = task_iteration::Entity::find()

@@ -6,8 +6,10 @@ use sea_orm::prelude::*;
 use tracing::error;
 
 use crate::db::dataloader::AvailabilityBatcher;
+use crate::gql::scalars::ExtendedScalarValue;
+use crate::gql::scalars::Int64;
 use crate::{
-    entity::{resource_header, resource_iteration, vacation},
+    entity::{resource_iteration, vacation},
     gql::{
         availability::GQLAvailability, common::nullable_to_av, context::Context,
         vacation::GQLVacation,
@@ -32,7 +34,7 @@ pub struct GQLInterval {
 }
 
 #[graphql_object]
-#[graphql(name = "Interval")]
+#[graphql(name = "Interval", context = Context, scalar = ExtendedScalarValue)]
 impl GQLInterval {
     pub fn start(&self) -> DateTime<Utc> {
         self.iv.start().value().expect("Must be bounded")
@@ -49,32 +51,16 @@ impl GQLInterval {
 pub struct GQLResource {
     pub model: resource_iteration::Model,
     pub revision: i64,
-    pub header_model: Option<resource_header::Model>,
 }
 
 impl GQLResource {
-    pub fn at_revision(model: resource_iteration::Model, revision: i64) -> Self {
-        Self { model, revision, header_model: None }
-    }
-
-    pub fn with_header(
-        model: resource_iteration::Model,
-        header_model: resource_header::Model,
-    ) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision, header_model: Some(header_model) }
-    }
-}
-
-impl From<resource_iteration::Model> for GQLResource {
-    fn from(model: resource_iteration::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision, header_model: None }
+    pub fn at_revision(iteration_model: resource_iteration::Model, revision: i64) -> Self {
+        Self { model: iteration_model, revision }
     }
 }
 
 #[graphql_object]
-#[graphql(name = "Resource")]
+#[graphql(name = "Resource", context = Context, scalar = ExtendedScalarValue)]
 impl GQLResource {
     fn db_id(&self) -> i32 {
         self.model.header_id
@@ -94,27 +80,27 @@ impl GQLResource {
     fn removed(&self) -> &Option<DateTime<Utc>> {
         &self.model.removed
     }
-    fn rev_created(&self) -> i32 {
-        self.model.rev_created as i32
+    fn rev_created(&self) -> Int64 {
+        self.model.rev_created.into()
     }
-    fn rev_deleted(&self) -> Option<i32> {
-        self.model.rev_deleted.map(|v| v as i32)
+    fn rev_deleted(&self) -> Option<Int64> {
+        self.model.rev_deleted.map(|v| v.into())
     }
-    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
-        let hm = self.load_header(ctx).await?;
-        Ok(hm.map(|h| h.rev_created as i32))
+    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Int64> {
+        let hm = self.model.dataloader_header(ctx.db()).await?;
+        Ok(hm.rev_created.into())
     }
-    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
-        let hm = self.load_header(ctx).await?;
-        Ok(hm.and_then(|h| h.rev_deleted).map(|v| v as i32))
+    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<Int64>> {
+        let hm = self.model.dataloader_header(ctx.db()).await?;
+        Ok(hm.rev_deleted.map(|v| v.into()))
     }
 
     pub async fn holiday(&self, ctx: &Context) -> anyhow::Result<Option<GQLHoliday>> {
-        Ok(self.model.query_holiday(ctx.db()).await?.map(GQLHoliday::from_model))
+        Ok(self.model.dataloader_holiday(ctx.db()).await?.map(GQLHoliday::from_model))
     }
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
-        let availability = self.model.query_availability(ctx.db(), self.revision).await?;
+        let availability = self.model.dataloader_availability(ctx.db(), self.revision).await?;
         Ok(availability
             .into_iter()
             .map(|m| GQLAvailability::at_revision(m, self.revision))
@@ -122,7 +108,7 @@ impl GQLResource {
     }
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
-        let vacation = self.model.query_vacation(ctx.db(), self.revision).await?;
+        let vacation = self.model.dataloader_vacation(ctx.db(), self.revision).await?;
         Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
     }
 
@@ -149,17 +135,6 @@ impl GQLResource {
                 ),
             })
             .collect())
-    }
-}
-
-impl GQLResource {
-    async fn load_header(&self, ctx: &Context) -> anyhow::Result<Option<resource_header::Model>> {
-        if let Some(ref hm) = self.header_model {
-            return Ok(Some(hm.clone()));
-        }
-        let hid = self.model.header_id;
-        let txn = ctx.txn().await?;
-        Ok(resource_header::Entity::find_by_id(hid).one(txn).await?)
     }
 }
 
@@ -200,7 +175,7 @@ impl ResourceSaveInput {
 pub async fn resource_save(
     ctx: &Context,
     mut resource: ResourceSaveInput,
-) -> anyhow::Result<resource_iteration::Model> {
+) -> anyhow::Result<(resource_iteration::Model, i64)> {
     let availability = resource.availability.take();
     let added_vacations = resource.added_vacations.take().unwrap_or_default();
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
@@ -270,5 +245,5 @@ pub async fn resource_save(
         update_availability(ctx, &model, availability, revision_id).await?;
     }
 
-    Ok(model)
+    Ok((model, revision_id))
 }

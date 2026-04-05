@@ -1,10 +1,9 @@
-use itertools::Itertools as _;
-use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, QueryFilter, QueryOrder};
-use std::collections::HashMap;
-
 use super::base::{Batcher, BatcherToKey};
 use crate::db::context::DbContext;
 use crate::db::{ColumnIntoUsize, RangeRevColumns};
+use itertools::Itertools as _;
+use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, QueryFilter, QueryOrder};
+use std::collections::HashMap;
 
 use std::fmt::Debug;
 
@@ -14,6 +13,15 @@ where
     ET::Model: Send + Sync,
 {
     pub col: ET::Column,
+}
+
+impl<ET: EntityTrait> ByColBatcher<ET>
+where
+    ET::Model: Send + Sync,
+{
+    pub fn new(col: ET::Column) -> Self {
+        Self { col }
+    }
 }
 
 impl<ET: EntityTrait> Batcher for ByColBatcher<ET>
@@ -63,6 +71,15 @@ where
 {
     pub revision: i64,
     pub col: ET::Column,
+}
+
+impl<ET: EntityTrait> ByColRevBatcher<ET>
+where
+    ET::Model: Send + Sync,
+{
+    pub fn new(col: ET::Column, revision: i64) -> Self {
+        Self { col, revision }
+    }
 }
 
 impl<ET> Batcher for ByColRevBatcher<ET>

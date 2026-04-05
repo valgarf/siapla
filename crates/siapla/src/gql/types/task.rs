@@ -14,10 +14,14 @@ use tracing::trace;
 use crate::{
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
-        task_header, task_iteration,
+        task_iteration,
     },
-    gql::{common::nullable_to_av, context::Context},
-    revisioning::{PlanState, active_for_revision, create_revision},
+    gql::{
+        common::nullable_to_av,
+        context::Context,
+        scalars::{ExtendedScalarValue, Int64},
+    },
+    revisioning::{PlanState, active_for_revision, create_revision, ensure_revision_id},
 };
 
 use super::{allocation::GQLAllocation, issue::GQLIssue, resource::GQLResource};
@@ -48,29 +52,16 @@ impl From<TaskDesignation> for String {
 pub struct GQLTask {
     pub model: task_iteration::Model,
     pub revision: i64,
-    pub header_model: Option<task_header::Model>,
 }
 
 impl GQLTask {
-    pub fn at_revision(model: task_iteration::Model, revision: i64) -> Self {
-        Self { model, revision, header_model: None }
-    }
-
-    pub fn with_header(model: task_iteration::Model, header_model: task_header::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision, header_model: Some(header_model) }
-    }
-}
-
-impl From<task_iteration::Model> for GQLTask {
-    fn from(model: task_iteration::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision, header_model: None }
+    pub fn at_revision(iteration_model: task_iteration::Model, revision: i64) -> Self {
+        Self { model: iteration_model, revision }
     }
 }
 
 #[graphql_object]
-#[graphql(name = "Task")]
+#[graphql(name = "Task", context = Context, scalar= ExtendedScalarValue)]
 impl GQLTask {
     /// Stable identity — always the `task_header.id`.
     fn db_id(&self) -> i32 {
@@ -101,113 +92,65 @@ impl GQLTask {
     fn designation(&self) -> anyhow::Result<TaskDesignation> {
         Ok(TaskDesignation::from_str(&self.model.designation)?)
     }
-    fn rev_created(&self) -> i32 {
-        self.model.rev_created as i32
+    fn rev_created(&self) -> Int64 {
+        self.model.rev_created.into()
     }
-    fn rev_deleted(&self) -> Option<i32> {
-        self.model.rev_deleted.map(|v| v as i32)
+    fn rev_deleted(&self) -> Option<Int64> {
+        self.model.rev_deleted.map(|v| v.into())
     }
-    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
-        let hm = self.load_header(ctx).await?;
-        Ok(hm.map(|h| h.rev_created as i32))
+    async fn header_rev_created(&self, ctx: &Context) -> anyhow::Result<Int64> {
+        let hm = self.model.dataloader_header(ctx.db()).await?;
+        Ok(hm.rev_created.into())
     }
-    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<i32>> {
-        let hm = self.load_header(ctx).await?;
-        Ok(hm.and_then(|h| h.rev_deleted).map(|v| v as i32))
+    async fn header_rev_deleted(&self, ctx: &Context) -> anyhow::Result<Option<Int64>> {
+        let hm = self.model.dataloader_header(ctx.db()).await?;
+        Ok(hm.rev_deleted.map(|v| v.into()))
     }
 
     // -- Predecessors (revision-aware via link dataloader) -------------------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = self.model.query_predecessors(ctx.db(), self.revision).await?;
+        let models = self.model.dataloader_predecessors(ctx.db(), self.revision).await?;
         Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     // -- Successors (revision-aware via link dataloader) ---------------------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = self.model.query_successors(ctx.db(), self.revision).await?;
+        let models = self.model.dataloader_successors(ctx.db(), self.revision).await?;
         Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let header_id = self.model.header_id;
-        let txn = ctx.txn().await?;
-        let children = task_iteration::Entity::find()
-            .filter(task_iteration::Column::ParentId.eq(header_id))
-            .filter(active_for_revision(
-                task_iteration::Column::RevCreated,
-                task_iteration::Column::RevDeleted,
-                Some(self.revision),
-            ))
-            .order_by_asc(task_iteration::Column::Title)
-            .all(txn)
-            .await?;
-        Ok(children.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
+        let models = self.model.dataloader_children(ctx.db(), self.revision).await?;
+        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
-        let issues = self.model.query_issues(ctx.db(), self.revision).await?;
+        let issues = self.model.dataloader_issues(ctx.db(), self.revision).await?;
         Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, self.revision)).collect())
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let parent_header_id = match self.model.parent_id {
-            Some(parent_header_id) => parent_header_id,
-            None => return Ok(None),
-        };
-        let txn = ctx.txn().await?;
-        let active = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.eq(parent_header_id))
-            .filter(active_for_revision(
-                task_iteration::Column::RevCreated,
-                task_iteration::Column::RevDeleted,
-                Some(self.revision),
-            ))
-            .one(txn)
-            .await?;
-        Ok(active.map(|m| GQLTask::at_revision(m, self.revision)))
+        let model = self.model.dataloader_parent(ctx.db(), self.revision).await?;
+        Ok(model.map(|m| GQLTask::at_revision(m, self.revision)))
     }
 
-    // -- Resource constraints (revision-aware) ------------------------------
     async fn resource_constraints(
         &self,
         ctx: &Context,
     ) -> anyhow::Result<Vec<GQLResourceConstraint>> {
-        let txn = ctx.txn().await?;
-        let header_id = self.model.header_id;
-        let constraints = resource_constraint::Entity::find()
-            .filter(resource_constraint::Column::TaskId.eq(header_id))
-            .filter(active_for_revision(
-                resource_constraint::Column::RevCreated,
-                resource_constraint::Column::RevDeleted,
-                Some(self.revision),
-            ))
-            .order_by_asc(resource_constraint::Column::Id)
-            .all(txn)
-            .await?;
-        Ok(constraints
+        let issues = self.model.dataloader_resource_constraints(ctx.db(), self.revision).await?;
+        Ok(issues
             .into_iter()
-            .map(|m| GQLResourceConstraint { model: m, revision: self.revision })
+            .map(|m| GQLResourceConstraint::at_revision(m, self.revision))
             .collect())
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
-        let mut res = self.model.query_allocations(ctx.db(), self.revision).await?;
+        let mut res = self.model.dataloader_allocations(ctx.db(), self.revision).await?;
         res.sort_by_key(|a| a.end);
         Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, self.revision)).collect())
     }
 }
-
-impl GQLTask {
-    async fn load_header(&self, ctx: &Context) -> anyhow::Result<Option<task_header::Model>> {
-        if let Some(ref hm) = self.header_model {
-            return Ok(Some(hm.clone()));
-        }
-        let hid = self.model.header_id;
-        let txn = ctx.txn().await?;
-        Ok(task_header::Entity::find_by_id(hid).one(txn).await?)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // GQLResourceConstraint – revision-aware wrapper
 // ---------------------------------------------------------------------------
@@ -217,8 +160,14 @@ pub struct GQLResourceConstraint {
     pub revision: i64,
 }
 
+impl GQLResourceConstraint {
+    pub fn at_revision(model: resource_constraint::Model, revision: i64) -> Self {
+        Self { model, revision }
+    }
+}
+
 #[graphql_object]
-#[graphql(name = "ResourceConstraint")]
+#[graphql(name = "ResourceConstraint", context = Context, scalar = ExtendedScalarValue)]
 impl GQLResourceConstraint {
     fn id(&self) -> i32 {
         self.model.id
@@ -230,13 +179,10 @@ impl GQLResourceConstraint {
         self.model.speed as f64
     }
     async fn entries(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResourceConstraintEntry>> {
-        let entries = resource_constraint_entry::Entity::find()
-            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(self.model.id))
-            .all(ctx.txn().await?)
-            .await?;
-        Ok(entries
+        let models = self.model.dataloader_entries(ctx.db()).await?;
+        Ok(models
             .into_iter()
-            .map(|m| GQLResourceConstraintEntry { model: m, revision: self.revision })
+            .map(|m| GQLResourceConstraintEntry::at_revision(m, self.revision))
             .collect())
     }
 }
@@ -250,22 +196,20 @@ pub struct GQLResourceConstraintEntry {
     pub revision: i64,
 }
 
+impl GQLResourceConstraintEntry {
+    pub fn at_revision(model: resource_constraint_entry::Model, revision: i64) -> Self {
+        Self { model, revision }
+    }
+}
+
 #[graphql_object]
-#[graphql(name = "ResourceConstraintEntry")]
+#[graphql(name = "ResourceConstraintEntry", context = Context, scalar = ExtendedScalarValue)]
 impl GQLResourceConstraintEntry {
     fn id(&self) -> i32 {
         self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let model = ctx
-            .loader(crate::db::dataloader::ByColRevBatcher::<resource_iteration::Entity> {
-                revision: self.revision,
-                col: resource_iteration::Column::HeaderId,
-            })
-            .await
-            .load_one(self.model.resource_id.into())
-            .await?;
-        let model = model.ok_or(anyhow!("Resource not found at revision"))?;
+        let model = self.model.dataloader_resource_iteration(ctx.db(), self.revision).await?;
         Ok(GQLResource::at_revision(model, self.revision))
     }
 }
@@ -878,7 +822,7 @@ async fn update_resource_constraints(
 pub async fn task_save(
     ctx: &Context,
     mut task: TaskSaveInput,
-) -> anyhow::Result<task_iteration::Model> {
+) -> anyhow::Result<(task_iteration::Model, i64)> {
     let predecessors = task.predecessors.clone();
     let successors = task.successors.clone();
     let children = task.children.clone();
@@ -905,7 +849,7 @@ pub async fn task_save(
         )
         .await?
         {
-            return Ok(existing);
+            return Ok((existing, ensure_revision_id(txn).await?));
         }
     }
 
@@ -1041,5 +985,5 @@ pub async fn task_save(
         }
     }
 
-    Ok(model)
+    Ok((model, revision_id))
 }

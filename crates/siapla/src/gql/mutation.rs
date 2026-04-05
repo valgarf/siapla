@@ -11,6 +11,7 @@ use crate::entity::{
 };
 use crate::entity::{booking, booking_resource};
 use crate::entity::{resource_iteration, task_iteration};
+use crate::gql::scalars::ExtendedScalarValue;
 use crate::revisioning::{PlanState, create_revision};
 
 use super::{
@@ -24,14 +25,14 @@ use super::{
 pub struct Mutation {}
 
 #[graphql_object]
-#[graphql(context = Context)]
+#[graphql(context = Context, scalar = ExtendedScalarValue)]
 impl Mutation {
     pub fn new() -> Self {
         Default::default()
     }
 
     async fn task_save(ctx: &Context, task: TaskSaveInput) -> anyhow::Result<GQLTask> {
-        let res = match task_save(ctx, task).await {
+        let (res, revision) = match task_save(ctx, task).await {
             Ok(res) => res,
             Err(err) => {
                 ctx.failed().await;
@@ -39,7 +40,7 @@ impl Mutation {
             }
         };
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(GQLTask::from(res))
+        Ok(GQLTask::at_revision(res, revision))
     }
 
     /// Delete a task by its **header id** (stable identity).
@@ -88,7 +89,7 @@ impl Mutation {
         ctx: &Context,
         resource: ResourceSaveInput,
     ) -> anyhow::Result<GQLResource> {
-        let res = match resource_save(ctx, resource).await {
+        let (res, revision_id) = match resource_save(ctx, resource).await {
             Ok(res) => res,
             Err(err) => {
                 ctx.failed().await;
@@ -96,7 +97,7 @@ impl Mutation {
             }
         };
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(GQLResource::from(res))
+        Ok(GQLResource::at_revision(res, revision_id))
     }
 
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {

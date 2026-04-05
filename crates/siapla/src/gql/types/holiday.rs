@@ -10,7 +10,7 @@ use tracing::error;
 
 use crate::{
     entity::{holiday, holiday_entry},
-    gql::context::Context,
+    gql::{context::Context, scalars::ExtendedScalarValue},
 };
 
 use siapla_open_holidays_api::apis::{configuration::Configuration, holidays_api, regional_api};
@@ -23,7 +23,7 @@ pub struct Country {
 }
 
 #[graphql_object]
-#[graphql(name = "Country")]
+#[graphql(name = "Country", context = Context, scalar = ExtendedScalarValue)]
 impl Country {
     fn isocode(&self) -> &str {
         &self.isocode
@@ -60,7 +60,7 @@ pub struct Region {
 }
 
 #[graphql_object]
-#[graphql(name = "Region")]
+#[graphql(name = "Region", context = Context, scalar = ExtendedScalarValue)]
 impl Region {
     fn isocode(&self) -> &str {
         &self.isocode
@@ -89,7 +89,7 @@ pub struct GQLHoliday {
 }
 
 #[graphql_object]
-#[graphql(name = "Holiday")]
+#[graphql(name = "Holiday", context = Context, scalar = ExtendedScalarValue)]
 impl GQLHoliday {
     async fn db_id(&self, ctx: &Context) -> anyhow::Result<&i32> {
         Ok(&self.get_model(ctx).await?.id)
@@ -153,7 +153,7 @@ impl GQLHoliday {
 }
 
 #[graphql_object]
-#[graphql(name = "HolidayEntry")]
+#[graphql(name = "HolidayEntry", context = Context, scalar = ExtendedScalarValue)]
 impl holiday_entry::Model {
     fn db_id(&self) -> &i32 {
         &self.id
@@ -166,7 +166,7 @@ impl holiday_entry::Model {
     }
     async fn holiday(&self, ctx: &Context) -> anyhow::Result<GQLHoliday> {
         let model = self
-            .query_holiday(ctx.db())
+            .dataloader_holiday(ctx.db())
             .await?
             .ok_or(anyhow!("Failed to find a holiday with id {}", self.holiday_id))?;
         Ok(GQLHoliday::from_model(model))

@@ -3,7 +3,7 @@ use std::{collections::HashSet, iter::zip};
 use super::resource::GQLResource;
 use crate::{
     entity::{availability, resource_iteration},
-    gql::context::Context,
+    gql::{context::Context, scalars::ExtendedScalarValue},
 };
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
@@ -47,7 +47,7 @@ impl From<availability::Model> for GQLAvailability {
 }
 
 #[graphql_object]
-#[graphql(name = "Availability")]
+#[graphql(name = "Availability", context = Context, scalar = ExtendedScalarValue)]
 impl GQLAvailability {
     fn db_id(&self) -> &i32 {
         &self.model.id
@@ -100,7 +100,7 @@ pub async fn update_availability(
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let existing_availability: Vec<_> =
-        model.availability_latest(ctx.db()).await?.into_iter().collect();
+        model.query_availability_latest(ctx.db()).await?.into_iter().collect();
     let existing: HashSet<Weekday> = existing_availability
         .iter()
         .map(|el| el.weekday.as_str().try_into().map_err(anyhow::Error::from))

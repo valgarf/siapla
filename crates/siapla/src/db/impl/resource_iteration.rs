@@ -1,20 +1,26 @@
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-use crate::db::{
-    context::DbContext,
-    dataloader::{ByColBatcher, ByColRevBatcher},
-    entity::{availability, holiday, resource_iteration, vacation},
+use crate::{
+    db::{
+        context::DbContext,
+        dataloader::{ByColBatcher, ByColRevBatcher},
+        entity::{availability, holiday, resource_iteration, vacation},
+    },
+    entity::resource_header,
 };
 
 impl resource_iteration::Model {
-    pub async fn query_holiday(&self, db: &DbContext) -> anyhow::Result<Option<holiday::Model>> {
+    pub async fn dataloader_holiday(
+        &self,
+        db: &DbContext,
+    ) -> anyhow::Result<Option<holiday::Model>> {
         db.loader(ByColBatcher::<holiday::Entity> { col: holiday::Column::Id })
             .await
             .load_one(self.holiday_id.into())
             .await
     }
 
-    pub async fn query_availability(
+    pub async fn dataloader_availability(
         &self,
         db: &DbContext,
         revision: i64,
@@ -28,7 +34,7 @@ impl resource_iteration::Model {
         .await
     }
 
-    pub async fn query_vacation(
+    pub async fn dataloader_vacation(
         &self,
         db: &DbContext,
         revision: i64,
@@ -42,7 +48,7 @@ impl resource_iteration::Model {
         .await
     }
 
-    pub async fn availability_latest(
+    pub async fn query_availability_latest(
         &self,
         db: &DbContext,
     ) -> anyhow::Result<Vec<availability::Model>> {
@@ -53,5 +59,14 @@ impl resource_iteration::Model {
             .all(db.txn().await?)
             .await?;
         Ok(availability)
+    }
+    pub async fn dataloader_header(
+        &self,
+        db: &DbContext,
+    ) -> anyhow::Result<resource_header::Model> {
+        db.loader(ByColBatcher::<resource_header::Entity> { col: resource_header::Column::Id })
+            .await
+            .load_exactly_one(self.header_id.into())
+            .await
     }
 }

@@ -78,6 +78,17 @@ impl<B: VecBatcher> LoaderWrapper<B> {
         }
     }
 
+    pub async fn load_exactly_one(&self, key: B::Key) -> anyhow::Result<B::Item> {
+        let mut values = self.load(key).await?;
+        if values.is_empty() {
+            Err(anyhow::anyhow!("No entry found"))
+        } else if values.len() == 1 {
+            Ok(values.drain(..).next().unwrap())
+        } else {
+            Err(anyhow::anyhow!("More than one entry found"))
+        }
+    }
+
     pub async fn load_many_one(
         &self,
         keys: Vec<B::Key>,
@@ -90,6 +101,28 @@ impl<B: VecBatcher> LoaderWrapper<B> {
                     Err(anyhow::anyhow!("More than one entry found"))
                 } else {
                     Ok((key, values.pop()))
+                }
+            })
+            .collect()
+    }
+
+    pub async fn load_many_exactly_one(
+        &self,
+        keys: Vec<B::Key>,
+    ) -> anyhow::Result<HashMap<B::Key, B::Item>> {
+        self.load_many(keys)
+            .await?
+            .into_iter()
+            .map(|(key, mut values)| {
+                if values.len() > 1 {
+                    Err(anyhow::anyhow!("More than one entry found"))
+                } else {
+                    let value = values.pop();
+                    if let Some(value) = value {
+                        Ok((key, value))
+                    } else {
+                        Err(anyhow::anyhow!("No entry found"))
+                    }
                 }
             })
             .collect()

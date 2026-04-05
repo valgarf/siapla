@@ -11,7 +11,7 @@ use tokio::sync::OnceCell;
 use juniper::{ScalarValue as _, Variables};
 use sea_orm::{Database, DatabaseConnection, EntityTrait, TransactionTrait as _};
 use serial_test::serial;
-use siapla::gql::scalars::MyScalarValue;
+use siapla::gql::scalars::ExtendedScalarValue;
 use siapla::{
     app_state::AppState,
     gql::{
@@ -123,8 +123,8 @@ async fn clean_database() {
 /// Panics on transport/execution errors.
 async fn gql_exec(
     query: &str,
-    vars: &Variables<MyScalarValue>,
-) -> (juniper::Value<MyScalarValue>, Vec<juniper::ExecutionError<MyScalarValue>>) {
+    vars: &Variables<ExtendedScalarValue>,
+) -> (juniper::Value<ExtendedScalarValue>, Vec<juniper::ExecutionError<ExtendedScalarValue>>) {
     let schema = schema();
     let (app_state, _manual_rx) = AppState::new(true);
     let ctx = Context::new(app_state);
@@ -141,22 +141,25 @@ async fn gql_exec(
 }
 
 /// Shorthand: execute, assert zero errors, return the data `Value`.
-async fn gql_ok(query: &str, vars: &Variables<MyScalarValue>) -> juniper::Value<MyScalarValue> {
+async fn gql_ok(
+    query: &str,
+    vars: &Variables<ExtendedScalarValue>,
+) -> juniper::Value<ExtendedScalarValue> {
     let (val, errors) = gql_exec(query, vars).await;
     assert!(errors.is_empty(), "Expected no GraphQL errors but got: {errors:?}\nQuery: {query}");
     val
 }
 
 /// Shorthand: execute with empty variables.
-async fn gql_ok_simple(query: &str) -> juniper::Value<MyScalarValue> {
-    gql_ok(query, &Variables::<MyScalarValue>::new()).await
+async fn gql_ok_simple(query: &str) -> juniper::Value<ExtendedScalarValue> {
+    gql_ok(query, &Variables::<ExtendedScalarValue>::new()).await
 }
 
 /// Get the juniper value at the given dot path
 fn value_at_path<'a>(
-    val: &'a juniper::Value<MyScalarValue>,
+    val: &'a juniper::Value<ExtendedScalarValue>,
     path: &str,
-) -> &'a juniper::Value<MyScalarValue> {
+) -> &'a juniper::Value<ExtendedScalarValue> {
     let mut cur = val;
     for key in path.split('.') {
         cur = cur
@@ -174,15 +177,19 @@ fn value_at_path<'a>(
 
 /// Extract a scalar i64 from a juniper Value sitting at the given dot-path
 /// (e.g. "taskSave.dbId").
-fn extract_i64(val: &juniper::Value<MyScalarValue>, path: &str) -> i64 {
+fn extract_i64(val: &juniper::Value<ExtendedScalarValue>, path: &str) -> i64 {
     let cur = value_at_path(val, path);
     let s = cur.as_scalar().unwrap_or_else(|| panic!("value at '{path}' is not a scalar: {cur:?}"));
-    s.try_to_int()
-        .map(|v| v as i64)
-        .unwrap_or_else(|| panic!("value at '{path}' is not an int: {cur:?}"))
+    if let &ExtendedScalarValue::Long(val) = s {
+        val
+    } else {
+        s.try_to_int()
+            .map(|v| v as i64)
+            .unwrap_or_else(|| panic!("value at '{path}' is not an int: {cur:?}"))
+    }
 }
 
-fn extract_str<'a>(val: &'a juniper::Value<MyScalarValue>, path: &str) -> &'a str {
+fn extract_str<'a>(val: &'a juniper::Value<ExtendedScalarValue>, path: &str) -> &'a str {
     let cur = value_at_path(val, path);
     cur.as_scalar()
         .and_then(|s| s.try_as_str())
@@ -190,14 +197,14 @@ fn extract_str<'a>(val: &'a juniper::Value<MyScalarValue>, path: &str) -> &'a st
 }
 
 fn extract_list<'a>(
-    val: &'a juniper::Value<MyScalarValue>,
+    val: &'a juniper::Value<ExtendedScalarValue>,
     path: &str,
-) -> &'a Vec<juniper::Value<MyScalarValue>> {
+) -> &'a Vec<juniper::Value<ExtendedScalarValue>> {
     let cur = value_at_path(val, path);
     cur.as_list_value().unwrap_or_else(|| panic!("value at '{path}' is not a list: {cur:?}"))
 }
 
-fn extract_f64(val: &juniper::Value<MyScalarValue>, path: &str) -> f64 {
+fn extract_f64(val: &juniper::Value<ExtendedScalarValue>, path: &str) -> f64 {
     let cur = value_at_path(val, path);
     cur.as_scalar()
         .and_then(|s| s.try_to_float())
@@ -1821,7 +1828,7 @@ fn task_history_query(task_header_id: i64, direction: &str, extra_args: &str) ->
     )
 }
 
-fn extract_bool(val: &juniper::Value<MyScalarValue>, path: &str) -> bool {
+fn extract_bool(val: &juniper::Value<ExtendedScalarValue>, path: &str) -> bool {
     let cur = value_at_path(val, path);
     cur.as_scalar()
         .and_then(|s| s.try_to_bool())
@@ -1949,7 +1956,7 @@ async fn test_task_history_with_dependencies() {
     let val = gql_ok_simple(&query).await;
 
     let changes = extract_list(&val, "taskHistory.changes");
-    let dep_changes: Vec<&juniper::Value<MyScalarValue>> =
+    let dep_changes: Vec<&juniper::Value<ExtendedScalarValue>> =
         changes.iter().filter(|c| extract_str(c, "__typename") == "DependencyChange").collect();
     assert!(!dep_changes.is_empty(), "expected at least one DependencyChange in successor history");
 
@@ -2136,7 +2143,7 @@ async fn test_task_history_with_bookings() {
     let val = gql_ok_simple(&query).await;
 
     let changes = extract_list(&val, "taskHistory.changes");
-    let booking_changes: Vec<&juniper::Value<MyScalarValue>> =
+    let booking_changes: Vec<&juniper::Value<ExtendedScalarValue>> =
         changes.iter().filter(|c| extract_str(c, "__typename") == "BookingChange").collect();
     assert!(
         !booking_changes.is_empty(),
@@ -2191,7 +2198,7 @@ async fn test_task_history_with_resource_constraints() {
     let val = gql_ok_simple(&query).await;
 
     let changes = extract_list(&val, "taskHistory.changes");
-    let rc_changes: Vec<&juniper::Value<MyScalarValue>> = changes
+    let rc_changes: Vec<&juniper::Value<ExtendedScalarValue>> = changes
         .iter()
         .filter(|c| extract_str(c, "__typename") == "ResourceConstraintChange")
         .collect();

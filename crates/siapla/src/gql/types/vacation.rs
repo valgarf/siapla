@@ -1,4 +1,7 @@
-use crate::entity::vacation;
+use crate::{
+    entity::vacation,
+    gql::{context::Context, scalars::ExtendedScalarValue},
+};
 use chrono::{DateTime, Utc};
 use juniper::graphql_object;
 use sea_orm::ActiveValue;
@@ -22,7 +25,7 @@ impl From<vacation::Model> for GQLVacation {
 }
 
 #[graphql_object]
-#[graphql(name = "Vacation")]
+#[graphql(name = "Vacation", context = Context, scalar = ExtendedScalarValue)]
 impl GQLVacation {
     fn db_id(&self) -> &i32 {
         &self.model.id

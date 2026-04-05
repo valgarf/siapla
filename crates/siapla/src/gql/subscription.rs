@@ -9,6 +9,7 @@ use tokio_stream::wrappers::WatchStream;
 
 use super::context::Context;
 use crate::app_state::CalculationState;
+use crate::gql::scalars::ExtendedScalarValue;
 
 #[derive(Clone, Copy, Default)]
 pub struct Subscription {}
@@ -18,14 +19,14 @@ pub struct GQLCalculationUpdate {
 }
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString)]
-#[graphql(name = "CalculationState")]
+#[graphql(name = "CalculationState", context = Context, scalar = ExtendedScalarValue)]
 pub enum GQLCalculationState {
     Modified,
     Calculating,
     Finished,
 }
 
-#[graphql_object(name = "CalculationUpdate")]
+#[graphql_object(name = "CalculationUpdate", context=Context, scalar = ExtendedScalarValue)]
 impl GQLCalculationUpdate {
     pub fn state(&self) -> GQLCalculationState {
         match &self.inner {
@@ -46,7 +47,7 @@ impl GQLCalculationUpdate {
 }
 
 #[graphql_subscription]
-#[graphql(context = Context)]
+#[graphql(context = Context, scalar = ExtendedScalarValue)]
 impl Subscription {
     async fn api_version() -> BoxStream<'static, &'static str> {
         Box::pin(futures::stream::once(async { "0.1" }))
