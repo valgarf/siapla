@@ -10,9 +10,7 @@ use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
 use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
 
-use crate::entity::{
-    booking, booking_resource, resource_iteration as resource, task_iteration as task,
-};
+use crate::entity::{booking, booking_resource, resource_iteration, task_iteration};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
 use crate::{entity::*, gql::task::TaskDesignation};
 use chrono::NaiveDateTime;
@@ -40,18 +38,18 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
         .await?
         .ok_or(anyhow::anyhow!("No revision found in database"))?;
 
-    let db_task_vec = task::Entity::find()
+    let db_task_vec = task_iteration::Entity::find()
         .filter(active_for_revision(
-            task::Column::RevCreated,
-            task::Column::RevDeleted,
+            task_iteration::Column::RevCreated,
+            task_iteration::Column::RevDeleted,
             Some(revision),
         ))
         .all(db)
         .await?;
-    let db_resource_vec = resource::Entity::find()
+    let db_resource_vec = resource_iteration::Entity::find()
         .filter(active_for_revision(
-            resource::Column::RevCreated,
-            resource::Column::RevDeleted,
+            resource_iteration::Column::RevCreated,
+            resource_iteration::Column::RevDeleted,
             Some(revision),
         ))
         .all(db)

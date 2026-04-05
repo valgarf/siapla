@@ -10,7 +10,7 @@ use crate::entity::{
     resource_constraint_entry, resource_header, revision, task_header, vacation,
 };
 use crate::entity::{booking, booking_resource};
-use crate::entity::{resource_iteration as resource, task_iteration as task};
+use crate::entity::{resource_iteration, task_iteration};
 use crate::revisioning::{PlanState, create_revision};
 
 use super::{
@@ -46,10 +46,13 @@ impl Mutation {
     async fn task_delete(ctx: &Context, task_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-        let res = task::Entity::update_many()
-            .col_expr(task::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(task::Column::HeaderId.eq(task_id))
-            .filter(task::Column::RevDeleted.is_null())
+        let res = task_iteration::Entity::update_many()
+            .col_expr(
+                task_iteration::Column::RevDeleted,
+                Expr::value(Value::BigInt(Some(revision_id))),
+            )
+            .filter(task_iteration::Column::HeaderId.eq(task_id))
+            .filter(task_iteration::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
         let ok = res.rows_affected > 0;
@@ -99,10 +102,13 @@ impl Mutation {
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-        let res = resource::Entity::update_many()
-            .col_expr(resource::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(resource::Column::HeaderId.eq(resource_id))
-            .filter(resource::Column::RevDeleted.is_null())
+        let res = resource_iteration::Entity::update_many()
+            .col_expr(
+                resource_iteration::Column::RevDeleted,
+                Expr::value(Value::BigInt(Some(revision_id))),
+            )
+            .filter(resource_iteration::Column::HeaderId.eq(resource_id))
+            .filter(resource_iteration::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
         let ok = res.rows_affected > 0;
@@ -168,15 +174,15 @@ impl Mutation {
 
         // Store booking.task_id as the stable task header id. Accept both
         // header ids and iteration ids at the API boundary for compatibility.
-        let resolved_header_id = if let Some(active_task) = task::Entity::find()
-            .filter(task::Column::HeaderId.eq(task_id))
-            .filter(task::Column::RevDeleted.is_null())
+        let resolved_header_id = if let Some(active_task) = task_iteration::Entity::find()
+            .filter(task_iteration::Column::HeaderId.eq(task_id))
+            .filter(task_iteration::Column::RevDeleted.is_null())
             .one(txn)
             .await?
         {
             active_task.header_id
-        } else if let Some(active_task) = task::Entity::find_by_id(task_id)
-            .filter(task::Column::RevDeleted.is_null())
+        } else if let Some(active_task) = task_iteration::Entity::find_by_id(task_id)
+            .filter(task_iteration::Column::RevDeleted.is_null())
             .one(txn)
             .await?
         {
@@ -201,15 +207,15 @@ impl Mutation {
 
         for rid in resources {
             let resolved_resource_header_id = if let Some(active_resource) =
-                resource::Entity::find()
-                    .filter(resource::Column::HeaderId.eq(rid))
-                    .filter(resource::Column::RevDeleted.is_null())
+                resource_iteration::Entity::find()
+                    .filter(resource_iteration::Column::HeaderId.eq(rid))
+                    .filter(resource_iteration::Column::RevDeleted.is_null())
                     .one(txn)
                     .await?
             {
                 active_resource.header_id
-            } else if let Some(active_resource) = resource::Entity::find_by_id(rid)
-                .filter(resource::Column::RevDeleted.is_null())
+            } else if let Some(active_resource) = resource_iteration::Entity::find_by_id(rid)
+                .filter(resource_iteration::Column::RevDeleted.is_null())
                 .one(txn)
                 .await?
             {
@@ -274,8 +280,8 @@ impl Mutation {
         dependency::Entity::delete_many().exec(txn).await?;
         vacation::Entity::delete_many().exec(txn).await?;
         availability::Entity::delete_many().exec(txn).await?;
-        task::Entity::delete_many().exec(txn).await?;
-        resource::Entity::delete_many().exec(txn).await?;
+        task_iteration::Entity::delete_many().exec(txn).await?;
+        resource_iteration::Entity::delete_many().exec(txn).await?;
         task_header::Entity::delete_many().exec(txn).await?;
         resource_header::Entity::delete_many().exec(txn).await?;
         revision::Entity::delete_many().exec(txn).await?;

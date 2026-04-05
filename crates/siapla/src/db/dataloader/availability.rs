@@ -9,7 +9,7 @@ use sea_orm::{ColumnTrait, EntityTrait, Order, QueryFilter, QueryOrder};
 use super::base::Batcher;
 use crate::db::RangeRevColumns;
 use crate::db::context::DbContext;
-use crate::db::entity::{availability, resource_iteration as resource, vacation};
+use crate::db::entity::{availability, resource_iteration, vacation};
 use crate::scheduling::{Interval, Intervals};
 
 pub fn string_to_weekday(s: &str) -> anyhow::Result<Weekday> {
@@ -120,9 +120,9 @@ pub async fn query_combined_availability(
     let id_set = resource_ids.iter().cloned().collect::<HashSet<_>>();
     let txn = db.txn().await?;
 
-    let db_resources = resource::Entity::find()
-        .filter(resource::Column::HeaderId.is_in(resource_ids.to_vec()))
-        .filter(resource::Entity::condition(revision))
+    let db_resources = resource_iteration::Entity::find()
+        .filter(resource_iteration::Column::HeaderId.is_in(resource_ids.to_vec()))
+        .filter(resource_iteration::Entity::condition(revision))
         .all(txn)
         .await?;
     let res_map = db_resources.into_iter().map(|r| (r.header_id, r)).collect::<HashMap<i32, _>>();

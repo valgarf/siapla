@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
-    entity::{holiday, resource_iteration as resource, task_iteration as task},
+    entity::{holiday, resource_iteration, task_iteration},
     gql::scalars::Int64,
     revisioning::{active_for_revision, resolve_plan_revision, resolve_revision},
 };
@@ -26,9 +26,9 @@ pub struct Query;
 #[graphql(context = Context, scalar = crate::gql::scalars::MyScalarValue)]
 impl Query {
     async fn hello_world() -> anyhow::Result<String> {
-        // let tasks: Vec<task::Model> = task::Entity::find()
-        //     .filter(task::Column::Title.contains("test"))
-        //     .order_by_asc(task::Column::Title)
+        // let tasks: Vec<task_iteration::Model> = task_iteration::Entity::find()
+        //     .filter(task_iteration::Column::Title.contains("test"))
+        //     .order_by_asc(task_iteration::Column::Title)
         //     .all(ctx.db().await?)
         //     .await?;
         Ok("Hello World from Juniper!".to_owned())
@@ -39,13 +39,13 @@ impl Query {
         let revision = resolve_revision(txn, revision.map(i64::from))
             .await?
             .ok_or(anyhow::anyhow!("No revision found in database"))?;
-        let res = task::Entity::find()
+        let res = task_iteration::Entity::find()
             .filter(active_for_revision(
-                task::Column::RevCreated,
-                task::Column::RevDeleted,
+                task_iteration::Column::RevCreated,
+                task_iteration::Column::RevDeleted,
                 Some(revision),
             ))
-            .order_by_asc(task::Column::Title)
+            .order_by_asc(task_iteration::Column::Title)
             .all(txn)
             .await?;
         Ok(res.into_iter().map(|m| GQLTask::at_revision(m, revision)).collect())
@@ -56,13 +56,13 @@ impl Query {
         let revision = resolve_revision(txn, revision.map(i64::from))
             .await?
             .ok_or(anyhow::anyhow!("No revision found in database"))?;
-        let res = resource::Entity::find()
+        let res = resource_iteration::Entity::find()
             .filter(active_for_revision(
-                resource::Column::RevCreated,
-                resource::Column::RevDeleted,
+                resource_iteration::Column::RevCreated,
+                resource_iteration::Column::RevDeleted,
                 Some(revision),
             ))
-            .order_by_asc(resource::Column::Name)
+            .order_by_asc(resource_iteration::Column::Name)
             .all(txn)
             .await?;
         Ok(res.into_iter().map(|m| GQLResource::at_revision(m, revision)).collect())

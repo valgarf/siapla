@@ -7,7 +7,7 @@ use tracing::error;
 
 use crate::db::dataloader::AvailabilityBatcher;
 use crate::{
-    entity::{resource_header, resource_iteration as resource, vacation},
+    entity::{resource_header, resource_iteration, vacation},
     gql::{
         availability::GQLAvailability, common::nullable_to_av, context::Context,
         vacation::GQLVacation,
@@ -47,24 +47,27 @@ impl GQLInterval {
 // ---------------------------------------------------------------------------
 
 pub struct GQLResource {
-    pub model: resource::Model,
+    pub model: resource_iteration::Model,
     pub revision: i64,
     pub header_model: Option<resource_header::Model>,
 }
 
 impl GQLResource {
-    pub fn at_revision(model: resource::Model, revision: i64) -> Self {
+    pub fn at_revision(model: resource_iteration::Model, revision: i64) -> Self {
         Self { model, revision, header_model: None }
     }
 
-    pub fn with_header(model: resource::Model, header_model: resource_header::Model) -> Self {
+    pub fn with_header(
+        model: resource_iteration::Model,
+        header_model: resource_header::Model,
+    ) -> Self {
         let revision = model.rev_created;
         Self { model, revision, header_model: Some(header_model) }
     }
 }
 
-impl From<resource::Model> for GQLResource {
-    fn from(model: resource::Model) -> Self {
+impl From<resource_iteration::Model> for GQLResource {
+    fn from(model: resource_iteration::Model) -> Self {
         let revision = model.rev_created;
         Self { model, revision, header_model: None }
     }
@@ -197,7 +200,7 @@ impl ResourceSaveInput {
 pub async fn resource_save(
     ctx: &Context,
     mut resource: ResourceSaveInput,
-) -> anyhow::Result<resource::Model> {
+) -> anyhow::Result<resource_iteration::Model> {
     let availability = resource.availability.take();
     let added_vacations = resource.added_vacations.take().unwrap_or_default();
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
@@ -207,9 +210,9 @@ pub async fn resource_save(
     let mut am = resource.into_active_model();
 
     let model = if let Some(header_id) = input_header_id {
-        let existing = resource::Entity::find()
-            .filter(resource::Column::HeaderId.eq(header_id))
-            .filter(resource::Column::RevDeleted.is_null())
+        let existing = resource_iteration::Entity::find()
+            .filter(resource_iteration::Column::HeaderId.eq(header_id))
+            .filter(resource_iteration::Column::RevDeleted.is_null())
             .one(txn)
             .await?
             .ok_or_else(|| {
@@ -217,10 +220,13 @@ pub async fn resource_save(
             })?;
         let old_id = existing.id;
         // Soft-delete the old iteration
-        resource::Entity::update_many()
-            .col_expr(resource::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(resource::Column::Id.eq(old_id))
-            .filter(resource::Column::RevDeleted.is_null())
+        resource_iteration::Entity::update_many()
+            .col_expr(
+                resource_iteration::Column::RevDeleted,
+                Expr::value(Value::BigInt(Some(revision_id))),
+            )
+            .filter(resource_iteration::Column::Id.eq(old_id))
+            .filter(resource_iteration::Column::RevDeleted.is_null())
             .exec(txn)
             .await?;
         // Create new iteration

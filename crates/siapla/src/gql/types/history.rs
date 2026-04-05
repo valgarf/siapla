@@ -7,7 +7,7 @@ use sea_orm::*;
 use crate::{
     entity::{
         booking, dependency, resource_constraint, resource_constraint_entry, resource_iteration,
-        revision, task_iteration as task,
+        revision, task_iteration,
     },
     gql::{
         context::Context,
@@ -47,7 +47,7 @@ pub struct TaskIterationChange {
     rev_id: i64,
     ts: DateTime<Utc>,
     ct: ChangeType,
-    task_model: task::Model,
+    task_model: task_iteration::Model,
     revision: i64,
 }
 
@@ -218,24 +218,24 @@ async fn resolve_task_title_at_revision(
     header_id: i32,
     rev_id: i64,
 ) -> anyhow::Result<String> {
-    if let Some(model) = task::Entity::find()
-        .filter(task::Column::HeaderId.eq(header_id))
-        .filter(task::Column::RevCreated.lte(rev_id))
+    if let Some(model) = task_iteration::Entity::find()
+        .filter(task_iteration::Column::HeaderId.eq(header_id))
+        .filter(task_iteration::Column::RevCreated.lte(rev_id))
         .filter(
             Condition::any()
-                .add(task::Column::RevDeleted.is_null())
-                .add(task::Column::RevDeleted.gt(rev_id)),
+                .add(task_iteration::Column::RevDeleted.is_null())
+                .add(task_iteration::Column::RevDeleted.gt(rev_id)),
         )
-        .order_by_desc(task::Column::RevCreated)
+        .order_by_desc(task_iteration::Column::RevCreated)
         .one(txn)
         .await?
     {
         return Ok(model.title);
     }
 
-    if let Some(model) = task::Entity::find()
-        .filter(task::Column::HeaderId.eq(header_id))
-        .order_by_desc(task::Column::RevCreated)
+    if let Some(model) = task_iteration::Entity::find()
+        .filter(task_iteration::Column::HeaderId.eq(header_id))
+        .order_by_desc(task_iteration::Column::RevCreated)
         .one(txn)
         .await?
     {
@@ -286,7 +286,7 @@ pub async fn query_task_history(
     limit: Option<i32>,
 ) -> anyhow::Result<TaskHistoryResult> {
     let txn = ctx.txn().await?;
-    let limit = (limit.unwrap_or(30).clamp(1,50)) as usize;
+    let limit = (limit.unwrap_or(30).clamp(1, 50)) as usize;
 
     let from_rev: Option<i64> = match (from_revision, from_timestamp) {
         (Some(rev), _) => Some(rev.0),
@@ -315,8 +315,10 @@ pub async fn query_task_history(
         (None, None) => None,
     };
 
-    let task_iterations: Vec<task::Model> =
-        task::Entity::find().filter(task::Column::HeaderId.eq(task_header_id)).all(txn).await?;
+    let task_iterations: Vec<task_iteration::Model> = task_iteration::Entity::find()
+        .filter(task_iteration::Column::HeaderId.eq(task_header_id))
+        .all(txn)
+        .await?;
 
     let deps: Vec<dependency::Model> = dependency::Entity::find()
         .filter(
@@ -418,9 +420,9 @@ pub async fn query_task_history(
         let ts = rev_timestamps.get(&rev_id).copied().unwrap_or_default();
 
         // --- Task iteration changes ---
-        let created_iters: Vec<&task::Model> =
+        let created_iters: Vec<&task_iteration::Model> =
             task_iterations.iter().filter(|t| t.rev_created == rev_id).collect();
-        let deleted_iters: Vec<&task::Model> =
+        let deleted_iters: Vec<&task_iteration::Model> =
             task_iterations.iter().filter(|t| t.rev_deleted == Some(rev_id)).collect();
 
         let created_headers: HashSet<i32> = created_iters.iter().map(|t| t.header_id).collect();

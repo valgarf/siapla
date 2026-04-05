@@ -2,7 +2,7 @@ use std::{collections::HashSet, iter::zip};
 
 use super::resource::GQLResource;
 use crate::{
-    entity::{availability, resource_iteration as resource},
+    entity::{availability, resource_iteration},
     gql::context::Context,
 };
 use juniper::{GraphQLEnum, graphql_object};
@@ -54,9 +54,9 @@ impl GQLAvailability {
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
         let loader = ctx
-            .loader(crate::db::dataloader::ByColRevBatcher::<resource::Entity> {
+            .loader(crate::db::dataloader::ByColRevBatcher::<resource_iteration::Entity> {
                 revision: self.revision,
-                col: resource::Column::HeaderId,
+                col: resource_iteration::Column::HeaderId,
             })
             .await;
         let model = loader.load_one(self.model.resource_id.into()).await?;
@@ -94,7 +94,7 @@ impl From<&AvailabilityInput> for crate::entity::availability::ActiveModel {
 
 pub async fn update_availability(
     ctx: &Context,
-    model: &resource::Model,
+    model: &resource_iteration::Model,
     availability: Vec<AvailabilityInput>,
     revision_id: i64,
 ) -> anyhow::Result<()> {
