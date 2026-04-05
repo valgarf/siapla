@@ -1,10 +1,10 @@
+use crate::gql::wrapper::*;
+use anyhow::anyhow;
+use chrono::{DateTime, Utc};
 use std::{
     collections::{BTreeSet, HashSet},
     str::FromStr,
 };
-
-use anyhow::anyhow;
-use chrono::{DateTime, Utc};
 
 use juniper::{GraphQLEnum, Nullable, graphql_object};
 use sea_orm::{ActiveValue, DatabaseTransaction, QueryOrder as _, prelude::*};
@@ -49,16 +49,7 @@ impl From<TaskDesignation> for String {
 // GQLTask – revision-aware GraphQL wrapper for task_iteration::Model
 // ---------------------------------------------------------------------------
 
-pub struct GQLTask {
-    pub model: task_iteration::Model,
-    pub revision: i64,
-}
-
-impl GQLTask {
-    pub fn at_revision(iteration_model: task_iteration::Model, revision: i64) -> Self {
-        Self { model: iteration_model, revision }
-    }
-}
+pub type GQLTask = ModelWrapper<task_iteration::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Task", context = Context, scalar= ExtendedScalarValue)]
@@ -109,19 +100,19 @@ impl GQLTask {
 
     // -- Predecessors (revision-aware via link dataloader) -------------------
     pub async fn predecessors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = self.model.dataloader_predecessors(ctx.db(), self.revision).await?;
-        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
+        self.model
+            .dataloader_predecessors(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
 
     // -- Successors (revision-aware via link dataloader) ---------------------
     pub async fn successors(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = self.model.dataloader_successors(ctx.db(), self.revision).await?;
-        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
+        self.model.dataloader_successors(ctx.db(), self.revision).await.into_wrapper(self.revision)
     }
 
     pub async fn children(&self, ctx: &Context) -> anyhow::Result<Vec<GQLTask>> {
-        let models = self.model.dataloader_children(ctx.db(), self.revision).await?;
-        Ok(models.into_iter().map(|m| GQLTask::at_revision(m, self.revision)).collect())
+        self.model.dataloader_children(ctx.db(), self.revision).await.into_wrapper(self.revision)
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
@@ -130,8 +121,7 @@ impl GQLTask {
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let model = self.model.dataloader_parent(ctx.db(), self.revision).await?;
-        Ok(model.map(|m| GQLTask::at_revision(m, self.revision)))
+        self.model.dataloader_parent(ctx.db(), self.revision).await.into_wrapper(self.revision)
     }
 
     async fn resource_constraints(

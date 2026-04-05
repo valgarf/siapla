@@ -5,6 +5,7 @@ pub mod query;
 pub mod scalars;
 pub mod subscription;
 mod types;
+pub mod wrapper;
 
 pub use types::{
     allocation, availability, booking, history, holiday, issue, plan, resource, task, vacation,
