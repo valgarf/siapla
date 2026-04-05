@@ -100,7 +100,7 @@ pub async fn update_availability(
 ) -> anyhow::Result<()> {
     let txn = ctx.txn().await?;
     let existing_availability: Vec<_> =
-        model.query_availability_latest(ctx.db()).await?.into_iter().collect();
+        model.dataloader_availability_latest(ctx.db()).await?.into_iter().collect();
     let existing: HashSet<Weekday> = existing_availability
         .iter()
         .map(|el| el.weekday.as_str().try_into().map_err(anyhow::Error::from))

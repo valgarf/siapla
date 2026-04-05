@@ -1,9 +1,7 @@
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
 use crate::{
     db::{
         context::DbContext,
-        dataloader::{ByColBatcher, ByColRevBatcher},
+        dataloader::{ByColBatcher, ByColRevBatcher, by_col::ByColLatestBatcher},
         entity::{availability, holiday, resource_iteration, vacation},
     },
     entity::resource_header,
@@ -48,18 +46,18 @@ impl resource_iteration::Model {
         .await
     }
 
-    pub async fn query_availability_latest(
+    pub async fn dataloader_availability_latest(
         &self,
         db: &DbContext,
     ) -> anyhow::Result<Vec<availability::Model>> {
-        let resource_id = self.header_id;
-        let availability = availability::Entity::find()
-            .filter(availability::Column::ResourceId.eq(resource_id))
-            .filter(availability::Column::RevDeleted.is_null())
-            .all(db.txn().await?)
-            .await?;
-        Ok(availability)
+        db.loader(ByColLatestBatcher::<availability::Entity> {
+            col: availability::Column::ResourceId,
+        })
+        .await
+        .load(self.header_id.into())
+        .await
     }
+
     pub async fn dataloader_header(
         &self,
         db: &DbContext,

@@ -16,6 +16,10 @@ pub trait RangeRevColumns: EntityTrait {
     fn condition(revision: i64) -> sea_orm::Condition {
         active_for_revision(Self::rev_created_column(), Self::rev_deleted_column(), Some(revision))
     }
+
+    fn condition_latest() -> sea_orm::Condition {
+        active_for_revision(Self::rev_created_column(), Self::rev_deleted_column(), None)
+    }
 }
 
 macro_rules! impl_range_rev_columns {
