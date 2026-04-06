@@ -6,10 +6,11 @@
 
 use std::sync::Arc;
 
+use siapla::entity::revision;
 use tokio::sync::OnceCell;
 
 use juniper::{ScalarValue as _, Variables};
-use sea_orm::{Database, DatabaseConnection, EntityTrait, TransactionTrait as _};
+use sea_orm::{Database, DatabaseConnection, EntityTrait, QueryOrder as _, TransactionTrait as _};
 use serial_test::serial;
 use siapla::gql::scalars::ExtendedScalarValue;
 use siapla::{
@@ -1278,7 +1279,14 @@ async fn test_query_problem_after_task_modification() {
     {
         let (app_state, _rx) = AppState::new(true);
         let ctx = Context::new(app_state);
-        let result = siapla::scheduling::query_problem(&ctx, None).await;
+        let revision_id = revision::Entity::find()
+            .order_by_desc(revision::Column::Id)
+            .one(ctx.db().txn().await.expect("Failed to get transaction"))
+            .await
+            .expect("Failed to query revision")
+            .expect("Must have at least one revision")
+            .id;
+        let result = siapla::scheduling::query_problem(&ctx, revision_id).await;
         assert!(result.is_ok(), "First query_problem should succeed: {:?}", result.err());
         Arc::into_inner(ctx)
             .expect("only strong ref")
@@ -1321,7 +1329,14 @@ async fn test_query_problem_after_task_modification() {
     {
         let (app_state, _rx) = AppState::new(true);
         let ctx = Context::new(app_state);
-        let result = siapla::scheduling::query_problem(&ctx, None).await;
+        let revision_id = revision::Entity::find()
+            .order_by_desc(revision::Column::Id)
+            .one(ctx.db().txn().await.expect("Failed to get transaction"))
+            .await
+            .expect("Failed to query revision")
+            .expect("Must have at least one revision")
+            .id;
+        let result = siapla::scheduling::query_problem(&ctx, revision_id).await;
         assert!(
             result.is_ok(),
             "query_problem after task modification should succeed: {:?}",

@@ -1,5 +1,5 @@
 use crate::revisioning::active_for_revision;
-use sea_orm::{ColumnTrait, EntityTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub mod context;
 pub mod dataloader;
@@ -19,6 +19,10 @@ pub trait RangeRevColumns: EntityTrait {
 
     fn condition_latest() -> sea_orm::Condition {
         active_for_revision(Self::rev_created_column(), Self::rev_deleted_column(), None)
+    }
+
+    fn find_revision(revision: i64) -> sea_orm::Select<Self> {
+        Self::find().filter(Self::condition(revision))
     }
 }
 

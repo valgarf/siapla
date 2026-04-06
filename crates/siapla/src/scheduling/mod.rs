@@ -106,7 +106,7 @@ async fn perform_recalculation(app_state: &Arc<crate::app_state::AppState>) -> a
     };
 
     let settings = GASettings::default();
-    match query_problem(&ctx, Some(calculated_revision)).await {
+    match query_problem(&ctx, calculated_revision).await {
         Err(err) => {
             println!("Error querying problem: {}", err);
             return Err(err);

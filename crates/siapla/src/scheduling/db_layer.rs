@@ -5,10 +5,11 @@ use std::fmt::Display;
 use std::rc::{Rc, Weak};
 use std::str::FromStr;
 
+use crate::RangeRevColumns;
 use crate::db::dataloader::AvailabilityBatcher;
 use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
-use crate::revisioning::{PlanState, active_for_revision, resolve_revision};
+use crate::revisioning::PlanState;
 
 use crate::entity::{booking, booking_resource, resource_iteration, task_iteration};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};
@@ -28,50 +29,21 @@ use sea_orm::{
 };
 use tokio::task::JoinSet;
 
-pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Result<Project> {
+pub async fn query_problem(ctx: &Context, revision: i64) -> anyhow::Result<Project> {
     // Query everything: needs to be done first, we cannot haev an await in the rest of the function
     // TODO: only query tasks not marked as 'done'? (earliest start for following tasks?)
     // alternatively: on marking milestones as done, check which tasks (and requirements) can be
     // marked as not relevant anymore?
     let db = ctx.txn().await?;
-    let revision = resolve_revision(db, revision)
-        .await?
-        .ok_or(anyhow::anyhow!("No revision found in database"))?;
 
-    let db_task_vec = task_iteration::Entity::find()
-        .filter(active_for_revision(
-            task_iteration::Column::RevCreated,
-            task_iteration::Column::RevDeleted,
-            Some(revision),
-        ))
-        .all(db)
-        .await?;
-    let db_resource_vec = resource_iteration::Entity::find()
-        .filter(active_for_revision(
-            resource_iteration::Column::RevCreated,
-            resource_iteration::Column::RevDeleted,
-            Some(revision),
-        ))
-        .all(db)
-        .await?;
+    let db_task_vec = task_iteration::Entity::find_revision(revision).all(db).await?;
+    let db_resource_vec = resource_iteration::Entity::find_revision(revision).all(db).await?;
     let resource_header_to_iter =
         db_resource_vec.iter().map(|r| (r.header_id, r.id)).collect::<HashMap<i32, i32>>();
-    let db_dependencies_vec = dependency::Entity::find()
-        .filter(active_for_revision(
-            dependency::Column::RevCreated,
-            dependency::Column::RevDeleted,
-            Some(revision),
-        ))
-        .all(db)
-        .await?;
+    let db_dependencies_vec = dependency::Entity::find_revision(revision).all(db).await?;
     let task_header_ids: Vec<i32> = db_task_vec.iter().map(|t| t.header_id).collect();
-    let db_constraints_vec = resource_constraint::Entity::find()
+    let db_constraints_vec = resource_constraint::Entity::find_revision(revision)
         .filter(resource_constraint::Column::TaskId.is_in(task_header_ids))
-        .filter(active_for_revision(
-            resource_constraint::Column::RevCreated,
-            resource_constraint::Column::RevDeleted,
-            Some(revision),
-        ))
         .all(db)
         .await?;
     let constraint_ids = db_constraints_vec.iter().map(|t| t.id).collect::<Vec<_>>();
@@ -83,14 +55,7 @@ pub async fn query_problem(ctx: &Context, revision: Option<i64>) -> anyhow::Resu
     let db_task_map = db_task_vec.into_iter().map(|t| (t.id, t)).collect::<HashMap<i32, _>>();
 
     // Load existing bookings
-    let booking_allocs = booking::Entity::find()
-        .filter(active_for_revision(
-            booking::Column::RevCreated,
-            booking::Column::RevDeleted,
-            Some(revision),
-        ))
-        .all(db)
-        .await?;
+    let booking_allocs = booking::Entity::find_revision(revision).all(db).await?;
     let alloc_ids: Vec<i32> = booking_allocs.iter().map(|a| a.id).collect();
     let booking_allocated: Vec<booking_resource::Model> = if alloc_ids.is_empty() {
         vec![]
