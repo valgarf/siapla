@@ -2,7 +2,11 @@ use super::resource::GQLResource;
 use super::task::GQLTask;
 use crate::{
     entity::allocation,
-    gql::{context::Context, scalars::ExtendedScalarValue},
+    gql::{
+        context::Context,
+        scalars::ExtendedScalarValue,
+        wrapper::{ModelWrapper, ResultVecToWrapper},
+    },
 };
 use chrono::{DateTime, Utc};
 use juniper::{GraphQLEnum, graphql_object};
@@ -22,23 +26,7 @@ impl From<AllocationType> for String {
     }
 }
 
-pub struct GQLAllocation {
-    pub model: allocation::Model,
-    pub revision: i64,
-}
-
-impl GQLAllocation {
-    pub fn at_revision(model: allocation::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
-
-impl From<allocation::Model> for GQLAllocation {
-    fn from(model: allocation::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision }
-    }
-}
+pub type GQLAllocation = ModelWrapper<allocation::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Allocation", context = Context, scalar = ExtendedScalarValue)]
@@ -59,8 +47,10 @@ impl GQLAllocation {
         false
     }
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models = self.model.dataloader_resource_iterations(ctx.db(), self.revision).await?;
-        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
+        self.model
+            .dataloader_resource_iterations(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {
         let model = self

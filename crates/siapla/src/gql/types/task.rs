@@ -116,8 +116,7 @@ impl GQLTask {
     }
 
     pub async fn issues(&self, ctx: &Context) -> anyhow::Result<Vec<GQLIssue>> {
-        let issues = self.model.dataloader_issues(ctx.db(), self.revision).await?;
-        Ok(issues.into_iter().map(|m| GQLIssue::at_revision(m, self.revision)).collect())
+        self.model.dataloader_issues(ctx.db(), self.revision).await.into_wrapper(self.revision)
     }
 
     async fn parent(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
@@ -128,33 +127,27 @@ impl GQLTask {
         &self,
         ctx: &Context,
     ) -> anyhow::Result<Vec<GQLResourceConstraint>> {
-        let issues = self.model.dataloader_resource_constraints(ctx.db(), self.revision).await?;
-        Ok(issues
-            .into_iter()
-            .map(|m| GQLResourceConstraint::at_revision(m, self.revision))
-            .collect())
+        self.model
+            .dataloader_resource_constraints(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
 
     async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
-        let mut res = self.model.dataloader_allocations(ctx.db(), self.revision).await?;
-        res.sort_by_key(|a| a.end);
-        Ok(res.into_iter().map(|m| GQLAllocation::at_revision(m, self.revision)).collect())
+        let mut res: Vec<GQLAllocation> = self
+            .model
+            .dataloader_allocations(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)?;
+        res.sort_by_key(|a| a.model.end);
+        Ok(res)
     }
 }
 // ---------------------------------------------------------------------------
 // GQLResourceConstraint – revision-aware wrapper
 // ---------------------------------------------------------------------------
 
-pub struct GQLResourceConstraint {
-    pub model: resource_constraint::Model,
-    pub revision: i64,
-}
-
-impl GQLResourceConstraint {
-    pub fn at_revision(model: resource_constraint::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
+pub type GQLResourceConstraint = ModelWrapper<resource_constraint::Entity>;
 
 #[graphql_object]
 #[graphql(name = "ResourceConstraint", context = Context, scalar = ExtendedScalarValue)]
@@ -169,11 +162,7 @@ impl GQLResourceConstraint {
         self.model.speed as f64
     }
     async fn entries(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResourceConstraintEntry>> {
-        let models = self.model.dataloader_entries(ctx.db()).await?;
-        Ok(models
-            .into_iter()
-            .map(|m| GQLResourceConstraintEntry::at_revision(m, self.revision))
-            .collect())
+        self.model.dataloader_entries(ctx.db()).await.into_wrapper(self.revision)
     }
 }
 
@@ -181,16 +170,7 @@ impl GQLResourceConstraint {
 // GQLResourceConstraintEntry – revision-aware wrapper
 // ---------------------------------------------------------------------------
 
-pub struct GQLResourceConstraintEntry {
-    pub model: resource_constraint_entry::Model,
-    pub revision: i64,
-}
-
-impl GQLResourceConstraintEntry {
-    pub fn at_revision(model: resource_constraint_entry::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
+pub type GQLResourceConstraintEntry = ModelWrapper<resource_constraint_entry::Entity>;
 
 #[graphql_object]
 #[graphql(name = "ResourceConstraintEntry", context = Context, scalar = ExtendedScalarValue)]

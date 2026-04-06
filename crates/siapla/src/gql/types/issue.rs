@@ -1,28 +1,13 @@
 use super::task::GQLTask;
-use crate::gql::scalars::ExtendedScalarValue;
+use crate::gql::wrapper::ResultOptionToWrapper;
+use crate::gql::{scalars::ExtendedScalarValue, wrapper::ModelWrapper};
 use crate::{entity::issue, gql::context::Context};
 use juniper::GraphQLEnum;
 use juniper::graphql_object;
 use std::str::FromStr;
 use strum::{EnumString, FromRepr, IntoStaticStr};
 
-pub struct GQLIssue {
-    pub model: issue::Model,
-    pub revision: i64,
-}
-
-impl GQLIssue {
-    pub fn at_revision(model: issue::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
-
-impl From<issue::Model> for GQLIssue {
-    fn from(model: issue::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision }
-    }
-}
+pub type GQLIssue = ModelWrapper<issue::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Issue", context = Context, scalar = ExtendedScalarValue)]
@@ -40,8 +25,10 @@ impl GQLIssue {
         Ok(IssueType::from_str(&self.model.r#type)?)
     }
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<Option<GQLTask>> {
-        let model = self.model.dataloader_task_iteration(ctx.db(), self.revision).await?;
-        Ok(model.map(|m| GQLTask::at_revision(m, self.revision)))
+        self.model
+            .dataloader_task_iteration(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
 }
 

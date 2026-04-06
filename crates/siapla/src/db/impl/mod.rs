@@ -1,4 +1,5 @@
 mod allocation;
+mod availability;
 mod booking;
 mod holiday_entry;
 mod issue;

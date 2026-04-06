@@ -5,9 +5,10 @@ use sea_orm::ActiveValue;
 use sea_orm::prelude::*;
 use tracing::error;
 
-use crate::db::dataloader::AvailabilityBatcher;
 use crate::gql::scalars::ExtendedScalarValue;
 use crate::gql::scalars::Int64;
+use crate::gql::wrapper::ModelWrapper;
+use crate::gql::wrapper::ResultVecToWrapper;
 use crate::{
     entity::{resource_iteration, vacation},
     gql::{
@@ -48,16 +49,7 @@ impl GQLInterval {
 // GQLResource – revision-aware GraphQL wrapper for resource_iteration::Model
 // ---------------------------------------------------------------------------
 
-pub struct GQLResource {
-    pub model: resource_iteration::Model,
-    pub revision: i64,
-}
-
-impl GQLResource {
-    pub fn at_revision(iteration_model: resource_iteration::Model, revision: i64) -> Self {
-        Self { model: iteration_model, revision }
-    }
-}
+pub type GQLResource = ModelWrapper<resource_iteration::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Resource", context = Context, scalar = ExtendedScalarValue)]
@@ -100,16 +92,14 @@ impl GQLResource {
     }
 
     pub async fn availability(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAvailability>> {
-        let availability = self.model.dataloader_availability(ctx.db(), self.revision).await?;
-        Ok(availability
-            .into_iter()
-            .map(|m| GQLAvailability::at_revision(m, self.revision))
-            .collect())
+        self.model
+            .dataloader_availability(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
 
     pub async fn vacation(&self, ctx: &Context) -> anyhow::Result<Vec<GQLVacation>> {
-        let vacation = self.model.dataloader_vacation(ctx.db(), self.revision).await?;
-        Ok(vacation.into_iter().map(|m| GQLVacation::at_revision(m, self.revision)).collect())
+        self.model.dataloader_vacation(ctx.db(), self.revision).await.into_wrapper(self.revision)
     }
 
     pub async fn combined_availability(
@@ -118,15 +108,20 @@ impl GQLResource {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> anyhow::Result<Vec<GQLInterval>> {
-        let start = start.naive_utc();
-        let end = end.naive_utc();
-        let revision = self.revision;
-        let loader = ctx.loader(AvailabilityBatcher { start, end, revision }).await;
+        let intervals = self
+            .model
+            .dataloader_combined_availability(
+                ctx.db(),
+                start.naive_utc(),
+                end.naive_utc(),
+                self.revision,
+            )
+            .await
+            .inspect_err(|e| {
+                error!("Failed to load combined availability from dataloader: {:?}", e)
+            })?;
 
-        let ivs = loader.load(self.model.id).await.inspect_err(|e| {
-            error!("Failed to load combined availability from dataloader: {:?}", e)
-        })?;
-        Ok(ivs
+        Ok(intervals
             .into_iter()
             .map(|iv| GQLInterval {
                 iv: Interval::new_closed(

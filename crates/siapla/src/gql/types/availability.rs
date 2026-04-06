@@ -3,7 +3,7 @@ use std::{collections::HashSet, iter::zip};
 use super::resource::GQLResource;
 use crate::{
     entity::{availability, resource_iteration},
-    gql::{context::Context, scalars::ExtendedScalarValue},
+    gql::{context::Context, scalars::ExtendedScalarValue, wrapper::ModelWrapper},
 };
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
@@ -28,23 +28,7 @@ impl From<Weekday> for String {
     }
 }
 
-pub struct GQLAvailability {
-    pub model: availability::Model,
-    pub revision: i64,
-}
-
-impl GQLAvailability {
-    pub fn at_revision(model: availability::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
-
-impl From<availability::Model> for GQLAvailability {
-    fn from(model: availability::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision }
-    }
-}
+pub type GQLAvailability = ModelWrapper<availability::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Availability", context = Context, scalar = ExtendedScalarValue)]
@@ -53,15 +37,10 @@ impl GQLAvailability {
         &self.model.id
     }
     async fn resource(&self, ctx: &Context) -> anyhow::Result<GQLResource> {
-        let loader = ctx
-            .loader(crate::db::dataloader::ByColRevBatcher::<resource_iteration::Entity> {
-                revision: self.revision,
-                col: resource_iteration::Column::HeaderId,
-            })
-            .await;
-        let model = loader.load_one(self.model.resource_id.into()).await?;
-        let model = model.ok_or(anyhow::anyhow!("Failed to find resource for Availability"))?;
-        Ok(GQLResource::at_revision(model, self.revision))
+        self.model
+            .dataloader_resource(ctx.db(), self.revision)
+            .await
+            .map(|r| GQLResource::at_revision(r, self.revision))
     }
     fn duration(&self) -> anyhow::Result<i32> {
         let mut secs = self.model.duration * Decimal::new(3600, 0);

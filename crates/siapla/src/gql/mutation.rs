@@ -236,7 +236,7 @@ impl Mutation {
         }
 
         ctx.app_state().notify_modified("graphql".to_string());
-        Ok(GQLBooking::from(db_booking))
+        Ok(GQLBooking::at_revision(db_booking, revision_id))
     }
 
     async fn booking_delete(ctx: &Context, db_id: i32) -> anyhow::Result<bool> {

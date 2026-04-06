@@ -1,28 +1,12 @@
 use crate::{
     entity::vacation,
-    gql::{context::Context, scalars::ExtendedScalarValue},
+    gql::{context::Context, scalars::ExtendedScalarValue, wrapper::ModelWrapper},
 };
 use chrono::{DateTime, Utc};
 use juniper::graphql_object;
 use sea_orm::ActiveValue;
 
-pub struct GQLVacation {
-    pub model: vacation::Model,
-    pub revision: i64,
-}
-
-impl GQLVacation {
-    pub fn at_revision(model: vacation::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
-
-impl From<vacation::Model> for GQLVacation {
-    fn from(model: vacation::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision }
-    }
-}
+pub type GQLVacation = ModelWrapper<vacation::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Vacation", context = Context, scalar = ExtendedScalarValue)]

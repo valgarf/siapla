@@ -1,4 +1,5 @@
 use crate::gql::scalars::ExtendedScalarValue;
+use crate::gql::wrapper::{ModelWrapper, ResultVecToWrapper};
 use crate::{entity::booking, gql::context::Context};
 use chrono::{DateTime, Utc};
 use juniper::graphql_object;
@@ -6,23 +7,7 @@ use juniper::graphql_object;
 use super::resource::GQLResource;
 use super::task::GQLTask;
 
-pub struct GQLBooking {
-    pub model: booking::Model,
-    pub revision: i64,
-}
-
-impl GQLBooking {
-    pub fn at_revision(model: booking::Model, revision: i64) -> Self {
-        Self { model, revision }
-    }
-}
-
-impl From<booking::Model> for GQLBooking {
-    fn from(model: booking::Model) -> Self {
-        let revision = model.rev_created;
-        Self { model, revision }
-    }
-}
+pub type GQLBooking = ModelWrapper<booking::Entity>;
 
 #[graphql_object]
 #[graphql(name = "Booking", context = Context, scalar = ExtendedScalarValue)]
@@ -44,8 +29,10 @@ impl GQLBooking {
     }
 
     pub async fn resources(&self, ctx: &Context) -> anyhow::Result<Vec<GQLResource>> {
-        let models = self.model.dataloader_resource_iterations(ctx.db(), self.revision).await?;
-        Ok(models.into_iter().map(|m| GQLResource::at_revision(m, self.revision)).collect())
+        self.model
+            .dataloader_resource_iterations(ctx.db(), self.revision)
+            .await
+            .into_wrapper(self.revision)
     }
 
     pub async fn task(&self, ctx: &Context) -> anyhow::Result<GQLTask> {

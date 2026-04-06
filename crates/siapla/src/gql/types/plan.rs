@@ -14,9 +14,8 @@ pub struct Plan {
 #[graphql(name = "Plan", context = Context, scalar = ExtendedScalarValue)]
 impl Plan {
     pub async fn allocations(&self, ctx: &Context) -> anyhow::Result<Vec<GQLAllocation>> {
-        let txn = ctx.txn().await?;
-        let revision = crate::revisioning::resolve_plan_revision(txn, self.revision).await?;
-        let Some(revision) = revision else {
+        // revision should only be None if there is no plan at all
+        let Some(revision) = self.revision else {
             return Ok(Vec::new());
         };
         Ok(allocation::Entity::find()
@@ -26,7 +25,7 @@ impl Plan {
                 Some(revision),
             ))
             .order_by_asc(allocation::Column::TaskId)
-            .all(txn)
+            .all(ctx.db().txn().await?)
             .await?
             .into_iter()
             .map(|m| GQLAllocation::at_revision(m, revision))

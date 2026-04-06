@@ -1,10 +1,15 @@
+use chrono::NaiveDateTime;
+
 use crate::{
     db::{
         context::DbContext,
-        dataloader::{ByColBatcher, ByColRevBatcher, by_col::ByColLatestBatcher},
+        dataloader::{
+            AvailabilityBatcher, ByColBatcher, ByColRevBatcher, by_col::ByColLatestBatcher,
+        },
         entity::{availability, holiday, resource_iteration, vacation},
     },
     entity::resource_header,
+    scheduling::Intervals,
 };
 
 impl resource_iteration::Model {
@@ -30,6 +35,16 @@ impl resource_iteration::Model {
         .await
         .load(self.header_id.into())
         .await
+    }
+
+    pub async fn dataloader_combined_availability(
+        &self,
+        ctx: &DbContext,
+        start: NaiveDateTime,
+        end: NaiveDateTime,
+        revision: i64,
+    ) -> anyhow::Result<Intervals<NaiveDateTime>> {
+        ctx.loader(AvailabilityBatcher { start, end, revision }).await.load(self.id).await
     }
 
     pub async fn dataloader_vacation(
