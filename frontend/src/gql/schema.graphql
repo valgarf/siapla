@@ -199,6 +199,8 @@ type DependencyChange implements IChange {
   changeType: ChangeType!
   predecessorId: Int!
   successorId: Int!
+  predecessorTitle: String!
+  successorTitle: String!
 }
 
 type Holiday {
@@ -283,10 +285,10 @@ type Resource {
   timezone: String!
   added: DateTime!
   removed: DateTime
-  revCreated: Int!
-  revDeleted: Int
-  headerRevCreated: Int
-  headerRevDeleted: Int
+  revCreated: Int64!
+  revDeleted: Int64
+  headerRevCreated: Int64!
+  headerRevDeleted: Int64
   holiday: Holiday
   availability: [Availability!]!
   vacation: [Vacation!]!
@@ -308,6 +310,7 @@ type ResourceConstraintChange implements IChange {
   optional: Boolean!
   speed: Float!
   resourceIds: [Int!]!
+  resourceNames: [String!]!
 }
 
 type ResourceConstraintEntry {
@@ -332,10 +335,10 @@ type Task {
   effort: Float
   priority: Float!
   designation: TaskDesignation!
-  revCreated: Int!
-  revDeleted: Int
-  headerRevCreated: Int
-  headerRevDeleted: Int
+  revCreated: Int64!
+  revDeleted: Int64
+  headerRevCreated: Int64!
+  headerRevDeleted: Int64
   predecessors: [Task!]!
   successors: [Task!]!
   children: [Task!]!
