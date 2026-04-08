@@ -5,6 +5,7 @@ pub mod context;
 pub mod dataloader;
 pub mod entity;
 pub mod r#impl;
+pub mod upserter;
 
 pub use context::DbContext;
 

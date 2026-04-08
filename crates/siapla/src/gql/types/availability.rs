@@ -1,14 +1,13 @@
-use std::{collections::HashSet, iter::zip};
-
 use super::resource::GQLResource;
 use crate::{
+    db::upserter::{LazyRevision, Upserter, upsert},
     entity::{availability, resource_iteration},
     gql::{context::Context, scalars::ExtendedScalarValue, wrapper::ModelWrapper},
 };
 use juniper::{GraphQLEnum, graphql_object};
 use sea_orm::{ActiveValue, prelude::*};
+use siapla_migration::IntoCondition;
 use strum::{EnumString, IntoStaticStr};
-use tracing::trace;
 
 #[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub enum Weekday {
@@ -71,98 +70,59 @@ impl From<&AvailabilityInput> for crate::entity::availability::ActiveModel {
     }
 }
 
+pub struct AvailabilityUpserter {
+    pub resource_header_id: i32,
+}
+
+impl AvailabilityUpserter {
+    pub fn new(resource_header_id: i32) -> Self {
+        Self { resource_header_id }
+    }
+}
+
+impl Upserter for AvailabilityUpserter {
+    type Entity = availability::Entity;
+    type Key = Weekday;
+
+    fn existing_condition(&self) -> sea_orm::Condition {
+        availability::Column::ResourceId.eq(self.resource_header_id).into_condition()
+    }
+
+    fn key(&self, model: &availability::ActiveModel) -> anyhow::Result<Weekday> {
+        model
+            .weekday
+            .try_as_ref()
+            .ok_or(anyhow::anyhow!("availability model needs to have a weekday"))?
+            .as_str()
+            .try_into()
+            .map_err(anyhow::Error::from)
+    }
+
+    fn model_equal(
+        &self,
+        lhs: &<Self::Entity as EntityTrait>::ActiveModel,
+        rhs: &<Self::Entity as EntityTrait>::ActiveModel,
+    ) -> bool {
+        lhs.duration == rhs.duration
+    }
+}
+
 pub async fn update_availability(
     ctx: &Context,
     model: &resource_iteration::Model,
     availability: Vec<AvailabilityInput>,
     revision_id: i64,
 ) -> anyhow::Result<()> {
-    let txn = ctx.txn().await?;
-    let existing_availability: Vec<_> =
-        model.dataloader_availability_latest(ctx.db()).await?.into_iter().collect();
-    let existing: HashSet<Weekday> = existing_availability
+    let new_models = availability
         .iter()
-        .map(|el| el.weekday.as_str().try_into().map_err(anyhow::Error::from))
-        .collect::<anyhow::Result<_>>()?;
-    let target: HashSet<Weekday> = availability.iter().map(|a| a.weekday).collect();
-    let remove: HashSet<Weekday> = existing.difference(&target).cloned().collect();
-    let add: HashSet<Weekday> = target.difference(&existing).cloned().collect();
-    let update: HashSet<Weekday> = target.intersection(&existing).cloned().collect();
-    trace!(
-        "availability: existing={:?}, target={:?}, remove={:?}, add={:?}, update={:?}",
-        existing, target, remove, add, update
-    );
-    if !remove.is_empty() {
-        availability::Entity::update_many()
-            .col_expr(
-                availability::Column::RevDeleted,
-                Expr::value(Value::BigInt(Some(revision_id))),
-            )
-            .filter(availability::Column::ResourceId.eq(model.id))
-            .filter(availability::Column::RevDeleted.is_null())
-            .filter(
-                availability::Column::Weekday.is_in(
-                    remove
-                        .iter()
-                        .map(|w| {
-                            let wstr: &'static str = w.into();
-                            wstr.to_owned()
-                        })
-                        .collect::<Vec<String>>(),
-                ),
-            )
-            .exec(txn)
-            .await?;
-    }
-    if !add.is_empty() {
-        let add_models: Vec<availability::ActiveModel> = availability
-            .iter()
-            .filter(|a| add.contains(&a.weekday))
-            .map(|a| {
-                let mut am: availability::ActiveModel = a.into();
-                am.resource_id = ActiveValue::Set(model.header_id);
-                am.rev_created = ActiveValue::Set(revision_id);
-                am.rev_deleted = ActiveValue::Set(None);
-                am
-            })
-            .collect();
-        availability::Entity::insert_many(add_models).exec(txn).await?;
-    }
-    if !update.is_empty() {
-        let existing_models: Vec<&availability::Model> = existing_availability
-            .iter()
-            .filter(|a| {
-                let wd: anyhow::Result<Weekday> =
-                    a.weekday.as_str().try_into().map_err(anyhow::Error::from);
-                if let Ok(wd) = wd { update.contains(&wd) } else { false }
-            })
-            .collect();
-        let update_models: Vec<&AvailabilityInput> =
-            availability.iter().filter(|a| update.contains(&a.weekday)).collect();
-        if existing_models.len() != update_models.len() {
-            return Err(anyhow::anyhow!("Internal error trying to update the availability."));
-        }
-        let update_models: Vec<(&availability::Model, &AvailabilityInput)> =
-            zip(existing_models, update_models)
-                .filter(|(e, u)| e.duration != Decimal::from(u.duration) / Decimal::from(3600))
-                .collect();
-        for (existing, input) in update_models {
-            availability::Entity::update_many()
-                .col_expr(
-                    availability::Column::RevDeleted,
-                    Expr::value(Value::BigInt(Some(revision_id))),
-                )
-                .filter(availability::Column::Id.eq(existing.id))
-                .filter(availability::Column::RevDeleted.is_null())
-                .exec(txn)
-                .await?;
-
-            let mut am: availability::ActiveModel = input.into();
+        .map(|a| {
+            let mut am: availability::ActiveModel = a.into();
             am.resource_id = ActiveValue::Set(model.header_id);
             am.rev_created = ActiveValue::Set(revision_id);
             am.rev_deleted = ActiveValue::Set(None);
-            am.insert(txn).await?;
-        }
-    }
-    Ok(())
+            am
+        })
+        .collect::<Vec<availability::ActiveModel>>();
+    let lazy_rev = LazyRevision::from_revision(revision_id);
+    upsert(ctx.db(), &lazy_rev, AvailabilityUpserter::new(model.header_id), new_models).await
 }

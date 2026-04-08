@@ -3183,6 +3183,7 @@ dependencies = [
  "reqwest",
  "sea-orm",
  "sea-orm-migration",
+ "sea-query",
  "serde",
  "serde_json",
  "serial_test",

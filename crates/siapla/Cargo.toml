@@ -49,6 +49,7 @@ clap = { version = "4.4", features = ["derive"] }
 sqlx = { version = "0.8.3", features = ["sqlite"] }
 siapla-migration = { version = "0.1.0", path = "../siapla-migration" }
 derive_more = "2.1.1"
+sea-query = "0.32.7"
 
 [dev-dependencies]
 tempfile = "3"
