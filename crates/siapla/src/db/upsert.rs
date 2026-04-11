@@ -1,9 +1,11 @@
 use crate::RangeRevColumns;
 use crate::db::DbContext;
+use crate::db::delete::delete_rev_by_pk;
 use crate::db::entity::revision;
+use crate::revisioning::PlanState;
 use anyhow::anyhow;
-use sea_orm::prelude::*;
-use sea_orm::{EntityTrait, IntoActiveModel, Iterable, PrimaryKeyTrait};
+use sea_orm::{ActiveValue, prelude::*};
+use sea_orm::{EntityTrait, IntoActiveModel, PrimaryKeyTrait};
 use sea_query::ValueTuple;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -36,21 +38,28 @@ impl LazyRevision {
     pub async fn get(&self, db: &DbContext) -> anyhow::Result<i64> {
         self.revision
             .get_or_try_init(|| async {
-                let rev_model =
-                    revision::Entity::insert(revision::ActiveModel { ..Default::default() })
-                        .exec(db.txn().await?)
-                        .await?;
+                let rev_model = revision::Entity::insert(revision::ActiveModel {
+                    timestamp: ActiveValue::Set(chrono::Utc::now()),
+                    plan_state: ActiveValue::Set(PlanState::NotCalculated.as_str().to_string()),
+                    ..Default::default()
+                })
+                .exec(db.txn().await?)
+                .await?;
                 Ok(rev_model.last_insert_id.into())
             })
             .await
             .copied()
     }
+
+    pub fn take(self) -> Option<i64> {
+        self.revision.into_inner()
+    }
 }
 
-pub async fn upsert<U: Upserter>(
+pub async fn upsert_rev<U: Upserter>(
     db: &DbContext,
-    lazy_revision: &LazyRevision,
-    data: U,
+    revision: &LazyRevision,
+    upserter: U,
     models: Vec<<U::Entity as EntityTrait>::ActiveModel>,
 ) -> anyhow::Result<()>
 where
@@ -60,7 +69,7 @@ where
 {
     let txn = db.txn().await?;
     let existing_models = U::Entity::find()
-        .filter(data.existing_condition())
+        .filter(upserter.existing_condition())
         .filter(<U::Entity as RangeRevColumns>::rev_deleted_column().is_null())
         .all(txn)
         .await?
@@ -68,9 +77,11 @@ where
         .map(|m| m.into_active_model());
 
     let mut existing_map: HashMap<_, _> =
-        existing_models.map(|m| data.key(&m).map(|k| (k, m))).collect::<anyhow::Result<_>>()?;
-    let mut new_map: HashMap<_, _> =
-        models.into_iter().map(|m| data.key(&m).map(|k| (k, m))).collect::<anyhow::Result<_>>()?;
+        existing_models.map(|m| upserter.key(&m).map(|k| (k, m))).collect::<anyhow::Result<_>>()?;
+    let mut new_map: HashMap<_, _> = models
+        .into_iter()
+        .map(|m| upserter.key(&m).map(|k| (k, m)))
+        .collect::<anyhow::Result<_>>()?;
     let existing_keys: HashSet<_> = existing_map.keys().cloned().collect();
     let new_keys: HashSet<_> = new_map.keys().cloned().collect();
 
@@ -78,14 +89,14 @@ where
     let insert_keys: HashSet<_> = new_keys.difference(&existing_keys).cloned().collect();
     let update_keys: HashSet<_> = existing_keys
         .intersection(&new_keys)
-        .filter(|k| !data.model_equal(&existing_map[k], &new_map[k]))
+        .filter(|k| !upserter.model_equal(&existing_map[k], &new_map[k]))
         .cloned()
         .collect();
 
     if delete_keys.is_empty() && insert_keys.is_empty() && update_keys.is_empty() {
         return Ok(());
     }
-    let revision_id = lazy_revision.get(db).await?;
+    let revision_id = revision.get(db).await?;
 
     if <<U::Entity as EntityTrait>::PrimaryKey as PrimaryKeyTrait>::ValueType::ARITY == 1 {
         let delete_pks: Vec<_> = delete_keys
@@ -93,12 +104,6 @@ where
             .map(|k| existing_map[k].get_primary_key_value())
             .collect::<Option<Vec<_>>>()
             .ok_or(anyhow!("Existing model lacks primary key"))?;
-
-        let columns: Vec<_> = <U::Entity as EntityTrait>::PrimaryKey::iter().collect();
-        if columns.len() != 1 {
-            return Err(anyhow!("Expected exactly one primary key column"));
-        }
-        let column = columns[0].into_column();
         let delete_pks: Vec<_> = delete_pks
             .iter()
             .map(|tup| match tup {
@@ -107,14 +112,7 @@ where
             })
             .cloned()
             .collect();
-        U::Entity::update_many()
-            .col_expr(
-                <U::Entity as RangeRevColumns>::rev_deleted_column(),
-                Expr::value(Value::BigInt(Some(revision_id))),
-            )
-            .filter(column.is_in(delete_pks))
-            .exec(txn)
-            .await?;
+        delete_rev_by_pk::<U::Entity>(db, &revision, delete_pks).await?;
     } else {
         for k in delete_keys.union(&update_keys) {
             if let Some(v) = existing_map.remove_entry(k).map(|(_, v)| v) {

@@ -1,8 +1,9 @@
-mod allocation;
-mod availability;
-mod booking;
-mod holiday_entry;
-mod issue;
-mod resource_constraint;
-mod resource_iteration;
-mod task_iteration;
+pub mod allocation;
+pub mod availability;
+pub mod booking;
+pub mod holiday_entry;
+pub mod issue;
+pub mod resource_constraint;
+pub mod resource_header;
+pub mod resource_iteration;
+pub mod task_iteration;

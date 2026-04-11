@@ -3,9 +3,11 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub mod context;
 pub mod dataloader;
+pub mod delete;
 pub mod entity;
 pub mod r#impl;
-pub mod upserter;
+pub mod insert;
+pub mod upsert;
 
 pub use context::DbContext;
 

@@ -1,4 +1,6 @@
 use chrono::NaiveDateTime;
+use sea_orm::{ColumnTrait as _, EntityTrait};
+use sea_query::IntoCondition as _;
 
 use crate::{
     db::{
@@ -7,6 +9,7 @@ use crate::{
             AvailabilityBatcher, ByColBatcher, ByColRevBatcher, by_col::ByColLatestBatcher,
         },
         entity::{availability, holiday, resource_iteration, vacation},
+        upsert::Upserter,
     },
     entity::resource_header,
     scheduling::Intervals,
@@ -81,5 +84,55 @@ impl resource_iteration::Model {
             .await
             .load_exactly_one(self.header_id.into())
             .await
+    }
+
+    pub async fn dataloader_by_header_at_rev(
+        db: &DbContext,
+        header_id: i32,
+        revision: i64,
+    ) -> anyhow::Result<Self> {
+        db.loader(ByColRevBatcher::<resource_iteration::Entity> {
+            revision,
+            col: resource_iteration::Column::HeaderId,
+        })
+        .await
+        .load_exactly_one(header_id.into())
+        .await
+    }
+}
+
+/// Upserter trait implementation for availability models
+pub struct ResourceIterationUpserter {
+    pub resource_header_id: i32,
+}
+
+impl ResourceIterationUpserter {
+    pub fn new(resource_header_id: i32) -> Self {
+        Self { resource_header_id }
+    }
+}
+
+impl Upserter for ResourceIterationUpserter {
+    type Entity = resource_iteration::Entity;
+    type Key = Option<i32>;
+
+    fn existing_condition(&self) -> sea_orm::Condition {
+        resource_iteration::Column::HeaderId.eq(self.resource_header_id).into_condition()
+    }
+
+    fn key(&self, model: &resource_iteration::ActiveModel) -> anyhow::Result<Self::Key> {
+        Ok(model.id.try_as_ref().cloned())
+    }
+
+    fn model_equal(
+        &self,
+        lhs: &<Self::Entity as EntityTrait>::ActiveModel,
+        rhs: &<Self::Entity as EntityTrait>::ActiveModel,
+    ) -> bool {
+        lhs.holiday_id == rhs.holiday_id
+            && lhs.name == rhs.name
+            && lhs.timezone == rhs.timezone
+            && lhs.added == rhs.added
+            && lhs.removed == rhs.removed
     }
 }

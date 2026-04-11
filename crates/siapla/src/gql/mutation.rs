@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use juniper::graphql_object;
 use sea_orm::ActiveModelTrait;
 use sea_orm::{
@@ -5,6 +6,8 @@ use sea_orm::{
     QueryFilter as _, prelude::*,
 };
 
+use crate::db::delete::delete_rev_by_pk;
+use crate::db::upsert::LazyRevision;
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
     resource_constraint_entry, resource_header, revision, task_header, vacation,
@@ -12,7 +15,7 @@ use crate::entity::{
 use crate::entity::{booking, booking_resource};
 use crate::entity::{resource_iteration, task_iteration};
 use crate::gql::scalars::ExtendedScalarValue;
-use crate::revisioning::{PlanState, create_revision};
+use crate::revisioning::{PlanState, create_revision, resolve_revision};
 
 use super::{
     booking::GQLBooking,
@@ -89,15 +92,30 @@ impl Mutation {
         ctx: &Context,
         resource: ResourceSaveInput,
     ) -> anyhow::Result<GQLResource> {
-        let (res, revision_id) = match resource_save(ctx, resource).await {
+        let revision = LazyRevision::new();
+        let header_id = match resource_save(ctx.db(), &revision, resource).await {
             Ok(res) => res,
             Err(err) => {
                 ctx.failed().await;
                 Err(err)?
             }
         };
-        ctx.app_state().notify_modified("graphql".to_string());
-        Ok(GQLResource::at_revision(res, revision_id))
+        let opt_revision = revision.take();
+
+        if opt_revision.is_some() {
+            ctx.app_state().notify_modified("graphql".to_string());
+        }
+        let revision_id =
+            resolve_revision(ctx.txn().await?, opt_revision).await?.ok_or(anyhow!(
+                "We wanted to save a resource and cannot find a revision. This should never happen"
+            ))?;
+        let model = resource_iteration::Model::dataloader_by_header_at_rev(
+            ctx.db(),
+            header_id,
+            revision_id,
+        )
+        .await?;
+        Ok(GQLResource::at_revision(model, revision_id))
     }
 
     async fn resource_delete(ctx: &Context, resource_id: i32) -> anyhow::Result<bool> {
@@ -240,15 +258,10 @@ impl Mutation {
     }
 
     async fn booking_delete(ctx: &Context, db_id: i32) -> anyhow::Result<bool> {
-        let txn = ctx.txn().await?;
-        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-        let res = booking::Entity::update_many()
-            .col_expr(booking::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(booking::Column::Id.eq(db_id))
-            .filter(booking::Column::RevDeleted.is_null())
-            .exec(txn)
+        let res = delete_rev_by_pk::<booking::Entity>(ctx.db(), &LazyRevision::new(), vec![db_id])
             .await?;
-        let ok = res.rows_affected > 0;
+
+        let ok = res > 0;
         if ok {
             ctx.app_state().notify_modified("graphql".to_string());
         }

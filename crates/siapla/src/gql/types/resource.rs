@@ -2,9 +2,16 @@ use chrono::{DateTime, Utc};
 
 use juniper::{Nullable, graphql_object};
 use sea_orm::ActiveValue;
-use sea_orm::prelude::*;
+
 use tracing::error;
 
+use crate::db::DbContext;
+use crate::db::delete::delete_rev_by_pk;
+use crate::db::r#impl::resource_iteration::ResourceIterationUpserter;
+use crate::db::insert::insert_rev;
+use crate::db::upsert::LazyRevision;
+use crate::db::upsert::upsert_rev;
+use crate::entity::resource_header;
 use crate::gql::scalars::ExtendedScalarValue;
 use crate::gql::scalars::Int64;
 use crate::gql::wrapper::ModelWrapper;
@@ -15,7 +22,6 @@ use crate::{
         availability::GQLAvailability, common::nullable_to_av, context::Context,
         vacation::GQLVacation,
     },
-    revisioning::{PlanState, create_revision},
 };
 
 use super::{
@@ -168,77 +174,40 @@ impl ResourceSaveInput {
 
 /// Save or update a resource. Returns the raw model; the caller wraps into GQLResource.
 pub async fn resource_save(
-    ctx: &Context,
+    db: &DbContext,
+    revision: &LazyRevision,
     mut resource: ResourceSaveInput,
-) -> anyhow::Result<(resource_iteration::Model, i64)> {
-    let availability = resource.availability.take();
+) -> anyhow::Result<i32> {
+    // ensure a header exists
+    let header_id =
+        resource_header::Model::ensure_header_id(db, revision, resource.db_id.take()).await?;
+
+    // adding new vacations
     let added_vacations = resource.added_vacations.take().unwrap_or_default();
+    let added_vacations_ams: Vec<_> = added_vacations
+        .into_iter()
+        .map(|v| {
+            let mut vacation_am = crate::entity::vacation::ActiveModel::from(v);
+            vacation_am.resource_id = ActiveValue::Set(header_id);
+            vacation_am
+        })
+        .collect();
+    insert_rev::<vacation::Entity>(db, revision, added_vacations_ams).await?;
+
+    // removing vacations
     let removed_vacations = resource.removed_vacations.take().unwrap_or_default();
-    let input_header_id = resource.db_id.take();
-    let txn = ctx.txn().await?;
-    let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+    delete_rev_by_pk::<vacation::Entity>(db, revision, removed_vacations).await?;
+
+    // availability
+    if let Some(availability) = resource.availability.take() {
+        update_availability(db, header_id, availability, revision).await?;
+    }
+
+    // update resource iteration itself
+    let upserter = ResourceIterationUpserter::new(header_id);
     let mut am = resource.into_active_model();
+    am.header_id = ActiveValue::Set(header_id);
+    upsert_rev(db, revision, upserter, vec![am]).await?;
 
-    let model = if let Some(header_id) = input_header_id {
-        let existing = resource_iteration::Entity::find()
-            .filter(resource_iteration::Column::HeaderId.eq(header_id))
-            .filter(resource_iteration::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?
-            .ok_or_else(|| {
-                anyhow::anyhow!("No active resource iteration found for header {}", header_id)
-            })?;
-        let old_id = existing.id;
-        // Soft-delete the old iteration
-        resource_iteration::Entity::update_many()
-            .col_expr(
-                resource_iteration::Column::RevDeleted,
-                Expr::value(Value::BigInt(Some(revision_id))),
-            )
-            .filter(resource_iteration::Column::Id.eq(old_id))
-            .filter(resource_iteration::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-        // Create new iteration
-        am.header_id = ActiveValue::Set(existing.header_id);
-        am.rev_created = ActiveValue::Set(revision_id);
-        am.rev_deleted = ActiveValue::Set(None);
-        am.insert(txn).await?
-    } else {
-        let header = crate::entity::resource_header::ActiveModel {
-            id: ActiveValue::NotSet,
-            rev_created: ActiveValue::Set(revision_id),
-            rev_deleted: ActiveValue::Set(None),
-        }
-        .insert(txn)
-        .await?;
-        am.header_id = ActiveValue::Set(header.id);
-        am.rev_created = ActiveValue::Set(revision_id);
-        am.rev_deleted = ActiveValue::Set(None);
-        am.insert(txn).await?
-    };
-
-    // Handle adding new vacations
-    for vacation_input in added_vacations {
-        let mut vacation_am = crate::entity::vacation::ActiveModel::from(vacation_input);
-        vacation_am.resource_id = ActiveValue::Set(model.header_id);
-        vacation_am.rev_created = ActiveValue::Set(revision_id);
-        vacation_am.rev_deleted = ActiveValue::Set(None);
-        vacation_am.insert(txn).await?;
-    }
-
-    // Handle removing vacations
-    if !removed_vacations.is_empty() {
-        vacation::Entity::update_many()
-            .col_expr(vacation::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(vacation::Column::Id.is_in(removed_vacations))
-            .exec(txn)
-            .await?;
-    }
-
-    if let Some(availability) = availability {
-        update_availability(ctx, &model, availability, revision_id).await?;
-    }
-
-    Ok((model, revision_id))
+    Ok(header_id)
 }
