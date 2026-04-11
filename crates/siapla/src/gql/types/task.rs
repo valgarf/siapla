@@ -12,6 +12,7 @@ use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
 use crate::{
+    db::revisioning::{PlanState, active_for_revision, create_revision, ensure_revision_id},
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
         task_iteration,
@@ -21,7 +22,6 @@ use crate::{
         context::Context,
         scalars::{ExtendedScalarValue, Int64},
     },
-    revisioning::{PlanState, active_for_revision, create_revision, ensure_revision_id},
 };
 
 use super::{allocation::GQLAllocation, issue::GQLIssue, resource::GQLResource};

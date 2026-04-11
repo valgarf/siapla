@@ -16,9 +16,9 @@ pub use interval::{Bound, EndBound, Interval, Intervals, StartBound};
 pub use weak_hash_set::WeakHashSet;
 
 use crate::{
+    db::revisioning::PlanState,
     entity::revision,
     gql::context::Context,
-    revisioning::PlanState,
     scheduling::{
         db_layer::store_plan,
         ga::{GASettings, milestone_cost, plan_individual, run_ga},

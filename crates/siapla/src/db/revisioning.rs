@@ -1,10 +1,12 @@
+use crate::db::DbContext;
+use crate::db::entity::revision;
+use sea_orm::EntityTrait;
 use sea_orm::{
     ActiveModelTrait as _, ActiveValue, ColumnTrait, Condition, DatabaseTransaction,
-    EntityTrait as _, QueryFilter as _, QueryOrder as _,
+    QueryFilter as _, QueryOrder as _,
 };
 use strum::{EnumString, IntoStaticStr};
-
-use crate::entity::revision;
+use tokio::sync::OnceCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumString, IntoStaticStr)]
 pub enum PlanState {
@@ -90,5 +92,38 @@ pub fn active_for_revision<C: ColumnTrait>(
             Condition::any().add(rev_deleted_column.is_null()).add(rev_deleted_column.gt(rev)),
         ),
         None => Condition::all().add(rev_deleted_column.is_null()),
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct LazyRevision {
+    revision: OnceCell<i64>,
+}
+
+impl LazyRevision {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn from_revision(revision_id: i64) -> Self {
+        Self { revision: OnceCell::from(revision_id) }
+    }
+    pub async fn get(&self, db: &DbContext) -> anyhow::Result<i64> {
+        self.revision
+            .get_or_try_init(|| async {
+                let rev_model = revision::Entity::insert(revision::ActiveModel {
+                    timestamp: ActiveValue::Set(chrono::Utc::now()),
+                    plan_state: ActiveValue::Set(PlanState::NotCalculated.as_str().to_string()),
+                    ..Default::default()
+                })
+                .exec(db.txn().await?)
+                .await?;
+                Ok(rev_model.last_insert_id.into())
+            })
+            .await
+            .copied()
+    }
+
+    pub fn take(self) -> Option<i64> {
+        self.revision.into_inner()
     }
 }

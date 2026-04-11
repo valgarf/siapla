@@ -1,9 +1,8 @@
 use super::resource::GQLResource;
 use crate::{
     db::{
-        DbContext,
-        r#impl::availability::AvailabilityUpserter,
-        upsert::{LazyRevision, upsert_rev},
+        DbContext, r#impl::availability::AvailabilityUpserter, revisioning::LazyRevision,
+        upsert::upsert_rev,
     },
     entity::availability,
     gql::{context::Context, scalars::ExtendedScalarValue, wrapper::ModelWrapper},

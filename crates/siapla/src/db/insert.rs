@@ -3,7 +3,7 @@ use sea_orm::{EntityTrait, PrimaryKeyTrait};
 
 use crate::{
     RangeRevColumns,
-    db::{DbContext, upsert::LazyRevision},
+    db::{DbContext, revisioning::LazyRevision},
 };
 use anyhow;
 

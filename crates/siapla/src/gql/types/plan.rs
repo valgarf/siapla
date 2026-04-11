@@ -1,7 +1,7 @@
 use crate::{
+    db::revisioning::active_for_revision,
     entity::allocation,
     gql::{allocation::GQLAllocation, context::Context, scalars::ExtendedScalarValue},
-    revisioning::active_for_revision,
 };
 use juniper::graphql_object;
 use sea_orm::{EntityTrait as _, QueryFilter as _, QueryOrder as _};

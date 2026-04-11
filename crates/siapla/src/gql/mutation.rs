@@ -7,7 +7,8 @@ use sea_orm::{
 };
 
 use crate::db::delete::delete_rev_by_pk;
-use crate::db::upsert::LazyRevision;
+use crate::db::revisioning::LazyRevision;
+use crate::db::revisioning::{PlanState, create_revision, resolve_revision};
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
     resource_constraint_entry, resource_header, revision, task_header, vacation,
@@ -15,7 +16,6 @@ use crate::entity::{
 use crate::entity::{booking, booking_resource};
 use crate::entity::{resource_iteration, task_iteration};
 use crate::gql::scalars::ExtendedScalarValue;
-use crate::revisioning::{PlanState, create_revision, resolve_revision};
 
 use super::{
     booking::GQLBooking,

@@ -9,7 +9,7 @@ use crate::db::DbContext;
 use crate::db::delete::delete_rev_by_pk;
 use crate::db::r#impl::resource_iteration::ResourceIterationUpserter;
 use crate::db::insert::insert_rev;
-use crate::db::upsert::LazyRevision;
+use crate::db::revisioning::LazyRevision;
 use crate::db::upsert::upsert_rev;
 use crate::entity::resource_header;
 use crate::gql::scalars::ExtendedScalarValue;

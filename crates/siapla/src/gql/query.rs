@@ -1,9 +1,11 @@
 use chrono::{DateTime, Utc};
 
 use crate::{
+    db::revisioning::{
+        active_for_revision, latest_revision_id, resolve_plan_revision, resolve_revision,
+    },
     entity::{holiday, resource_iteration, task_iteration},
     gql::scalars::{ExtendedScalarValue, Int64},
-    revisioning::{active_for_revision, resolve_plan_revision, resolve_revision},
 };
 
 use super::{
@@ -146,7 +148,7 @@ impl Query {
 
     async fn latest_revision(ctx: &Context) -> anyhow::Result<Option<Int64>> {
         let txn = ctx.txn().await?;
-        let rev = crate::revisioning::latest_revision_id(txn).await?;
+        let rev = latest_revision_id(txn).await?;
         Ok(rev.map(Int64::from))
     }
 

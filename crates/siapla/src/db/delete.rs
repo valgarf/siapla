@@ -4,7 +4,7 @@ use sea_query::Expr;
 
 use crate::{
     RangeRevColumns,
-    db::{DbContext, upsert::LazyRevision},
+    db::{DbContext, revisioning::LazyRevision},
 };
 use anyhow;
 

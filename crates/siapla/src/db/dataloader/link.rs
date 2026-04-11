@@ -5,8 +5,8 @@ use std::{any::type_name, collections::HashMap};
 
 use super::base::{Batcher, BatcherToKey};
 use crate::db::context::DbContext;
+use crate::db::revisioning::active_for_revision;
 use crate::db::{Link, RangeRevColumns};
-use crate::revisioning::active_for_revision;
 
 use std::fmt::Debug;
 

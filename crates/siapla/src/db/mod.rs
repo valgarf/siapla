@@ -1,4 +1,4 @@
-use crate::revisioning::active_for_revision;
+use crate::db::revisioning::active_for_revision;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub mod context;
@@ -7,6 +7,7 @@ pub mod delete;
 pub mod entity;
 pub mod r#impl;
 pub mod insert;
+pub mod revisioning;
 pub mod upsert;
 
 pub use context::DbContext;

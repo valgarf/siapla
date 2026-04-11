@@ -1,15 +1,14 @@
 use crate::RangeRevColumns;
 use crate::db::DbContext;
 use crate::db::delete::delete_rev_by_pk;
-use crate::db::entity::revision;
-use crate::revisioning::PlanState;
+use crate::db::revisioning::LazyRevision;
+
 use anyhow::anyhow;
-use sea_orm::{ActiveValue, prelude::*};
+use sea_orm::prelude::*;
 use sea_orm::{EntityTrait, IntoActiveModel, PrimaryKeyTrait};
 use sea_query::ValueTuple;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use tokio::sync::OnceCell;
 
 pub trait Upserter {
     type Entity: EntityTrait;
@@ -21,39 +20,6 @@ pub trait Upserter {
         lhs: &<Self::Entity as EntityTrait>::ActiveModel,
         rhs: &<Self::Entity as EntityTrait>::ActiveModel,
     ) -> bool;
-}
-
-#[derive(Debug, Default)]
-pub struct LazyRevision {
-    revision: OnceCell<i64>,
-}
-
-impl LazyRevision {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn from_revision(revision_id: i64) -> Self {
-        Self { revision: OnceCell::from(revision_id) }
-    }
-    pub async fn get(&self, db: &DbContext) -> anyhow::Result<i64> {
-        self.revision
-            .get_or_try_init(|| async {
-                let rev_model = revision::Entity::insert(revision::ActiveModel {
-                    timestamp: ActiveValue::Set(chrono::Utc::now()),
-                    plan_state: ActiveValue::Set(PlanState::NotCalculated.as_str().to_string()),
-                    ..Default::default()
-                })
-                .exec(db.txn().await?)
-                .await?;
-                Ok(rev_model.last_insert_id.into())
-            })
-            .await
-            .copied()
-    }
-
-    pub fn take(self) -> Option<i64> {
-        self.revision.into_inner()
-    }
 }
 
 pub async fn upsert_rev<U: Upserter>(

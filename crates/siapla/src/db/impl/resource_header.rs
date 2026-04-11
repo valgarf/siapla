@@ -1,7 +1,7 @@
 use sea_orm::ActiveModelTrait;
 
 use crate::db::{
-    context::DbContext, entity::resource_header, insert::insert_rev, upsert::LazyRevision,
+    context::DbContext, entity::resource_header, insert::insert_rev, revisioning::LazyRevision,
 };
 use anyhow;
 

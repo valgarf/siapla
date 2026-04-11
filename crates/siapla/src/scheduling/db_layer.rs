@@ -7,9 +7,9 @@ use std::str::FromStr;
 
 use crate::RangeRevColumns;
 use crate::db::dataloader::AvailabilityBatcher;
+use crate::db::revisioning::PlanState;
 use crate::gql::context::Context;
 use crate::gql::issue::IssueType;
-use crate::revisioning::PlanState;
 
 use crate::entity::{booking, booking_resource, resource_iteration, task_iteration};
 use crate::scheduling::{Bound, Interval, Intervals, datastructures::*};

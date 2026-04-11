@@ -5,7 +5,6 @@ use thiserror::Error;
 pub mod app_state;
 pub mod db;
 pub mod gql;
-pub mod revisioning;
 pub mod scheduling;
 
 // Re-exports for backward compatibility
