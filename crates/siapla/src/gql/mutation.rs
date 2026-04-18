@@ -164,6 +164,8 @@ impl Mutation {
         resources: Vec<i32>,
         r#final: bool,
     ) -> anyhow::Result<GQLBooking> {
+        let revision = LazyRevision::new();
+
         let txn = ctx.txn().await?;
         let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
 

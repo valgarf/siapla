@@ -2,7 +2,7 @@ use super::resource::GQLResource;
 use crate::{
     db::{
         DbContext, r#impl::availability::AvailabilityUpserter, revisioning::LazyRevision,
-        upsert::upsert_rev,
+        upsert::upsert_rev_many,
     },
     entity::availability,
     gql::{context::Context, scalars::ExtendedScalarValue, wrapper::ModelWrapper},
@@ -86,5 +86,5 @@ pub async fn update_availability(
             am
         })
         .collect::<Vec<availability::ActiveModel>>();
-    upsert_rev(db, &revision, AvailabilityUpserter::new(resource_header_id), new_models).await
+    upsert_rev_many(db, &revision, AvailabilityUpserter::new(resource_header_id), new_models).await
 }

@@ -116,7 +116,10 @@ impl Upserter for ResourceIterationUpserter {
     type Entity = resource_iteration::Entity;
     type Key = Option<i32>;
 
-    fn existing_condition(&self) -> sea_orm::Condition {
+    fn existing_condition(
+        &self,
+        _: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
+    ) -> sea_orm::Condition {
         resource_iteration::Column::HeaderId.eq(self.resource_header_id).into_condition()
     }
 

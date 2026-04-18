@@ -10,7 +10,7 @@ use crate::db::delete::delete_rev_by_pk;
 use crate::db::r#impl::resource_iteration::ResourceIterationUpserter;
 use crate::db::insert::insert_rev;
 use crate::db::revisioning::LazyRevision;
-use crate::db::upsert::upsert_rev;
+use crate::db::upsert::upsert_rev_many;
 use crate::entity::resource_header;
 use crate::gql::scalars::ExtendedScalarValue;
 use crate::gql::scalars::Int64;
@@ -207,7 +207,7 @@ pub async fn resource_save(
     let upserter = ResourceIterationUpserter::new(header_id);
     let mut am = resource.into_active_model();
     am.header_id = ActiveValue::Set(header_id);
-    upsert_rev(db, revision, upserter, vec![am]).await?;
+    upsert_rev_many(db, revision, upserter, vec![am]).await?;
 
     Ok(header_id)
 }

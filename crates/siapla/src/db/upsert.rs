@@ -5,7 +5,7 @@ use crate::db::revisioning::LazyRevision;
 
 use anyhow::anyhow;
 use sea_orm::prelude::*;
-use sea_orm::{EntityTrait, IntoActiveModel, PrimaryKeyTrait};
+use sea_orm::{EntityTrait, IntoActiveModel, Iterable, PrimaryKeyTrait};
 use sea_query::ValueTuple;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -13,7 +13,10 @@ use std::hash::Hash;
 pub trait Upserter {
     type Entity: EntityTrait;
     type Key: Hash + Eq + Clone;
-    fn existing_condition(&self) -> sea_orm::Condition;
+    fn existing_condition(
+        &self,
+        models: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
+    ) -> sea_orm::Condition;
     fn key(&self, model: &<Self::Entity as EntityTrait>::ActiveModel) -> anyhow::Result<Self::Key>;
     fn model_equal(
         &self,
@@ -22,7 +25,7 @@ pub trait Upserter {
     ) -> bool;
 }
 
-pub async fn upsert_rev<U: Upserter>(
+pub async fn upsert_rev_many<U: Upserter>(
     db: &DbContext,
     revision: &LazyRevision,
     upserter: U,
@@ -35,7 +38,7 @@ where
 {
     let txn = db.txn().await?;
     let existing_models = U::Entity::find()
-        .filter(upserter.existing_condition())
+        .filter(upserter.existing_condition(&models.iter().collect()))
         .filter(<U::Entity as RangeRevColumns>::rev_deleted_column().is_null())
         .all(txn)
         .await?
@@ -99,9 +102,105 @@ where
                 <U::Entity as RangeRevColumns>::rev_deleted_column(),
                 (None as Option<i64>).into(),
             );
+            // reset primary key, it should be auto generated.
+            // This makes it possible to use the primary key as key in the Uperter implementation
+            // and still create a new record if the comparison fails.
+            for col in <U::Entity as EntityTrait>::PrimaryKey::iter() {
+                model.not_set(col.into_column());
+            }
         }
         U::Entity::insert_many(insert_models).exec(txn).await?;
     }
 
     Ok(())
+}
+
+pub async fn upsert_rev_one<U: Upserter>(
+    db: &DbContext,
+    revision: &LazyRevision,
+    upserter: U,
+    mut model: <U::Entity as EntityTrait>::ActiveModel,
+) -> anyhow::Result<<U::Entity as EntityTrait>::Model>
+where
+    <U::Entity as EntityTrait>::Model: IntoActiveModel<<U::Entity as EntityTrait>::ActiveModel>,
+    U::Entity: RangeRevColumns,
+    <U::Entity as EntityTrait>::ActiveModel: Send,
+{
+    let txn = db.txn().await?;
+    let existing_models = U::Entity::find()
+        .filter(upserter.existing_condition(&vec![&model]))
+        .filter(<U::Entity as RangeRevColumns>::rev_deleted_column().is_null())
+        .all(txn)
+        .await?
+        .into_iter();
+
+    let mut existing_map: HashMap<_, _> = existing_models
+        .map(|m| {
+            let am = m.clone().into_active_model();
+            upserter.key(&am).map(|k| (k, (m, am)))
+        })
+        .collect::<anyhow::Result<_>>()?;
+    let new_key = upserter.key(&model)?;
+    let existing_keys: HashSet<_> = existing_map.keys().cloned().collect();
+    let new_keys: HashSet<_> = HashSet::from_iter(vec![new_key.clone()]);
+
+    let delete_keys: HashSet<_> = existing_keys.difference(&new_keys).cloned().collect();
+    let insert_keys: HashSet<_> = new_keys.difference(&existing_keys).cloned().collect();
+    let update_keys: HashSet<_> = existing_keys
+        .intersection(&new_keys)
+        .filter(|k| !upserter.model_equal(&existing_map[k].1, &model))
+        .cloned()
+        .collect();
+
+    if delete_keys.is_empty() && insert_keys.is_empty() && update_keys.is_empty() {
+        let (model, _) = existing_map.remove(&new_key).ok_or(anyhow!("No existing model found in map, even though we do  not plan on inserting the model. This should not happen."))?;
+        return Ok(model);
+    }
+    let revision_id = revision.get(db).await?;
+
+    if <<U::Entity as EntityTrait>::PrimaryKey as PrimaryKeyTrait>::ValueType::ARITY == 1 {
+        let delete_pks: Vec<_> = delete_keys
+            .union(&update_keys)
+            .map(|k| existing_map[k].1.get_primary_key_value())
+            .collect::<Option<Vec<_>>>()
+            .ok_or(anyhow!("Existing model lacks primary key"))?;
+        let delete_pks: Vec<_> = delete_pks
+            .iter()
+            .map(|tup| match tup {
+                ValueTuple::One(value) => value,
+                _ => panic!("This can only have a single value"),
+            })
+            .cloned()
+            .collect();
+        delete_rev_by_pk::<U::Entity>(db, &revision, delete_pks).await?;
+    } else {
+        for k in delete_keys.union(&update_keys) {
+            if let Some(v) = existing_map.remove_entry(k).map(|(_, v)| v) {
+                v.1.delete(db.txn().await?).await?;
+            }
+        }
+    }
+
+    let union_insert_keys: Vec<_> = insert_keys.union(&update_keys).cloned().collect();
+    let res = if !union_insert_keys.is_empty() {
+        assert!(union_insert_keys == vec![new_key]);
+
+        model.set(<U::Entity as RangeRevColumns>::rev_created_column(), revision_id.into());
+        model.set(
+            <U::Entity as RangeRevColumns>::rev_deleted_column(),
+            (None as Option<i64>).into(),
+        );
+        // reset primary key, it should be auto generated.
+        // This makes it possible to use the primary key as key in the Uperter implementation
+        // and still create a new record if the comparison fails.
+        for col in <U::Entity as EntityTrait>::PrimaryKey::iter() {
+            model.not_set(col.into_column());
+        }
+        model.insert(db.txn().await?).await?
+    } else {
+        let (model, _) = existing_map.remove(&new_key).ok_or(anyhow!("No existing model found in map, even though we did not insert a new one. This should not happen."))?;
+        model
+    };
+
+    Ok(res)
 }

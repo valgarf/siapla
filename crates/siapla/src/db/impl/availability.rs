@@ -37,7 +37,10 @@ impl Upserter for AvailabilityUpserter {
     type Entity = availability::Entity;
     type Key = Option<String>;
 
-    fn existing_condition(&self) -> sea_orm::Condition {
+    fn existing_condition(
+        &self,
+        _: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
+    ) -> sea_orm::Condition {
         availability::Column::ResourceId.eq(self.resource_header_id).into_condition()
     }
 
