@@ -36,6 +36,7 @@ impl AvailabilityUpserter {
 impl Upserter for AvailabilityUpserter {
     type Entity = availability::Entity;
     type Key = Option<String>;
+    type RelData = ();
 
     fn existing_condition(
         &self,

@@ -1,14 +1,15 @@
 use anyhow::anyhow;
 use juniper::graphql_object;
-use sea_orm::ActiveModelTrait;
 use sea_orm::{
     ActiveValue, ColumnTrait as _, Condition, ConnectionTrait as _, EntityTrait as _,
     QueryFilter as _, prelude::*,
 };
 
 use crate::db::delete::delete_rev_by_pk;
+use crate::db::r#impl::booking::BookingUpserter;
 use crate::db::revisioning::LazyRevision;
 use crate::db::revisioning::{PlanState, create_revision, resolve_revision};
+use crate::db::upsert::upsert_rev_one;
 use crate::entity::{
     allocated_resource, allocation, availability, dependency, issue, resource_constraint,
     resource_constraint_entry, resource_header, revision, task_header, vacation,
@@ -161,15 +162,15 @@ impl Mutation {
         task_id: i32,
         start: chrono::DateTime<chrono::Utc>,
         end: chrono::DateTime<chrono::Utc>,
-        resources: Vec<i32>,
+        mut resources: Vec<i32>,
         r#final: bool,
     ) -> anyhow::Result<GQLBooking> {
         let revision = LazyRevision::new();
-
         let txn = ctx.txn().await?;
-        let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
 
         if let Some(existing_id) = db_id {
+            // TODO: is this check even necessary? We could just insert it, the returned booking is
+            // new anyway if it changed anything.
             let existing = booking::Entity::find_by_id(existing_id).one(txn).await?;
             let Some(existing) = existing else {
                 return Err(anyhow::anyhow!("Booking {existing_id} does not exist"));
@@ -177,85 +178,30 @@ impl Mutation {
             if existing.rev_deleted.is_some() {
                 return Err(anyhow::anyhow!("Booking {existing_id} has already been deleted"));
             }
-            let soft_delete = booking::Entity::update_many()
-                .col_expr(
-                    booking::Column::RevDeleted,
-                    Expr::value(Value::BigInt(Some(revision_id))),
-                )
-                .filter(booking::Column::Id.eq(existing_id))
-                .filter(booking::Column::RevDeleted.is_null())
-                .exec(txn)
-                .await?;
-            if soft_delete.rows_affected == 0 {
-                return Err(anyhow::anyhow!(
-                    "Booking {existing_id} was modified concurrently and is no longer active"
-                ));
-            }
         }
 
-        // Store booking.task_id as the stable task header id. Accept both
-        // header ids and iteration ids at the API boundary for compatibility.
-        let resolved_header_id = if let Some(active_task) = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.eq(task_id))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?
-        {
-            active_task.header_id
-        } else if let Some(active_task) = task_iteration::Entity::find_by_id(task_id)
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?
-        {
-            active_task.header_id
-        } else {
-            return Err(anyhow::anyhow!(
-                "No active task iteration found for task header {task_id}"
-            ));
-        };
-
-        let db_booking = booking::ActiveModel {
+        let upserter = BookingUpserter::new(task_id, db_id);
+        let model = booking::ActiveModel {
             id: ActiveValue::NotSet,
-            task_id: ActiveValue::Set(resolved_header_id),
+            task_id: ActiveValue::Set(task_id),
             start: ActiveValue::Set(start),
             end: ActiveValue::Set(end),
             r#final: ActiveValue::Set(r#final),
-            rev_created: ActiveValue::Set(revision_id),
-            rev_deleted: ActiveValue::Set(None),
+            rev_created: ActiveValue::NotSet,
+            rev_deleted: ActiveValue::NotSet,
+        };
+
+        resources.sort();
+        let db_booking = upsert_rev_one(ctx.db(), &revision, upserter, model, resources).await?;
+
+        let opt_revision = revision.take();
+        if opt_revision.is_some() {
+            ctx.app_state().notify_modified("graphql".to_string());
         }
-        .insert(txn)
-        .await?;
+        let revision_id = resolve_revision(ctx.txn().await?, opt_revision)
+            .await?
+            .ok_or(anyhow!("Cannot find a revision for the booking save operation"))?;
 
-        for rid in resources {
-            let resolved_resource_header_id = if let Some(active_resource) =
-                resource_iteration::Entity::find()
-                    .filter(resource_iteration::Column::HeaderId.eq(rid))
-                    .filter(resource_iteration::Column::RevDeleted.is_null())
-                    .one(txn)
-                    .await?
-            {
-                active_resource.header_id
-            } else if let Some(active_resource) = resource_iteration::Entity::find_by_id(rid)
-                .filter(resource_iteration::Column::RevDeleted.is_null())
-                .one(txn)
-                .await?
-            {
-                active_resource.header_id
-            } else {
-                return Err(anyhow::anyhow!(
-                    "No active resource iteration found for resource header {rid}"
-                ));
-            };
-
-            let arm = booking_resource::ActiveModel {
-                id: ActiveValue::NotSet,
-                booking_id: ActiveValue::Set(db_booking.id),
-                resource_id: ActiveValue::Set(resolved_resource_header_id),
-            };
-            arm.insert(txn).await?;
-        }
-
-        ctx.app_state().notify_modified("graphql".to_string());
         Ok(GQLBooking::at_revision(db_booking, revision_id))
     }
 

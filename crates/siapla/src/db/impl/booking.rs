@@ -1,10 +1,10 @@
-use sea_orm::{EntityTrait, Value};
+use sea_orm::{ActiveValue, ColumnTrait as _, EntityTrait, QueryFilter as _};
+use sea_query::IntoCondition as _;
 
 use crate::db::{
-    ResourceIterationsFromBooking,
-    context::DbContext,
+    DbContext, ResourceIterationsFromBooking,
     dataloader::{ByColRevBatcher, LinkBatcher},
-    entity::{booking, resource_iteration, task_iteration},
+    entity::{booking, booking_resource, resource_iteration, task_iteration},
     upsert::Upserter,
 };
 
@@ -35,31 +35,34 @@ impl booking::Model {
     }
 }
 
-/// Upserter trait implementation for availability models
 pub struct BookingUpserter {
     pub task_header_id: i32,
+    pub db_id: Option<i32>,
 }
 
 impl BookingUpserter {
-    pub fn new(task_header_id: i32) -> Self {
-        Self { task_header_id }
+    pub fn new(task_header_id: i32, db_id: Option<i32>) -> Self {
+        Self { task_header_id, db_id }
     }
 }
 
 impl Upserter for BookingUpserter {
     type Entity = booking::Entity;
-    type Key = Option<Value>;
+    type Key = ();
+    type RelData = Vec<i32>;
 
     fn existing_condition(
         &self,
-        models: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
+        _models: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
     ) -> sea_orm::Condition {
-        let cond = booking::Column::TaskId.eq(self.task_header_id).into_condition();
-        if models.len() == 1 { cond.add(booking::Column::Id.eq(models[0].id)) } else { cond }
+        match self.db_id {
+            Some(id) => booking::Column::Id.eq(id).into_condition(),
+            None => sea_orm::Condition::all().add(sea_orm::sea_query::Expr::value(false)),
+        }
     }
 
-    fn key(&self, model: &booking::ActiveModel) -> anyhow::Result<Self::Key> {
-        Ok(model.id.clone().into_value())
+    fn key(&self, _model: &booking::ActiveModel) -> anyhow::Result<()> {
+        Ok(())
     }
 
     fn model_equal(
@@ -67,6 +70,56 @@ impl Upserter for BookingUpserter {
         lhs: &<Self::Entity as EntityTrait>::ActiveModel,
         rhs: &<Self::Entity as EntityTrait>::ActiveModel,
     ) -> bool {
-        lhs.start == rhs.start && lhs.end == rhs.end && lhs.
+        lhs.task_id == rhs.task_id
+            && lhs.start == rhs.start
+            && lhs.end == rhs.end
+            && lhs.r#final == rhs.r#final
+    }
+
+    fn relationships_equal(&self, lhs: &Vec<i32>, rhs: &Vec<i32>) -> bool {
+        lhs == rhs
+    }
+
+    async fn load_existing_with_rel(
+        &self,
+        db: &DbContext,
+        condition: sea_orm::Condition,
+    ) -> anyhow::Result<Vec<(booking::Model, Vec<i32>)>> {
+        let results = booking::Entity::find()
+            .filter(condition)
+            .find_with_related(booking_resource::Entity)
+            .all(db.txn().await?)
+            .await?;
+        Ok(results
+            .into_iter()
+            .map(|(b, resources)| {
+                let mut ids: Vec<i32> = resources.into_iter().map(|r| r.resource_id).collect();
+                ids.sort();
+                (b, ids)
+            })
+            .collect())
+    }
+
+    async fn after_insert(
+        &self,
+        db: &DbContext,
+        inserted: Vec<(booking::Model, Vec<i32>)>,
+    ) -> anyhow::Result<()> {
+        let booking_resource_links: Vec<booking_resource::ActiveModel> = inserted
+            .into_iter()
+            .flat_map(|(booking, rel_data)| {
+                rel_data.into_iter().map(move |rid| booking_resource::ActiveModel {
+                    id: ActiveValue::NotSet,
+                    booking_id: ActiveValue::Set(booking.id),
+                    resource_id: ActiveValue::Set(rid),
+                })
+            })
+            .collect();
+        if !booking_resource_links.is_empty() {
+            booking_resource::Entity::insert_many(booking_resource_links)
+                .exec(db.txn().await?)
+                .await?;
+        }
+        Ok(())
     }
 }

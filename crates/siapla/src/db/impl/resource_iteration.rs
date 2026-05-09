@@ -115,6 +115,7 @@ impl ResourceIterationUpserter {
 impl Upserter for ResourceIterationUpserter {
     type Entity = resource_iteration::Entity;
     type Key = Option<i32>;
+    type RelData = ();
 
     fn existing_condition(
         &self,
