@@ -696,6 +696,7 @@ async fn test_dependency_types() {
     // We verify the result via a separate query (fresh Context) because the
     // dataloader inside a single Context caches dependency rows and may return
     // stale data in the mutation response when predecessors are replaced.
+    // FIXME: stale data should not be returned! Add this to the test / fix in implementation.
     let update_task_preds = |id: i64, title: &str, designation: &str, preds: &[i64]| {
         let title = title.to_string();
         let designation = designation.to_string();

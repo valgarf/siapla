@@ -90,5 +90,23 @@
         "reveal": "always",
         "hide": "on_success",
         "save": "none"
+    },
+    {
+        "label": "List TODOs",
+        "command": "rg",
+        "args": [
+            "--hyperlink-format=file://{path}:{line}",
+            "-e TODO",
+            "-e WARN",
+            "-e HACK",
+            "-e FIXME",
+            "-e HACK"
+        ],
+        "cwd": "${ZED_WORKTREE_ROOT}",
+        "reveal": "always",
+        "hide": "never",
+        "show_summary": false,
+        "show_command": false,
+        "reveal_target": "center"
     }
 ]
