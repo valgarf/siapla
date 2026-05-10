@@ -1,6 +1,7 @@
 pub mod allocation;
 pub mod availability;
 pub mod booking;
+pub mod dependency;
 pub mod holiday_entry;
 pub mod issue;
 pub mod resource_constraint;

@@ -9,15 +9,14 @@ use std::{
 use juniper::{GraphQLEnum, Nullable, graphql_object};
 use sea_orm::{ActiveValue, DatabaseTransaction, QueryOrder as _, prelude::*};
 use strum::{EnumString, IntoStaticStr};
-use tracing::trace;
 
 use crate::{
     db::{
-        r#impl::task_iteration::TaskIterationUpserter,
+        r#impl::task_iteration::TaskIterationUpserter, r#impl::dependency::TaskDependencyUpserter,
         revisioning::{
             LazyRevision, PlanState, active_for_revision, create_revision, ensure_revision_id,
-        },
-        upsert::upsert_rev_one,
+        }, revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id},
+        upsert::upsert_rev_one, upsert::upsert_rev_many,
     },
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
@@ -250,31 +249,8 @@ struct NormalizedResourceConstraint {
     resource_ids: Vec<i32>,
 }
 
-async fn resolve_task_header_ids(
-    txn: &DatabaseTransaction,
-    ids: &[i32],
-) -> anyhow::Result<Vec<i32>> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let active_targets = task_iteration::Entity::find()
-        .filter(task_iteration::Column::Id.is_in(ids.to_vec()))
-        .filter(task_iteration::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let mut resolved: BTreeSet<i32> =
-        active_targets.into_iter().map(|task| task.header_id).collect();
-
-    if resolved.len() < ids.len() {
-        let historical_targets = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.is_in(ids.to_vec()))
-            .all(txn)
-            .await?;
-        resolved.extend(historical_targets.into_iter().map(|task| task.header_id));
-    }
-
-    Ok(resolved.into_iter().collect())
+fn sorted_ids(ids: &[i32]) -> Vec<i32> {
+    ids.iter().copied().collect::<BTreeSet<_>>().into_iter().collect()
 }
 
 async fn normalize_resource_constraints_input(
@@ -403,7 +379,7 @@ async fn task_save_is_noop(
     }
 
     if let Some(predecessors) = predecessors {
-        let target = resolve_task_header_ids(txn, predecessors).await?;
+        let target = sorted_ids(predecessors);
         let current: BTreeSet<i32> = dependency::Entity::find()
             .filter(dependency::Column::SuccessorId.eq(existing_header_id))
             .filter(dependency::Column::RevDeleted.is_null())
@@ -418,7 +394,7 @@ async fn task_save_is_noop(
     }
 
     if let Some(successors) = successors {
-        let target = resolve_task_header_ids(txn, successors).await?;
+        let target = sorted_ids(successors);
         let current: BTreeSet<i32> = dependency::Entity::find()
             .filter(dependency::Column::PredecessorId.eq(existing_header_id))
             .filter(dependency::Column::RevDeleted.is_null())
@@ -433,7 +409,7 @@ async fn task_save_is_noop(
     }
 
     if let Some(children) = children {
-        let target = resolve_task_header_ids(txn, children).await?;
+        let target = sorted_ids(children);
         let current: BTreeSet<i32> = task_iteration::Entity::find()
             .filter(task_iteration::Column::ParentId.eq(existing_header_id))
             .filter(task_iteration::Column::RevDeleted.is_null())
@@ -462,137 +438,85 @@ async fn task_save_is_noop(
 // Mutation helpers – update predecessors / successors / children / constraints
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Copy)]
+enum TaskDependencyInputScope {
+    Predecessors,
+    Successors,
+}
+
+fn build_task_dependency_models(
+    task_header_id: i32,
+    mut related_task_header_ids: Vec<i32>,
+    scope: TaskDependencyInputScope,
+) -> Vec<(dependency::ActiveModel, ())> {
+    related_task_header_ids.sort();
+    related_task_header_ids
+        .into_iter()
+        .map(|related_task_header_id| {
+            let (predecessor_id, successor_id) = match scope {
+                TaskDependencyInputScope::Predecessors => (related_task_header_id, task_header_id),
+                TaskDependencyInputScope::Successors => (task_header_id, related_task_header_id),
+            };
+            (
+                dependency::ActiveModel {
+                    id: ActiveValue::NotSet,
+                    predecessor_id: ActiveValue::Set(predecessor_id),
+                    successor_id: ActiveValue::Set(successor_id),
+                    rev_created: ActiveValue::NotSet,
+                    rev_deleted: ActiveValue::NotSet,
+                },
+                (),
+            )
+        })
+        .collect()
+}
+
 async fn update_predecessors(
     ctx: &Context,
     model: &task_iteration::Model,
-    mut predecessors: Vec<i32>,
+    predecessors: Vec<i32>,
     revision_id: i64,
 ) -> anyhow::Result<()> {
-    let txn = ctx.txn().await?;
-    let successor_header_id = model.header_id;
-    let existing_deps = dependency::Entity::find()
-        .filter(dependency::Column::SuccessorId.eq(successor_header_id))
-        .filter(dependency::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.predecessor_id).collect();
-
-    let predecessor_ids: Vec<i32> = std::mem::take(&mut predecessors);
-    let current_targets = task_iteration::Entity::find()
-        .filter(task_iteration::Column::Id.is_in(predecessor_ids.clone()))
-        .filter(task_iteration::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let mut target: HashSet<i32> = current_targets.into_iter().map(|task| task.header_id).collect();
-
-    if target.len() < predecessor_ids.len() {
-        let historical_targets = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.is_in(predecessor_ids))
-            .all(txn)
-            .await?;
-        target.extend(historical_targets.into_iter().map(|task| task.header_id));
-    }
-
-    let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-    let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-    trace!(
-        "predecessors: existing={:?}, target={:?}, remove={:?}, add={:?}",
-        existing, target, remove, add
+    let revision = LazyRevision::from_revision(revision_id);
+    let models = build_task_dependency_models(
+        model.header_id,
+        predecessors,
+        TaskDependencyInputScope::Predecessors,
     );
-    if !remove.is_empty() {
-        dependency::Entity::update_many()
-            .col_expr(dependency::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(
-                dependency::Column::SuccessorId
-                    .eq(successor_header_id)
-                    .and(dependency::Column::PredecessorId.is_in(remove)),
-            )
-            .filter(dependency::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-    }
-    if !add.is_empty() {
-        dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
-            predecessor_id: sea_orm::ActiveValue::Set(i),
-            successor_id: sea_orm::ActiveValue::Set(successor_header_id),
-            rev_created: sea_orm::ActiveValue::Set(revision_id),
-            rev_deleted: sea_orm::ActiveValue::Set(None),
-            ..Default::default()
-        }))
-        .exec(txn)
-        .await?;
-    }
-    Ok(())
+    upsert_rev_many(
+        ctx.db(),
+        &revision,
+        TaskDependencyUpserter::new_for_predecessors(model.header_id),
+        models,
+    )
+    .await
 }
 
 async fn update_successors(
     ctx: &Context,
     model: &task_iteration::Model,
-    mut successors: Vec<i32>,
+    successors: Vec<i32>,
     revision_id: i64,
 ) -> anyhow::Result<()> {
-    let txn = ctx.txn().await?;
-    let predecessor_header_id = model.header_id;
-    let existing_deps = dependency::Entity::find()
-        .filter(dependency::Column::PredecessorId.eq(predecessor_header_id))
-        .filter(dependency::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let existing: HashSet<i32> = existing_deps.into_iter().map(|d| d.successor_id).collect();
-
-    let successor_ids: Vec<i32> = std::mem::take(&mut successors);
-    let current_targets = task_iteration::Entity::find()
-        .filter(task_iteration::Column::Id.is_in(successor_ids.clone()))
-        .filter(task_iteration::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let mut target: HashSet<i32> = current_targets.into_iter().map(|task| task.header_id).collect();
-
-    if target.len() < successor_ids.len() {
-        let historical_targets = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.is_in(successor_ids))
-            .all(txn)
-            .await?;
-        target.extend(historical_targets.into_iter().map(|task| task.header_id));
-    }
-
-    let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-    let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-    trace!(
-        "successors: existing={:?}, target={:?}, remove={:?}, add={:?}",
-        existing, target, remove, add
+    let revision = LazyRevision::from_revision(revision_id);
+    let models = build_task_dependency_models(
+        model.header_id,
+        successors,
+        TaskDependencyInputScope::Successors,
     );
-    if !remove.is_empty() {
-        dependency::Entity::update_many()
-            .col_expr(dependency::Column::RevDeleted, Expr::value(Value::BigInt(Some(revision_id))))
-            .filter(
-                dependency::Column::PredecessorId
-                    .eq(predecessor_header_id)
-                    .and(dependency::Column::SuccessorId.is_in(remove)),
-            )
-            .filter(dependency::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-    }
-    if !add.is_empty() {
-        dependency::Entity::insert_many(add.into_iter().map(|i| dependency::ActiveModel {
-            successor_id: sea_orm::ActiveValue::Set(i),
-            predecessor_id: sea_orm::ActiveValue::Set(predecessor_header_id),
-            rev_created: sea_orm::ActiveValue::Set(revision_id),
-            rev_deleted: sea_orm::ActiveValue::Set(None),
-            ..Default::default()
-        }))
-        .exec(txn)
-        .await?;
-    }
-    Ok(())
+    upsert_rev_many(
+        ctx.db(),
+        &revision,
+        TaskDependencyUpserter::new_for_successors(model.header_id),
+        models,
+    )
+    .await
 }
 
 async fn update_children(
     ctx: &Context,
     model: &task_iteration::Model,
-    mut children: Vec<i32>,
-    revision_id: i64,
+    children: Vec<i32>,
 ) -> anyhow::Result<()> {
     let header_id = model.header_id;
     let txn = ctx.txn().await?;
@@ -603,38 +527,10 @@ async fn update_children(
         .await?;
     let existing: HashSet<i32> =
         existing_children.into_iter().map(|child| child.header_id).collect();
-
-    let child_ids: Vec<i32> = std::mem::take(&mut children);
-    let target_children = task_iteration::Entity::find()
-        .filter(task_iteration::Column::HeaderId.is_in(child_ids.clone()))
-        .filter(active_for_revision(
-            task_iteration::Column::RevCreated,
-            task_iteration::Column::RevDeleted,
-            Some(revision_id),
-        ))
-        .all(txn)
-        .await?;
-    let mut target: HashSet<i32> =
-        target_children.into_iter().map(|child| child.header_id).collect();
-
-    if target.len() < child_ids.len() {
-        let unresolved_ids: Vec<i32> =
-            child_ids.into_iter().filter(|child_id| !target.contains(child_id)).collect();
-        if !unresolved_ids.is_empty() {
-            let fallback_children = task_iteration::Entity::find()
-                .filter(task_iteration::Column::Id.is_in(unresolved_ids))
-                .all(txn)
-                .await?;
-            target.extend(fallback_children.into_iter().map(|child| child.header_id));
-        }
-    }
+    let target: HashSet<i32> = sorted_ids(&children).into_iter().collect();
 
     let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
     let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-    trace!(
-        "children: existing={:?}, target={:?}, remove={:?}, add={:?}",
-        existing, target, remove, add
-    );
     if !remove.is_empty() {
         task_iteration::Entity::update_many()
             .col_expr(task_iteration::Column::ParentId, Expr::value(Value::Int(None)))
@@ -860,7 +756,7 @@ pub async fn task_save(
         update_successors(ctx, &model, successors, revision_id).await?;
     }
     if let Some(children) = children {
-        update_children(ctx, &model, children, revision_id).await?;
+        update_children(ctx, &model, children).await?;
     }
     if let Some(ref constraints) = resource_constraints {
         let all_used_resources: std::collections::HashSet<i32> =
