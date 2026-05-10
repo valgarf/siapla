@@ -141,10 +141,12 @@ test-rust *args='':
     cargo test -- --nocapture --color always {{ args }}
 
 # Level 3: Playwright E2E tests (requires running backend + frontend)
+install-playwright:
+    npx playwright install --with-deps chromium
+
 [working-directory("./tests/e2e")]
 install-e2e:
     npm install
-    npx playwright install --with-deps chromium
 
 [working-directory("./tests/e2e")]
 test-e2e:
@@ -178,3 +180,55 @@ test-e2e-task-history:
 [working-directory(".")]
 test: test-rust
     @echo "Rust tests passed. For E2E tests, backup db, start backend+frontend and run: just test-e2e"
+
+[working-directory(".")]
+copy-rundata:
+    #!/usr/bin/env bash
+    own_toplevel=$(git rev-parse --path-format=absolute --show-toplevel)
+    git_common=$(git rev-parse --path-format=absolute --git-common-dir)
+    base_dir=${git_common%".git"}
+    if [[ "$own_toplevel" == "$base_dir" ]]
+    then
+        echo "We are not in a worktree, skipping copying of run-data."
+        exit 0
+    fi
+    cp -r "${base_dir}/run-data" ./run-data
+
+new-worktree name flag='':
+    #!/usr/bin/env bash
+    git_common=$(git rev-parse --path-format=absolute --git-common-dir)
+    base_dir=${git_common%".git"}
+    base_dir=$(dirname "$base_dir")
+    folder_name="{{ name }}"
+    folder_name="${folder_name//\//-}"
+    path="${base_dir}/siapla.worktrees/${folder_name}"
+    if [[ "{{flag}}" == '-c' ]]
+    then
+        git worktree add -b {{ name }} "$path"
+    elif [[ "{{flag}}" == '' ]]
+    then
+        git worktree add "$path" {{ name }}
+    else
+        echo "Unknown flag '{{ flag }}'. Use -c to create a new branch, or no flag to use an existing branch."
+        exit 1
+    fi
+    cd "$path" && just init-worktree
+
+
+[working-directory(".")]
+init-worktree: install-e2e install-frontend build-frontend && test
+    #!/usr/bin/env bash
+    own_toplevel=$(git rev-parse --path-format=absolute --show-toplevel)
+    git_common=$(git rev-parse --path-format=absolute --git-common-dir)
+    base_dir=${git_common%".git"}
+    if [[ "$own_toplevel" == "$base_dir" ]]
+    then
+        echo "We are not in a worktree, skipping copying of run-data."
+        exit 0
+    fi
+    if [[ -d "$base_dir/run-data" ]]
+    then
+        echo "run-data already exists, skipping copying."
+        exit 0
+    fi
+    cp -r "${base_dir}/run-data" ./run-data
