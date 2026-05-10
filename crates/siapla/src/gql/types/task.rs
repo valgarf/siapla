@@ -12,9 +12,13 @@ use strum::{EnumString, IntoStaticStr};
 
 use crate::{
     db::{
-        r#impl::task_iteration::TaskIterationUpserter, revisioning::{
-        LazyRevision, PlanState, active_for_revision, create_revision, ensure_revision_id,
-    }, revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id}, upsert::upsert_rev_one, r#impl::{dependency::TaskDependencyUpserter, task_iteration::TaskIterationParentUpdater}, update::update_rev_many, upsert::upsert_rev_many,
+        r#impl::{
+            dependency::TaskDependencyUpserter,
+            task_iteration::{TaskIterationParentUpdater, TaskIterationUpserter},
+        },
+        revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id},
+        update::update_rev_many,
+        upsert::{upsert_rev_many, upsert_rev_one},
     },
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
@@ -487,7 +491,8 @@ async fn update_predecessors(
         TaskDependencyUpserter::new_for_predecessors(model.header_id),
         models,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 async fn update_successors(
@@ -508,7 +513,8 @@ async fn update_successors(
         TaskDependencyUpserter::new_for_successors(model.header_id),
         models,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 async fn update_children(
@@ -523,7 +529,8 @@ async fn update_children(
         &revision,
         TaskIterationParentUpdater::new(model.header_id, sorted_ids(&children)),
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 async fn update_resource_constraints(

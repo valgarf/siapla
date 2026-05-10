@@ -1,7 +1,3 @@
-use anyhow::anyhow;
-use sea_orm::{ActiveValue, ColumnTrait as _};
-use std::collections::HashSet;
-
 use crate::{
     db::{
         PredecessorTaskIterations, SuccessorTaskIterations,
@@ -13,8 +9,10 @@ use crate::{
     },
     entity::{resource_constraint, task_header},
 };
-use sea_orm::{ColumnTrait as _, EntityTrait};
+use anyhow::anyhow;
+use sea_orm::{ActiveValue, ColumnTrait as _, EntityTrait};
 use sea_query::IntoCondition as _;
+use std::collections::HashSet;
 
 impl task_iteration::Model {
     pub async fn dataloader_predecessors(
