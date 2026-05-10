@@ -63,8 +63,9 @@ where
     ActiveModel<U>: Send + TryIntoModel<Model<U>>,
 {
     let model_refs: Vec<_> = models_with_rel.iter().map(|(m, _)| m).collect();
-    let condition = upserter
-        .existing_condition(&model_refs)
+
+    let condition = sea_orm::Condition::all()
+        .add(upserter.existing_condition(&model_refs))
         .add(<U::Entity as RangeRevColumns>::rev_deleted_column().is_null());
     let existing_with_rel = upserter.load_existing_with_rel(db, condition).await?;
 

@@ -8,6 +8,7 @@ pub mod entity;
 pub mod r#impl;
 pub mod insert;
 pub mod revisioning;
+pub mod update;
 pub mod upsert;
 
 pub use context::DbContext;

@@ -1,9 +1,14 @@
+use anyhow::anyhow;
+use sea_orm::{ActiveValue, ColumnTrait as _};
+use std::collections::HashSet;
+
 use crate::{
     db::{
         PredecessorTaskIterations, SuccessorTaskIterations,
         context::DbContext,
         dataloader::{ByColBatcher, ByColRevBatcher, LinkBatcher},
         entity::{allocation, issue, task_iteration},
+        update::Updater,
         upsert::Upserter,
     },
     entity::{resource_constraint, task_header},
@@ -154,5 +159,49 @@ impl Upserter for TaskIterationUpserter {
                 == rhs.effort.try_as_ref().cloned().flatten().map(f32::to_bits)
             && lhs.priority.try_as_ref().map(|value| value.to_bits())
                 == rhs.priority.try_as_ref().map(|value| value.to_bits())
+    }
+}
+
+pub struct TaskIterationParentUpdater {
+    parent_id: i32,
+    child_ids: HashSet<i32>,
+}
+
+impl TaskIterationParentUpdater {
+    pub fn new(parent_id: i32, child_ids: impl IntoIterator<Item = i32>) -> Self {
+        Self { parent_id, child_ids: child_ids.into_iter().collect() }
+    }
+}
+
+impl Updater for TaskIterationParentUpdater {
+    type Entity = task_iteration::Entity;
+
+    fn existing_condition(&self) -> sea_orm::Condition {
+        let mut condition =
+            sea_orm::Condition::any().add(task_iteration::Column::ParentId.eq(self.parent_id));
+        if !self.child_ids.is_empty() {
+            condition = condition
+                .add(task_iteration::Column::HeaderId.is_in(self.child_ids.iter().copied()));
+        }
+        condition
+    }
+
+    fn apply_changes(&self, existing: &mut task_iteration::ActiveModel) -> anyhow::Result<()> {
+        let header_id = existing
+            .header_id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| anyhow!("Task iteration model is missing header_id"))?;
+        existing.parent_id =
+            ActiveValue::Set(self.child_ids.contains(&header_id).then_some(self.parent_id));
+        Ok(())
+    }
+
+    fn model_equal(
+        &self,
+        lhs: &task_iteration::ActiveModel,
+        rhs: &task_iteration::ActiveModel,
+    ) -> bool {
+        lhs.parent_id == rhs.parent_id
     }
 }

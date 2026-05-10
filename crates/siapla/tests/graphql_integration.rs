@@ -1931,6 +1931,71 @@ async fn test_task_history_after_modification() {
 
 #[tokio::test]
 #[serial]
+async fn test_task_history_after_child_update() {
+    clean_database().await;
+
+    let parent = create_task("Hist-Parent", "GROUP", 1.0, None, None, None, None, None, None).await;
+    let child =
+        create_task("Hist-Child", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let child_iteration_before = find_current_iteration_id_by_title("Hist-Child").await;
+
+    let mutation = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {parent},
+                title: "Hist-Parent",
+                description: "desc for Hist-Parent",
+                designation: GROUP,
+                priority: 1.0,
+                children: [{child}]
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&mutation).await;
+
+    let child_iteration_after = find_current_iteration_id_by_title("Hist-Child").await;
+    assert_ne!(
+        child_iteration_before, child_iteration_after,
+        "expected child iteration id to change when updated through parent.children"
+    );
+
+    let val = gql_ok_simple(r#"{ tasks { dbId title parent { dbId title } } }"#).await;
+    let tasks = extract_list(&val, "tasks");
+    let current_child = tasks
+        .iter()
+        .find(|t| extract_str(t, "title") == "Hist-Child")
+        .expect("Hist-Child should exist");
+    assert_eq!(extract_i64(current_child, "parent.dbId"), parent);
+    assert_eq!(extract_str(current_child, "parent.title"), "Hist-Parent");
+
+    let query = task_history_query(child, "BACKWARD", "");
+    let val = gql_ok_simple(&query).await;
+
+    let changes = extract_list(&val, "taskHistory.changes");
+    let change_types: Vec<&str> = changes.iter().map(|c| extract_str(c, "changeType")).collect();
+    assert!(
+        change_types.contains(&"CREATED"),
+        "expected a CREATED change after a child update, got {change_types:?}"
+    );
+    assert!(
+        change_types.contains(&"UPDATED"),
+        "expected an UPDATED change after a child update, got {change_types:?}"
+    );
+
+    let updated = changes
+        .iter()
+        .find(|c| {
+            extract_str(c, "__typename") == "TaskIterationChange"
+                && extract_str(c, "changeType") == "UPDATED"
+        })
+        .expect("expected an UPDATED TaskIterationChange for the child");
+    assert_eq!(extract_str(updated, "taskIteration.title"), "Hist-Child");
+}
+
+#[tokio::test]
+#[serial]
 async fn test_task_history_after_deletion() {
     clean_database().await;
 

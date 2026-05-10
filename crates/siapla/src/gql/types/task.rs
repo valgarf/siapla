@@ -12,11 +12,9 @@ use strum::{EnumString, IntoStaticStr};
 
 use crate::{
     db::{
-        r#impl::task_iteration::TaskIterationUpserter, r#impl::dependency::TaskDependencyUpserter,
-        revisioning::{
-            LazyRevision, PlanState, active_for_revision, create_revision, ensure_revision_id,
-        }, revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id},
-        upsert::upsert_rev_one, upsert::upsert_rev_many,
+        r#impl::task_iteration::TaskIterationUpserter, revisioning::{
+        LazyRevision, PlanState, active_for_revision, create_revision, ensure_revision_id,
+    }, revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id}, upsert::upsert_rev_one, r#impl::{dependency::TaskDependencyUpserter, task_iteration::TaskIterationParentUpdater}, update::update_rev_many, upsert::upsert_rev_many,
     },
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
@@ -517,37 +515,15 @@ async fn update_children(
     ctx: &Context,
     model: &task_iteration::Model,
     children: Vec<i32>,
+    revision_id: i64,
 ) -> anyhow::Result<()> {
-    let header_id = model.header_id;
-    let txn = ctx.txn().await?;
-    let existing_children = task_iteration::Entity::find()
-        .filter(task_iteration::Column::ParentId.eq(header_id))
-        .filter(task_iteration::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let existing: HashSet<i32> =
-        existing_children.into_iter().map(|child| child.header_id).collect();
-    let target: HashSet<i32> = sorted_ids(&children).into_iter().collect();
-
-    let remove: HashSet<i32> = existing.difference(&target).cloned().collect();
-    let add: HashSet<i32> = target.difference(&existing).cloned().collect();
-    if !remove.is_empty() {
-        task_iteration::Entity::update_many()
-            .col_expr(task_iteration::Column::ParentId, Expr::value(Value::Int(None)))
-            .filter(task_iteration::Column::HeaderId.is_in(remove))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-    }
-    if !add.is_empty() {
-        task_iteration::Entity::update_many()
-            .col_expr(task_iteration::Column::ParentId, Expr::value(Value::Int(Some(header_id))))
-            .filter(task_iteration::Column::HeaderId.is_in(add))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-    }
-    Ok(())
+    let revision = LazyRevision::from_revision(revision_id);
+    update_rev_many(
+        ctx.db(),
+        &revision,
+        TaskIterationParentUpdater::new(model.header_id, sorted_ids(&children)),
+    )
+    .await
 }
 
 async fn update_resource_constraints(
@@ -756,7 +732,7 @@ pub async fn task_save(
         update_successors(ctx, &model, successors, revision_id).await?;
     }
     if let Some(children) = children {
-        update_children(ctx, &model, children).await?;
+        update_children(ctx, &model, children, revision_id).await?;
     }
     if let Some(ref constraints) = resource_constraints {
         let all_used_resources: std::collections::HashSet<i32> =
