@@ -36,7 +36,7 @@ use super::{allocation::GQLAllocation, issue::GQLIssue, resource::GQLResource};
 // Enums
 // ---------------------------------------------------------------------------
 
-#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Clone)]
+#[derive(GraphQLEnum, IntoStaticStr, EnumString, PartialEq, Eq, Clone, Debug)]
 pub enum TaskDesignation {
     Task,
     Group,
@@ -194,19 +194,19 @@ impl GQLResourceConstraintEntry {
 // Input types (unchanged)
 // ---------------------------------------------------------------------------
 
-#[derive(juniper::GraphQLInputObject, Clone)]
+#[derive(juniper::GraphQLInputObject, Debug, Clone)]
 pub struct ResourceConstraintEntryInput {
     pub resource_id: i32,
 }
 
-#[derive(juniper::GraphQLInputObject, Clone)]
+#[derive(juniper::GraphQLInputObject, Debug, Clone)]
 pub struct ResourceConstraintInput {
     pub optional: bool,
     pub speed: f64,
     pub entries: Vec<ResourceConstraintEntryInput>,
 }
 
-#[derive(juniper::GraphQLInputObject)]
+#[derive(juniper::GraphQLInputObject, Debug)]
 pub struct TaskSaveInput {
     /// When set, this is the **header id** (stable identity) of the task to update.
     db_id: Option<i32>,

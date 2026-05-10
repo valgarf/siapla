@@ -137,8 +137,8 @@ test-integration:
 
 # Level 1 + 2 combined
 [working-directory(".")]
-test-rust:
-    cargo test -- --nocapture --color always
+test-rust *args='':
+    cargo test -- --nocapture --color always {{ args }}
 
 # Level 3: Playwright E2E tests (requires running backend + frontend)
 [working-directory("./tests/e2e")]

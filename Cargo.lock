@@ -1505,6 +1505,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "icecream"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cd15fce8630b4ad917a34af52a2f996285ca19d1c679ccf507ff3bd77f3563d"
+dependencies = [
+ "backtrace",
+ "lazy_static",
+]
+
+[[package]]
 name = "icu_collections"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3171,6 +3181,7 @@ dependencies = [
  "dataloader",
  "derive_more",
  "futures",
+ "icecream",
  "include_dir",
  "itertools",
  "juniper",

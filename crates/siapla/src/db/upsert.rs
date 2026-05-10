@@ -96,7 +96,13 @@ where
         .collect();
 
     if delete_keys.is_empty() && insert_keys.is_empty() && update_keys.is_empty() {
-        return Ok(Default::default());
+        let unchanged_models: Vec<Model<U>> = existing_map
+            .into_values()
+            .map(|(am, _)| {
+                am.try_into_model().expect("Existing active model should be convertible into model")
+            })
+            .collect();
+        return Ok((Default::default(), unchanged_models, Default::default()));
     }
     let revision_id = revision.get(db).await?;
 
