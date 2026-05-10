@@ -875,10 +875,8 @@ pub fn plan_task(
                     result_map.insert(sel_iter.resource_id, sslot.clone());
                     removals.insert(sel_iter.resource_id, sidx);
 
-                    let assigned_intervals = _reduce_intervals(
-                        primary_intervals.intersection(&sslot.intervals),
-                        effort,
-                    );
+                    let assigned_intervals =
+                        _reduce_intervals(primary_intervals.intersection(&sslot.intervals), effort);
                     let hull = assigned_intervals.hull().expect("Cannot be empty");
                     let end_ts = hull.end().value().expect("no unbounded intervals");
                     let assigned_slot = Slot {
@@ -910,8 +908,7 @@ pub fn plan_task(
                         .max()
                         .unwrap_or(project.calculation_end);
                     if let Some(curr) = sel_iter.current() {
-                        let sel_start =
-                            curr.range.start().value().expect("no unbound intervals");
+                        let sel_start = curr.range.start().value().expect("no unbound intervals");
                         if sel_start >= primary_max_end {
                             break;
                         }
@@ -919,7 +916,6 @@ pub fn plan_task(
                         break;
                     }
                 }
-
             }
         }
 

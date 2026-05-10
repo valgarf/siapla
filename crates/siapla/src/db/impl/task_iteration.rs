@@ -4,9 +4,12 @@ use crate::{
         context::DbContext,
         dataloader::{ByColBatcher, ByColRevBatcher, LinkBatcher},
         entity::{allocation, issue, task_iteration},
+        upsert::Upserter,
     },
     entity::{resource_constraint, task_header},
 };
+use sea_orm::{ColumnTrait as _, EntityTrait};
+use sea_query::IntoCondition as _;
 
 impl task_iteration::Model {
     pub async fn dataloader_predecessors(
@@ -103,5 +106,53 @@ impl task_iteration::Model {
             .await
             .load_exactly_one(self.header_id.into())
             .await
+    }
+}
+
+pub struct TaskIterationUpserter {
+    pub task_header_id: i32,
+}
+
+impl TaskIterationUpserter {
+    pub fn new(task_header_id: i32) -> Self {
+        Self { task_header_id }
+    }
+}
+
+impl Upserter for TaskIterationUpserter {
+    type Entity = task_iteration::Entity;
+    type Key = ();
+    type RelData = ();
+
+    fn existing_condition(
+        &self,
+        _: &Vec<&<Self::Entity as EntityTrait>::ActiveModel>,
+    ) -> sea_orm::Condition {
+        task_iteration::Column::HeaderId.eq(self.task_header_id).into_condition()
+    }
+
+    fn key(&self, _: &task_iteration::ActiveModel) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn model_equal(
+        &self,
+        lhs: &<Self::Entity as EntityTrait>::ActiveModel,
+        rhs: &<Self::Entity as EntityTrait>::ActiveModel,
+    ) -> bool {
+        lhs.header_id.try_as_ref() == rhs.header_id.try_as_ref()
+            && lhs.title.try_as_ref() == rhs.title.try_as_ref()
+            && lhs.description.try_as_ref() == rhs.description.try_as_ref()
+            && lhs.designation.try_as_ref() == rhs.designation.try_as_ref()
+            && lhs.parent_id.try_as_ref().cloned().flatten()
+                == rhs.parent_id.try_as_ref().cloned().flatten()
+            && lhs.earliest_start.try_as_ref().cloned().flatten()
+                == rhs.earliest_start.try_as_ref().cloned().flatten()
+            && lhs.schedule_target.try_as_ref().cloned().flatten()
+                == rhs.schedule_target.try_as_ref().cloned().flatten()
+            && lhs.effort.try_as_ref().cloned().flatten().map(f32::to_bits)
+                == rhs.effort.try_as_ref().cloned().flatten().map(f32::to_bits)
+            && lhs.priority.try_as_ref().map(|value| value.to_bits())
+                == rhs.priority.try_as_ref().map(|value| value.to_bits())
     }
 }

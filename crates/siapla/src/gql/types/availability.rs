@@ -86,5 +86,12 @@ pub async fn update_availability(
             am
         })
         .collect::<Vec<availability::ActiveModel>>();
-    upsert_rev_many(db, &revision, AvailabilityUpserter::new(resource_header_id), new_models.into_iter().map(|m| (m, ())).collect()).await
+    upsert_rev_many(
+        db,
+        &revision,
+        AvailabilityUpserter::new(resource_header_id),
+        new_models.into_iter().map(|m| (m, ())).collect(),
+    )
+    .await?;
+    Ok(())
 }

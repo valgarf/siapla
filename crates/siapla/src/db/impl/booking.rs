@@ -103,7 +103,7 @@ impl Upserter for BookingUpserter {
     async fn after_insert(
         &self,
         db: &DbContext,
-        inserted: Vec<(booking::Model, Vec<i32>)>,
+        inserted: &Vec<(booking::Model, Vec<i32>)>,
     ) -> anyhow::Result<()> {
         let booking_resource_links: Vec<booking_resource::ActiveModel> = inserted
             .into_iter()
@@ -111,7 +111,7 @@ impl Upserter for BookingUpserter {
                 rel_data.into_iter().map(move |rid| booking_resource::ActiveModel {
                     id: ActiveValue::NotSet,
                     booking_id: ActiveValue::Set(booking.id),
-                    resource_id: ActiveValue::Set(rid),
+                    resource_id: ActiveValue::Set(*rid),
                 })
             })
             .collect();

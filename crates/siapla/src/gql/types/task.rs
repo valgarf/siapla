@@ -12,7 +12,13 @@ use strum::{EnumString, IntoStaticStr};
 use tracing::trace;
 
 use crate::{
-    db::revisioning::{PlanState, active_for_revision, create_revision, ensure_revision_id},
+    db::{
+        r#impl::task_iteration::TaskIterationUpserter,
+        revisioning::{
+            LazyRevision, PlanState, active_for_revision, create_revision, ensure_revision_id,
+        },
+        upsert::upsert_rev_one,
+    },
     entity::{
         dependency, resource_constraint, resource_constraint_entry, resource_iteration,
         task_iteration,
@@ -829,49 +835,23 @@ pub async fn task_save(
     let resource_constraints = task.resource_constraints.take();
     let input_header_id = task.db_id.take();
     let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
+    let revision = LazyRevision::from_revision(revision_id);
     let mut am = task.into_active_model();
-    let model = if let Some(header_id) = input_header_id {
-        // Resolve header_id → current active iteration
-        let existing = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.eq(header_id))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?
-            .ok_or_else(|| anyhow!("No active task iteration found for header {}", header_id))?;
-        let old_id = existing.id;
-        // Soft-delete the old iteration
-        task_iteration::Entity::update_many()
-            .col_expr(
-                task_iteration::Column::RevDeleted,
-                Expr::value(Value::BigInt(Some(revision_id))),
-            )
-            .filter(task_iteration::Column::Id.eq(old_id))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .exec(txn)
-            .await?;
-        // Create new iteration
-        am.header_id = ActiveValue::Set(existing.header_id);
-        am.rev_created = ActiveValue::Set(revision_id);
-        am.rev_deleted = ActiveValue::Set(None);
-
-        // ── Migrate relationships from old iteration to new iteration ──
-        // Dependencies, bookings, allocations, and resource constraints are all
-        // header-based and don't need migration when a task iteration changes.
-
-        am.insert(txn).await?
+    let header_id = if let Some(header_id) = input_header_id {
+        header_id
     } else {
-        let header = crate::entity::task_header::ActiveModel {
+        crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
             rev_created: ActiveValue::Set(revision_id),
             rev_deleted: ActiveValue::Set(None),
         }
         .insert(txn)
-        .await?;
-        am.header_id = ActiveValue::Set(header.id);
-        am.rev_created = ActiveValue::Set(revision_id);
-        am.rev_deleted = ActiveValue::Set(None);
-        am.insert(txn).await?
+        .await?
+        .id
     };
+    am.header_id = ActiveValue::Set(header_id);
+    let (_, model) =
+        upsert_rev_one(ctx.db(), &revision, TaskIterationUpserter::new(header_id), am, ()).await?;
 
     if let Some(predecessors) = predecessors {
         update_predecessors(ctx, &model, predecessors, revision_id).await?;

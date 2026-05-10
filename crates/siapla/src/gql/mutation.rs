@@ -192,7 +192,8 @@ impl Mutation {
         };
 
         resources.sort();
-        let db_booking = upsert_rev_one(ctx.db(), &revision, upserter, model, resources).await?;
+        let (_, db_booking) =
+            upsert_rev_one(ctx.db(), &revision, upserter, model, resources).await?;
 
         let opt_revision = revision.take();
         if opt_revision.is_some() {

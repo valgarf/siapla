@@ -11,7 +11,7 @@ use crate::{
     },
     gql::{
         context::Context,
-        scalars::{Int64, ExtendedScalarValue},
+        scalars::{ExtendedScalarValue, Int64},
     },
 };
 
