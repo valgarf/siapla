@@ -19,6 +19,7 @@ pub struct Model {
     pub r#type: String,
     pub optional: bool,
     pub speed: f32,
+    pub position: i32,
     pub rev_created: i64,
     pub rev_deleted: Option<i64>,
 }
@@ -30,6 +31,7 @@ pub enum Column {
     Type,
     Optional,
     Speed,
+    Position,
     RevCreated,
     RevDeleted,
 }
@@ -63,6 +65,7 @@ impl ColumnTrait for Column {
             Self::Type => ColumnType::String(StringLen::None).def(),
             Self::Optional => ColumnType::Boolean.def(),
             Self::Speed => ColumnType::Float.def(),
+            Self::Position => ColumnType::Integer.def(),
             Self::RevCreated => ColumnType::BigInteger.def(),
             Self::RevDeleted => ColumnType::BigInteger.def().null(),
         }

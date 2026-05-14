@@ -61,7 +61,7 @@ impl Upserter for BookingUpserter {
         }
     }
 
-    fn key(&self, _model: &booking::ActiveModel) -> anyhow::Result<()> {
+    fn key(&self, _model: &booking::ActiveModel, _rel_data: &Self::RelData) -> anyhow::Result<()> {
         Ok(())
     }
 

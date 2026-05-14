@@ -21,7 +21,7 @@ pub trait Upserter {
     type RelData: Default + Send;
 
     fn existing_condition(&self, models: &Vec<&ActiveModel<Self>>) -> sea_orm::Condition;
-    fn key(&self, model: &ActiveModel<Self>) -> anyhow::Result<Self::Key>;
+    fn key(&self, model: &ActiveModel<Self>, rel_data: &Self::RelData) -> anyhow::Result<Self::Key>;
     fn model_equal(&self, lhs: &ActiveModel<Self>, rhs: &ActiveModel<Self>) -> bool;
 
     fn relationships_equal(&self, _lhs: &Self::RelData, _rhs: &Self::RelData) -> bool {
@@ -72,13 +72,13 @@ where
     let mut existing_map: HashMap<U::Key, (ActiveModel<U>, U::RelData)> = HashMap::new();
     for (m, rel_data) in existing_with_rel {
         let am = m.into_active_model();
-        let k = upserter.key(&am)?;
+        let k = upserter.key(&am, &rel_data)?;
         existing_map.insert(k, (am, rel_data));
     }
 
     let mut new_map: HashMap<U::Key, (ActiveModel<U>, U::RelData)> = models_with_rel
         .into_iter()
-        .map(|(m, rd)| upserter.key(&m).map(|k| (k, (m, rd))))
+        .map(|(m, rd)| upserter.key(&m, &rd).map(|k| (k, (m, rd))))
         .collect::<anyhow::Result<_>>()?;
     let existing_keys: HashSet<_> = existing_map.keys().cloned().collect();
     let new_keys: HashSet<_> = new_map.keys().cloned().collect();

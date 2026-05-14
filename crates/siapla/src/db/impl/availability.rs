@@ -45,7 +45,11 @@ impl Upserter for AvailabilityUpserter {
         availability::Column::ResourceId.eq(self.resource_header_id).into_condition()
     }
 
-    fn key(&self, model: &availability::ActiveModel) -> anyhow::Result<Self::Key> {
+    fn key(
+        &self,
+        model: &availability::ActiveModel,
+        _rel_data: &Self::RelData,
+    ) -> anyhow::Result<Self::Key> {
         Ok(model.weekday.try_as_ref().cloned())
     }
 

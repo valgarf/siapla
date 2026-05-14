@@ -134,7 +134,7 @@ impl Upserter for TaskIterationUpserter {
         task_iteration::Column::HeaderId.eq(self.task_header_id).into_condition()
     }
 
-    fn key(&self, _: &task_iteration::ActiveModel) -> anyhow::Result<()> {
+    fn key(&self, _: &task_iteration::ActiveModel, _: &()) -> anyhow::Result<()> {
         Ok(())
     }
 

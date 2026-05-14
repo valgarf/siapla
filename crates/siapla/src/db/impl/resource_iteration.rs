@@ -124,7 +124,11 @@ impl Upserter for ResourceIterationUpserter {
         resource_iteration::Column::HeaderId.eq(self.resource_header_id).into_condition()
     }
 
-    fn key(&self, model: &resource_iteration::ActiveModel) -> anyhow::Result<Self::Key> {
+    fn key(
+        &self,
+        model: &resource_iteration::ActiveModel,
+        _rel_data: &Self::RelData,
+    ) -> anyhow::Result<Self::Key> {
         Ok(model.id.try_as_ref().cloned())
     }
 

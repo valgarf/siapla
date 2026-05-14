@@ -756,6 +756,12 @@ impl MigrationTrait for Migration {
                     .col(boolean(ResourceConstraintFull::Optional))
                     .col(ColumnDef::new(ResourceConstraintFull::Speed).float().not_null())
                     .col(
+                        ColumnDef::new(ResourceConstraintFull::Position)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .col(
                         ColumnDef::new(ResourceConstraintFull::RevCreated).big_integer().not_null(),
                     )
                     .col(ColumnDef::new(ResourceConstraintFull::RevDeleted).big_integer().null())
@@ -813,6 +819,10 @@ impl MigrationTrait for Migration {
             .map_err(|e| DbErr::Custom(e.to_string()))?
             .to_owned();
         db.execute(backend.build(&insert_resource_constraints)).await?;
+        db.execute_unprepared(
+            "WITH ranked AS (\n                SELECT id, ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY id) - 1 AS position\n                FROM resource_constraint\n            )\n            UPDATE resource_constraint\n            SET position = (\n                SELECT ranked.position\n                FROM ranked\n                WHERE ranked.id = resource_constraint.id\n            )",
+        )
+        .await?;
 
         manager
             .drop_table(Table::drop().table(Alias::new("_resource_constraint_old")).to_owned())
@@ -1369,6 +1379,7 @@ enum ResourceConstraintFull {
     Type,
     Optional,
     Speed,
+    Position,
     RevCreated,
     RevDeleted,
 }

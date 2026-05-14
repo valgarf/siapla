@@ -44,7 +44,7 @@ impl Upserter for TaskDependencyUpserter {
         }
     }
 
-    fn key(&self, model: &dependency::ActiveModel) -> anyhow::Result<Self::Key> {
+    fn key(&self, model: &dependency::ActiveModel, _: &()) -> anyhow::Result<Self::Key> {
         let predecessor_id = model
             .predecessor_id
             .try_as_ref()
