@@ -195,13 +195,10 @@ impl Mutation {
         let (_, db_booking) =
             upsert_rev_one(ctx.db(), &revision, upserter, model, resources).await?;
 
-        let opt_revision = revision.take();
-        if opt_revision.is_some() {
+        let (changed, revision_id) = revision.resolve(ctx.db()).await?;
+        if changed {
             ctx.app_state().notify_modified("graphql".to_string());
         }
-        let revision_id = resolve_revision(ctx.txn().await?, opt_revision)
-            .await?
-            .ok_or(anyhow!("Cannot find a revision for the booking save operation"))?;
 
         Ok(GQLBooking::at_revision(db_booking, revision_id))
     }

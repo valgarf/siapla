@@ -1,5 +1,6 @@
 use crate::db::DbContext;
 use crate::db::entity::revision;
+use anyhow::anyhow;
 use sea_orm::EntityTrait;
 use sea_orm::{
     ActiveModelTrait as _, ActiveValue, ColumnTrait, Condition, DatabaseTransaction,
@@ -125,5 +126,16 @@ impl LazyRevision {
 
     pub fn take(self) -> Option<i64> {
         self.revision.into_inner()
+    }
+
+    pub async fn resolve(self, db: &DbContext) -> anyhow::Result<(bool, i64)> {
+        if let Some(revision_id) = self.take() {
+            Ok((true, revision_id))
+        } else {
+            let revision_id = latest_revision_id(db.txn().await?)
+                .await?
+                .ok_or(anyhow!("Cannot find the latest revision."))?;
+            Ok((false, revision_id))
+        }
     }
 }

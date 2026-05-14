@@ -7,7 +7,7 @@ use std::{
 };
 
 use juniper::{GraphQLEnum, Nullable, graphql_object};
-use sea_orm::{ActiveValue, DatabaseTransaction, QueryOrder as _, prelude::*};
+use sea_orm::{ActiveValue, prelude::*};
 use strum::{EnumString, IntoStaticStr};
 
 use crate::{
@@ -17,14 +17,11 @@ use crate::{
             dependency::TaskDependencyUpserter,
             task_iteration::{TaskIterationParentUpdater, TaskIterationUpserter},
         },
-        revisioning::{LazyRevision, PlanState, create_revision, ensure_revision_id},
+        revisioning::LazyRevision,
         update::update_rev_many,
         upsert::{upsert_rev_many, upsert_rev_one},
     },
-    entity::{
-        dependency, resource_constraint, resource_constraint_entry, resource_iteration,
-        task_iteration,
-    },
+    entity::{dependency, resource_constraint, resource_constraint_entry, task_iteration},
     gql::{
         common::nullable_to_av,
         context::Context,
@@ -248,196 +245,8 @@ impl TaskSaveInput {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct NormalizedResourceConstraint {
-    optional: bool,
-    speed_bits: u32,
-    resource_ids: Vec<i32>,
-}
-
 fn sorted_ids(ids: &[i32]) -> Vec<i32> {
     ids.iter().copied().collect::<BTreeSet<_>>().into_iter().collect()
-}
-
-async fn normalize_resource_constraints_input(
-    txn: &DatabaseTransaction,
-    constraints: &[ResourceConstraintInput],
-) -> anyhow::Result<Vec<NormalizedResourceConstraint>> {
-    let mut normalized = Vec::with_capacity(constraints.len());
-    for constraint in constraints {
-        let mut resource_ids: Vec<i32> =
-            constraint.entries.iter().map(|entry| entry.resource_id).collect();
-        let resolved = resolve_resource_header_ids(txn, &resource_ids).await?;
-        resource_ids.clear();
-        resource_ids.extend(resolved);
-        resource_ids.sort_unstable();
-        normalized.push(NormalizedResourceConstraint {
-            optional: constraint.optional,
-            speed_bits: (constraint.speed as f32).to_bits(),
-            resource_ids,
-        });
-    }
-    Ok(normalized)
-}
-
-async fn normalize_existing_resource_constraints(
-    txn: &DatabaseTransaction,
-    header_id: i32,
-) -> anyhow::Result<Vec<NormalizedResourceConstraint>> {
-    let constraints = resource_constraint::Entity::find()
-        .filter(resource_constraint::Column::TaskId.eq(header_id))
-        .filter(resource_constraint::Column::RevDeleted.is_null())
-        .order_by(resource_constraint::Column::Id, sea_orm::Order::Asc)
-        .all(txn)
-        .await?;
-
-    let mut normalized = Vec::with_capacity(constraints.len());
-    for constraint in constraints {
-        let mut resource_ids: Vec<i32> = resource_constraint_entry::Entity::find()
-            .filter(resource_constraint_entry::Column::ResourceConstraintId.eq(constraint.id))
-            .all(txn)
-            .await?
-            .into_iter()
-            .map(|entry| entry.resource_id)
-            .collect();
-        resource_ids.sort_unstable();
-        normalized.push(NormalizedResourceConstraint {
-            optional: constraint.optional,
-            speed_bits: constraint.speed.to_bits(),
-            resource_ids,
-        });
-    }
-
-    Ok(normalized)
-}
-
-async fn resolve_resource_header_ids(
-    txn: &DatabaseTransaction,
-    ids: &[i32],
-) -> anyhow::Result<Vec<i32>> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let active_targets = resource_iteration::Entity::find()
-        .filter(resource_iteration::Column::Id.is_in(ids.to_vec()))
-        .filter(resource_iteration::Column::RevDeleted.is_null())
-        .all(txn)
-        .await?;
-    let mut resolved: BTreeSet<i32> =
-        active_targets.into_iter().map(|resource| resource.header_id).collect();
-
-    if resolved.len() < ids.len() {
-        let historical_targets = resource_iteration::Entity::find()
-            .filter(resource_iteration::Column::HeaderId.is_in(ids.to_vec()))
-            .all(txn)
-            .await?;
-        resolved.extend(historical_targets.into_iter().map(|resource| resource.header_id));
-    }
-
-    Ok(resolved.into_iter().collect())
-}
-
-async fn task_save_is_noop(
-    txn: &DatabaseTransaction,
-    existing: &task_iteration::Model,
-    task_input: &TaskSaveInput,
-    predecessors: Option<&Vec<i32>>,
-    successors: Option<&Vec<i32>>,
-    children: Option<&Vec<i32>>,
-    resource_constraints: Option<&Vec<ResourceConstraintInput>>,
-) -> anyhow::Result<bool> {
-    let existing_header_id = existing.header_id;
-
-    let scalar_unchanged = existing.title == task_input.title
-        && existing.description == task_input.description
-        && existing.designation
-            == match task_input.designation {
-                TaskDesignation::Task => "Task".to_string(),
-                TaskDesignation::Group => "Group".to_string(),
-                TaskDesignation::Requirement => "Requirement".to_string(),
-                TaskDesignation::Milestone => "Milestone".to_string(),
-            }
-        && existing.parent_id
-            == match &task_input.parent_id {
-                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
-                Nullable::Some(value) => Some(*value),
-            }
-        && existing.earliest_start
-            == match &task_input.earliest_start {
-                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
-                Nullable::Some(value) => Some(*value),
-            }
-        && existing.schedule_target
-            == match &task_input.schedule_target {
-                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
-                Nullable::Some(value) => Some(*value),
-            }
-        && existing.effort
-            == match &task_input.effort {
-                Nullable::ImplicitNull | Nullable::ExplicitNull => None,
-                Nullable::Some(value) => Some(*value as f32),
-            }
-        && existing.priority.to_bits() == (task_input.priority as f32).to_bits();
-
-    if !scalar_unchanged {
-        return Ok(false);
-    }
-
-    if let Some(predecessors) = predecessors {
-        let target = sorted_ids(predecessors);
-        let current: BTreeSet<i32> = dependency::Entity::find()
-            .filter(dependency::Column::SuccessorId.eq(existing_header_id))
-            .filter(dependency::Column::RevDeleted.is_null())
-            .all(txn)
-            .await?
-            .into_iter()
-            .map(|dep| dep.predecessor_id)
-            .collect();
-        if current.into_iter().collect::<Vec<_>>() != target {
-            return Ok(false);
-        }
-    }
-
-    if let Some(successors) = successors {
-        let target = sorted_ids(successors);
-        let current: BTreeSet<i32> = dependency::Entity::find()
-            .filter(dependency::Column::PredecessorId.eq(existing_header_id))
-            .filter(dependency::Column::RevDeleted.is_null())
-            .all(txn)
-            .await?
-            .into_iter()
-            .map(|dep| dep.successor_id)
-            .collect();
-        if current.into_iter().collect::<Vec<_>>() != target {
-            return Ok(false);
-        }
-    }
-
-    if let Some(children) = children {
-        let target = sorted_ids(children);
-        let current: BTreeSet<i32> = task_iteration::Entity::find()
-            .filter(task_iteration::Column::ParentId.eq(existing_header_id))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .all(txn)
-            .await?
-            .into_iter()
-            .map(|child| child.header_id)
-            .collect();
-        if current.into_iter().collect::<Vec<_>>() != target {
-            return Ok(false);
-        }
-    }
-
-    if let Some(resource_constraints) = resource_constraints {
-        let current = normalize_existing_resource_constraints(txn, existing_header_id).await?;
-        let target = normalize_resource_constraints_input(txn, resource_constraints).await?;
-        if current != target {
-            return Ok(false);
-        }
-    }
-
-    Ok(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -481,9 +290,8 @@ async fn update_predecessors(
     ctx: &Context,
     model: &task_iteration::Model,
     predecessors: Vec<i32>,
-    revision_id: i64,
+    revision: &LazyRevision,
 ) -> anyhow::Result<()> {
-    let revision = LazyRevision::from_revision(revision_id);
     let models = build_task_dependency_models(
         model.header_id,
         predecessors,
@@ -503,9 +311,8 @@ async fn update_successors(
     ctx: &Context,
     model: &task_iteration::Model,
     successors: Vec<i32>,
-    revision_id: i64,
+    revision: &LazyRevision,
 ) -> anyhow::Result<()> {
-    let revision = LazyRevision::from_revision(revision_id);
     let models = build_task_dependency_models(
         model.header_id,
         successors,
@@ -525,9 +332,8 @@ async fn update_children(
     ctx: &Context,
     model: &task_iteration::Model,
     children: Vec<i32>,
-    revision_id: i64,
+    revision: &LazyRevision,
 ) -> anyhow::Result<()> {
-    let revision = LazyRevision::from_revision(revision_id);
     update_rev_many(
         ctx.db(),
         &revision,
@@ -570,9 +376,8 @@ async fn update_resource_constraints(
     ctx: &Context,
     model: &task_iteration::Model,
     constraints: &[ResourceConstraintInput],
-    revision_id: i64,
+    revision: &LazyRevision,
 ) -> anyhow::Result<()> {
-    let revision = LazyRevision::from_revision(revision_id);
     let models_with_rel = build_resource_constraint_models(model.header_id, constraints);
     upsert_rev_many(
         ctx.db(),
@@ -592,47 +397,20 @@ pub async fn task_save(
     ctx: &Context,
     mut task: TaskSaveInput,
 ) -> anyhow::Result<(task_iteration::Model, i64)> {
-    let predecessors = task.predecessors.clone();
-    let successors = task.successors.clone();
-    let children = task.children.clone();
-    let resource_constraints = task.resource_constraints.clone();
-    let input_header_id = task.db_id;
+    let db = ctx.db();
     let txn = ctx.txn().await?;
-
-    if let Some(header_id) = input_header_id {
-        let existing = task_iteration::Entity::find()
-            .filter(task_iteration::Column::HeaderId.eq(header_id))
-            .filter(task_iteration::Column::RevDeleted.is_null())
-            .one(txn)
-            .await?
-            .ok_or_else(|| anyhow!("No active task iteration found for header {}", header_id))?;
-
-        if task_save_is_noop(
-            txn,
-            &existing,
-            &task,
-            predecessors.as_ref(),
-            successors.as_ref(),
-            children.as_ref(),
-            resource_constraints.as_ref(),
-        )
-        .await?
-        {
-            return Ok((existing, ensure_revision_id(txn).await?));
-        }
-    }
-
     let predecessors = task.predecessors.take();
     let successors = task.successors.take();
     let children = task.children.take();
     let resource_constraints = task.resource_constraints.take();
     let input_header_id = task.db_id.take();
-    let revision_id = create_revision(txn, PlanState::NotCalculated).await?;
-    let revision = LazyRevision::from_revision(revision_id);
+    let revision = LazyRevision::new();
+
     let mut am = task.into_active_model();
     let header_id = if let Some(header_id) = input_header_id {
         header_id
     } else {
+        let revision_id = revision.get(db).await?;
         crate::entity::task_header::ActiveModel {
             id: ActiveValue::NotSet,
             rev_created: ActiveValue::Set(revision_id),
@@ -647,13 +425,13 @@ pub async fn task_save(
         upsert_rev_one(ctx.db(), &revision, TaskIterationUpserter::new(header_id), am, ()).await?;
 
     if let Some(predecessors) = predecessors {
-        update_predecessors(ctx, &model, predecessors, revision_id).await?;
+        update_predecessors(ctx, &model, predecessors, &revision).await?;
     }
     if let Some(successors) = successors {
-        update_successors(ctx, &model, successors, revision_id).await?;
+        update_successors(ctx, &model, successors, &revision).await?;
     }
     if let Some(children) = children {
-        update_children(ctx, &model, children, revision_id).await?;
+        update_children(ctx, &model, children, &revision).await?;
     }
     if let Some(ref constraints) = resource_constraints {
         let all_used_resources: std::collections::HashSet<i32> =
@@ -662,9 +440,13 @@ pub async fn task_save(
         if num_entries != all_used_resources.len() {
             return Err(anyhow::anyhow!("Each resource can only be used once!"));
         }
-        update_resource_constraints(ctx, &model, constraints, revision_id).await?;
+        update_resource_constraints(ctx, &model, constraints, &revision).await?;
     }
 
+    let (changed, revision_id) = revision.resolve(ctx.db()).await?;
+    if !changed {
+        return Ok((model, revision_id));
+    }
     // Dependency cycle detection
     let deps = dependency::Entity::find().all(txn).await?;
     use std::collections::HashMap as _HM;
@@ -728,5 +510,6 @@ pub async fn task_save(
         }
     }
 
+    ctx.app_state().notify_modified("graphql".to_string());
     Ok((model, revision_id))
 }
