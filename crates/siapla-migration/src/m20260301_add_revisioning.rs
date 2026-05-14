@@ -1,7 +1,8 @@
 use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::*;
-use sea_query::{Expr, OnConflict, Query};
+use sea_orm_migration::sea_orm::ConnectionTrait;
+use sea_query::{Expr, OnConflict, Order, Query};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -819,10 +820,36 @@ impl MigrationTrait for Migration {
             .map_err(|e| DbErr::Custom(e.to_string()))?
             .to_owned();
         db.execute(backend.build(&insert_resource_constraints)).await?;
-        db.execute_unprepared(
-            "WITH ranked AS (\n                SELECT id, ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY id) - 1 AS position\n                FROM resource_constraint\n            )\n            UPDATE resource_constraint\n            SET position = (\n                SELECT ranked.position\n                FROM ranked\n                WHERE ranked.id = resource_constraint.id\n            )",
-        )
-        .await?;
+
+        let select_resource_constraint_rows = Query::select()
+            .columns([ResourceConstraintFull::Id, ResourceConstraintFull::TaskId])
+            .from(ResourceConstraintFull::Table)
+            .order_by(ResourceConstraintFull::TaskId, Order::Asc)
+            .order_by(ResourceConstraintFull::Id, Order::Asc)
+            .to_owned();
+        let resource_constraint_rows =
+            db.query_all(backend.build(&select_resource_constraint_rows)).await?;
+        let mut current_task_id = None;
+        let mut position = 0;
+
+        for row in resource_constraint_rows {
+            let id: i32 = row.try_get("", "id")?;
+            let task_id: i32 = row.try_get("", "task_id")?;
+
+            if current_task_id != Some(task_id) {
+                current_task_id = Some(task_id);
+                position = 0;
+            }
+
+            let update_resource_constraint_position = Query::update()
+                .table(ResourceConstraintFull::Table)
+                .value(ResourceConstraintFull::Position, Expr::value(position))
+                .and_where(Expr::col(ResourceConstraintFull::Id).eq(id))
+                .to_owned();
+            db.execute(backend.build(&update_resource_constraint_position)).await?;
+
+            position += 1;
+        }
 
         manager
             .drop_table(Table::drop().table(Alias::new("_resource_constraint_old")).to_owned())
