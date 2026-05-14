@@ -1,13 +1,11 @@
 use crate::gql::wrapper::*;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use std::{
-    collections::{BTreeSet, HashSet},
-    str::FromStr,
-};
+use std::{collections::BTreeSet, str::FromStr};
 
 use juniper::{GraphQLEnum, Nullable, graphql_object};
-use sea_orm::{ActiveValue, prelude::*};
+use sea_orm::{ActiveValue, ConnectionTrait, DatabaseTransaction, prelude::*};
+use sea_query::{Alias, CommonTableExpression, Expr, JoinType, Query, UnionType, WithClause};
 use strum::{EnumString, IntoStaticStr};
 
 use crate::{
@@ -17,7 +15,7 @@ use crate::{
             dependency::TaskDependencyUpserter,
             task_iteration::{TaskIterationParentUpdater, TaskIterationUpserter},
         },
-        revisioning::LazyRevision,
+        revisioning::{LazyRevision, active_for_revision},
         update::update_rev_many,
         upsert::{upsert_rev_many, upsert_rev_one},
     },
@@ -389,6 +387,183 @@ async fn update_resource_constraints(
     Ok(())
 }
 
+async fn dependency_loop_exists(
+    txn: &DatabaseTransaction,
+    task_header_id: i32,
+    revision_id: i64,
+) -> anyhow::Result<bool> {
+    // Functionally equivalent raw sql (probably less portable)
+    // ```
+    // WITH RECURSIVE active_dependency AS (
+    //     SELECT "predecessor_id", "successor_id"
+    //     FROM "dependency"
+    //     WHERE "rev_created" <= {revision_id}
+    //       AND ("rev_deleted" IS NULL OR "rev_deleted" > {revision_id})
+    // ),
+    // reachable(header_id) AS (
+    //     SELECT "successor_id"
+    //     FROM active_dependency
+    //     WHERE "predecessor_id" = {task_header_id}
+    //     UNION
+    //     SELECT dep."successor_id"
+    //     FROM active_dependency dep
+    //     INNER JOIN reachable ON dep."predecessor_id" = reachable.header_id
+    // )
+    // SELECT CASE WHEN EXISTS (
+    //     SELECT 1
+    //     FROM reachable
+    //     WHERE header_id = {task_header_id}
+    // ) THEN 1 ELSE 0 END AS "has_cycle"
+    // ```
+    let reachable = Alias::new("reachable");
+    let header_id = Alias::new("header_id");
+
+    let mut reachable_query = Query::select()
+        .expr_as(
+            Expr::col((dependency::Entity, dependency::Column::SuccessorId)),
+            header_id.clone(),
+        )
+        .from(dependency::Entity)
+        .and_where(dependency::Column::PredecessorId.eq(task_header_id))
+        .cond_where(active_for_revision(
+            dependency::Column::RevCreated,
+            dependency::Column::RevDeleted,
+            Some(revision_id),
+        ))
+        .to_owned();
+
+    let recursive_query = Query::select()
+        .expr_as(
+            Expr::col((dependency::Entity, dependency::Column::SuccessorId)),
+            header_id.clone(),
+        )
+        .from(dependency::Entity)
+        .join(
+            JoinType::InnerJoin,
+            reachable.clone(),
+            Expr::col((dependency::Entity, dependency::Column::PredecessorId))
+                .equals((reachable.clone(), header_id.clone())),
+        )
+        .cond_where(active_for_revision(
+            dependency::Column::RevCreated,
+            dependency::Column::RevDeleted,
+            Some(revision_id),
+        ))
+        .to_owned();
+
+    reachable_query.union(UnionType::Distinct, recursive_query);
+
+    let reachable_cte = CommonTableExpression::new()
+        .query(reachable_query)
+        .column(header_id.clone())
+        .table_name(reachable.clone())
+        .to_owned();
+
+    let mut cycle_query = Query::select();
+    cycle_query
+        .column((reachable.clone(), header_id.clone()))
+        .from(reachable.clone())
+        .and_where(Expr::col((reachable.clone(), header_id.clone())).eq(task_header_id))
+        .limit(1);
+    let with_query = cycle_query
+        .with(WithClause::new().recursive(true).cte(reachable_cte).to_owned())
+        .to_owned();
+
+    Ok(txn.query_one(txn.get_database_backend().build(&with_query)).await?.is_some())
+}
+
+async fn hierarchy_loop_exists(
+    txn: &DatabaseTransaction,
+    task_header_id: i32,
+    revision_id: i64,
+) -> anyhow::Result<bool> {
+    // Functionally equivalent raw sql (probably less portable)
+    // ```
+    // WITH RECURSIVE active_task AS (
+    //     SELECT "header_id", "parent_id"
+    //     FROM "task_iteration"
+    //     WHERE "rev_created" <= {revision_id}
+    //       AND ("rev_deleted" IS NULL OR "rev_deleted" > {revision_id})
+    // ),
+    // ancestor(header_id) AS (
+    //     SELECT "parent_id"
+    //     FROM active_task
+    //     WHERE "header_id" = {task_header_id}
+    //       AND "parent_id" IS NOT NULL
+    //     UNION
+    //     SELECT task."parent_id"
+    //     FROM active_task task
+    //     INNER JOIN ancestor ON task."header_id" = ancestor.header_id
+    //     WHERE task."parent_id" IS NOT NULL
+    // )
+    // SELECT CASE WHEN EXISTS (
+    //     SELECT 1
+    //     FROM ancestor
+    //     WHERE header_id = {task_header_id}
+    // ) THEN 1 ELSE 0 END AS "has_cycle"
+    // ```
+    let ancestor = Alias::new("ancestor");
+    let header_id = Alias::new("header_id");
+
+    let mut ancestor_query = Query::select()
+        .expr_as(
+            Expr::col((task_iteration::Entity, task_iteration::Column::ParentId)),
+            header_id.clone(),
+        )
+        .from(task_iteration::Entity)
+        .and_where(task_iteration::Column::HeaderId.eq(task_header_id))
+        .and_where(
+            Expr::col((task_iteration::Entity, task_iteration::Column::ParentId)).is_not_null(),
+        )
+        .cond_where(active_for_revision(
+            task_iteration::Column::RevCreated,
+            task_iteration::Column::RevDeleted,
+            Some(revision_id),
+        ))
+        .to_owned();
+
+    let recursive_query = Query::select()
+        .expr_as(
+            Expr::col((task_iteration::Entity, task_iteration::Column::ParentId)),
+            header_id.clone(),
+        )
+        .from(task_iteration::Entity)
+        .join(
+            JoinType::InnerJoin,
+            ancestor.clone(),
+            Expr::col((task_iteration::Entity, task_iteration::Column::HeaderId))
+                .equals((ancestor.clone(), header_id.clone())),
+        )
+        .and_where(
+            Expr::col((task_iteration::Entity, task_iteration::Column::ParentId)).is_not_null(),
+        )
+        .cond_where(active_for_revision(
+            task_iteration::Column::RevCreated,
+            task_iteration::Column::RevDeleted,
+            Some(revision_id),
+        ))
+        .to_owned();
+
+    ancestor_query.union(UnionType::Distinct, recursive_query);
+
+    let ancestor_cte = CommonTableExpression::new()
+        .query(ancestor_query)
+        .column(header_id.clone())
+        .table_name(ancestor.clone())
+        .to_owned();
+
+    let mut cycle_query = Query::select();
+    cycle_query
+        .column((ancestor.clone(), header_id.clone()))
+        .from(ancestor.clone())
+        .and_where(Expr::col((ancestor.clone(), header_id.clone())).eq(task_header_id))
+        .limit(1);
+    let with_query =
+        cycle_query.with(WithClause::new().recursive(true).cte(ancestor_cte).to_owned()).to_owned();
+
+    Ok(txn.query_one(txn.get_database_backend().build(&with_query)).await?.is_some())
+}
+
 // ---------------------------------------------------------------------------
 // task_save – public mutation entry-point (returns raw model; caller wraps)
 // ---------------------------------------------------------------------------
@@ -442,74 +617,16 @@ pub async fn task_save(
         }
         update_resource_constraints(ctx, &model, constraints, &revision).await?;
     }
-
     let (changed, revision_id) = revision.resolve(ctx.db()).await?;
     if !changed {
         return Ok((model, revision_id));
     }
-    // Dependency cycle detection
-    let deps = dependency::Entity::find().all(txn).await?;
-    use std::collections::HashMap as _HM;
-    let mut adj: _HM<i32, Vec<i32>> = _HM::new();
-    for d in deps.iter() {
-        adj.entry(d.predecessor_id).or_default().push(d.successor_id);
-    }
-    fn has_cycle(adj: &std::collections::HashMap<i32, Vec<i32>>) -> bool {
-        fn visit(
-            n: i32,
-            adj: &std::collections::HashMap<i32, Vec<i32>>,
-            visiting: &mut HashSet<i32>,
-            visited: &mut HashSet<i32>,
-        ) -> bool {
-            if visited.contains(&n) {
-                return false;
-            }
-            if visiting.contains(&n) {
-                return true;
-            }
-            visiting.insert(n);
-            if let Some(neis) = adj.get(&n) {
-                for &m in neis {
-                    if visit(m, adj, visiting, visited) {
-                        return true;
-                    }
-                }
-            }
-            visiting.remove(&n);
-            visited.insert(n);
-            false
-        }
-        let mut visiting = std::collections::HashSet::new();
-        let mut visited = std::collections::HashSet::new();
-        for &n in adj.keys() {
-            if visit(n, adj, &mut visiting, &mut visited) {
-                return true;
-            }
-        }
-        false
-    }
-    if has_cycle(&adj) {
+    if dependency_loop_exists(txn, model.header_id, revision_id).await? {
         return Err(anyhow!("Dependency loop detected"));
     }
-
-    // Hierarchy loop detection
-    {
-        use std::collections::HashSet;
-        let mut seen: HashSet<i32> = HashSet::new();
-        let mut cur = Some(model.id);
-        while let Some(cid) = cur {
-            if seen.contains(&cid) {
-                return Err(anyhow!("Hierarchy loop detected"));
-            }
-            seen.insert(cid);
-            let t = task_iteration::Entity::find_by_id(cid).one(txn).await?;
-            cur = match t {
-                Some(tt) => tt.parent_id,
-                None => None,
-            };
-        }
+    if hierarchy_loop_exists(txn, model.header_id, revision_id).await? {
+        return Err(anyhow!("Hierarchy loop detected"));
     }
-
     ctx.app_state().notify_modified("graphql".to_string());
     Ok((model, revision_id))
 }

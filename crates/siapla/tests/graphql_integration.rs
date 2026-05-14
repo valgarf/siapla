@@ -945,6 +945,125 @@ async fn test_nested_groups() {
 
 #[tokio::test]
 #[serial]
+async fn test_dependency_loop_detection_ignores_deleted_dependencies() {
+    clean_database().await;
+
+    let task_a = create_task("Loop-A", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let task_b =
+        create_task("Loop-B", "TASK", 1.0, Some(4.0), None, Some(&[task_a]), None, None, None)
+            .await;
+    let task_c =
+        create_task("Loop-C", "TASK", 1.0, Some(4.0), None, Some(&[task_b]), None, None, None)
+            .await;
+
+    let remove_deleted_edge = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_c},
+                title: "Loop-C",
+                description: "desc",
+                designation: TASK,
+                priority: 1.0,
+                effort: 4.0,
+                predecessors: []
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&remove_deleted_edge).await;
+
+    let add_new_edge = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_a},
+                title: "Loop-A",
+                description: "desc",
+                designation: TASK,
+                priority: 1.0,
+                effort: 4.0,
+                predecessors: [{task_c}]
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    gql_ok_simple(&add_new_edge).await;
+
+    let preds = query_task_predecessors(task_a).await;
+    assert_eq!(preds, vec![task_c], "expected Loop-A predecessor list to contain Loop-C");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_dependency_loop_detection_rejects_active_cycle() {
+    clean_database().await;
+
+    let task_a = create_task("Cycle-A", "TASK", 1.0, Some(4.0), None, None, None, None, None).await;
+    let task_b =
+        create_task("Cycle-B", "TASK", 1.0, Some(4.0), None, Some(&[task_a]), None, None, None)
+            .await;
+    let task_c =
+        create_task("Cycle-C", "TASK", 1.0, Some(4.0), None, Some(&[task_b]), None, None, None)
+            .await;
+
+    let create_cycle = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {task_a},
+                title: "Cycle-A",
+                description: "desc",
+                designation: TASK,
+                priority: 1.0,
+                effort: 4.0,
+                predecessors: [{task_c}]
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    let (_val, errors) = gql_exec(&create_cycle, &Variables::<ExtendedScalarValue>::new()).await;
+    assert!(!errors.is_empty(), "expected dependency cycle mutation to fail");
+    assert!(
+        format!("{errors:?}").contains("Dependency loop detected"),
+        "expected dependency loop error, got {errors:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn test_hierarchy_loop_detection_rejects_cycle() {
+    clean_database().await;
+
+    let group_a =
+        create_task("Hierarchy-A", "GROUP", 1.0, None, None, None, None, None, None).await;
+    let group_b =
+        create_task("Hierarchy-B", "GROUP", 1.0, None, Some(group_a), None, None, None, None).await;
+
+    let create_cycle = format!(
+        r#"mutation {{
+            taskSave(task: {{
+                dbId: {group_a},
+                title: "Hierarchy-A",
+                description: "desc",
+                designation: GROUP,
+                priority: 1.0,
+                parentId: {group_b}
+            }}) {{
+                dbId
+            }}
+        }}"#
+    );
+    let (_val, errors) = gql_exec(&create_cycle, &Variables::<ExtendedScalarValue>::new()).await;
+    assert!(!errors.is_empty(), "expected hierarchy cycle mutation to fail");
+    assert!(
+        format!("{errors:?}").contains("Hierarchy loop detected"),
+        "expected hierarchy loop error, got {errors:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn test_recalculation() {
     clean_database().await;
 
